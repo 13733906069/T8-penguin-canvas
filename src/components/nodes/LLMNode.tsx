@@ -105,7 +105,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   const model: string = d?.model || DEFAULT_LLM_MODEL;
   const status: 'idle' | 'generating' | 'success' | 'error' = d?.status || 'idle';
   const localPrompt: string = d?.prompt || '';
-  const systemPrompt: string = d?.system || '';
+  const systemPrompt: string = d?.system ?? '你是一个提示词专家，将用户的提示词优化';
   const temperature: number = typeof d?.temperature === 'number' ? d.temperature : 0.7;
   const maxTokens: number = typeof d?.maxTokens === 'number' ? d.maxTokens : 4096;
   const useStream: boolean = d?.stream !== false; // 默认开
