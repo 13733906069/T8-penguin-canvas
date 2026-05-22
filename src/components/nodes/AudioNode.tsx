@@ -225,11 +225,11 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     >
       <Handle type="target" position={Position.Left} style={{ background: audioColor, border: 0 }} />
       {/* 双输出口: 轨道 1 / 轨道 2 */}
-      <Handle type="source" id="audio-0" position={Position.Right} style={{ background: audioColor, border: 0, top: '44%' }} />
-      <Handle type="source" id="audio-1" position={Position.Right} style={{ background: audioColor, border: 0, top: '56%' }} />
+      <Handle type="source" id="audio-0" position={Position.Right} style={{ background: audioColor, border: 0, top: '46%' }} />
+      <Handle type="source" id="audio-1" position={Position.Right} style={{ background: audioColor, border: 0, top: '54%' }} />
       {/* 轨道标签 */}
-      <div className="absolute right-[-2px] text-[8px] font-bold text-violet-300/70 pointer-events-none" style={{ top: '44%', transform: 'translateX(100%) translateY(-50%)' }}>♪1</div>
-      <div className="absolute right-[-2px] text-[8px] font-bold text-violet-300/70 pointer-events-none" style={{ top: '56%', transform: 'translateX(100%) translateY(-50%)' }}>♪2</div>
+      <div className="absolute right-[-2px] text-[8px] font-bold text-violet-300/70 pointer-events-none" style={{ top: '46%', transform: 'translateX(100%) translateY(-50%)' }}>♪1</div>
+      <div className="absolute right-[-2px] text-[8px] font-bold text-violet-300/70 pointer-events-none" style={{ top: '54%', transform: 'translateX(100%) translateY(-50%)' }}>♪2</div>
 
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
         <div
