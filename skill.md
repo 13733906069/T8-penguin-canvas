@@ -1538,12 +1538,201 @@ nodes/
 
 ### 21.6 开发环境注意事项
 
-| 项目 | 说明 |
+ 项目 | 说明 |
 |---|---|
 | Node 版本 | 18+ （依赖原生 FormData/Blob） |
 | 后端无热重载 | `backend/package.json` 的 `dev` 是 `node src/server.js`，修改后端代码必须手动重启 |
 | Windows 目录重命名 | 常因进程占用失败，改用 `git reset --hard` 替代 |
 | Tailwind JIT | 新的 class 在开发服务器运行时自动生成，但必须在 tsx 中写完整 class名（不能字符串拼接） |
 | Sharp (imageOps) | 后端图像处理依赖 sharp，首次 `npm install` 会编译原生模块 |
+
+---
+
+## 22. xyflow 渲染稳定性 / 死循环踩坑总结（v1.2.x）
+
+> 本章为 2026-05-23 排查「OutputNode + RelayNode 触发 Maximum update depth exceeded 白屏」全过程沉淀的硬核经验，所有节点开发都必须遵守。
+
+### 22.1 现象与症状
+
+- 现象：进入特定画布瞬间整页白屏，仅左侧 Sidebar 残留；F12 Console 抛 `Uncaught Error: Maximum update depth exceeded`，调用栈关键节点：
+  ```
+  forceStoreRerender → @xyflow_react.js:6297 (Set.forEach) → setState → setNodes → @xyflow_react.js:6586 (StoreUpdater.useIsomorphicLayoutEffect)
+  ```
+- 触发画布：含 `RelayNode → OutputNode` 的链路（任何节点拓扑只要踩中下面任一陷阱都可能复现）。
+
+### 22.2 真正的根因（已修复 commit 5aac649）
+
+[`RelayNode.tsx`](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/RelayNode.tsx) 中的自动透传 `useEffect(() => {...})` **没有 deps 数组**：
+
+```tsx
+// ❌ 反例：每次 render 都跑
+useEffect(() => {
+  // 读上游 → merged → if (cur !== next) update(merged)
+});
+```
+
+死循环路径：
+1. 节点 mount → useEffect 跑 → `update(merged)` → 走 useReactFlow().setNodes（写入 batchContext.nodeQueue）
+2. BatchProvider 处理队列 → 触发 onNodesChange → Canvas 的 useState setNodes → store 更新
+3. store 通知所有订阅者 → 节点自身 re-render
+4. **没有 deps**，useEffect 又执行 → 又调一次 update → 又触发 setNodes → 进入风暴
+
+#### 修复模板（**所有"自动透传 / 上游聚合"型节点必须遵守**）
+
+```tsx
+const upstreamSignature = useMemo(() => {
+  const edges = getEdges();
+  const nodes = getNodes();
+  return edges
+    .filter((e) => e.target === id)
+    .map((e) => {
+      const n = nodes.find((x) => x.id === e.source);
+      const ud = (n?.data as any) || {};
+      return `${e.source}|${ud.imageUrl || ''}|${(ud.imageUrls || []).length}|${ud.videoUrl || ''}|${ud.audioUrl || ''}|${(ud.reply || ud.prompt || ud.text || '').slice(0, 80)}`;
+    })
+    .join('::');
+}, [id, p.data, getEdges, getNodes]);
+
+useEffect(() => {
+  // 计算 + 调 update(merged)；签名相等时永不再跑
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [upstreamSignature]);
+```
+
+关键点：
+- 用 **字符串签名**（拼接上游核心字段）当 `useEffect` 唯一 deps，xyflow store 频繁通知时，签名相等 → effect 跳过。
+- `useMemo` 的 deps 里放 `p.data` 是为了节点自身 data 变化也能重算签名（防止误判），但因为上游没变 → 字符串相同 → effect 不重跑，**不会循环**。
+- **绝对禁止** `useEffect(() => {...})`（无 deps）+ 内部调 `update()` / `setNodes()` 的写法。
+
+### 22.3 ReactFlow `<ReactFlow>` 组件 props 的引用稳定性陷阱
+
+xyflow v12 内部 [`StoreUpdater`](file:///e:/PenguinPravite/T8-penguin-canvas/node_modules/@xyflow/react/dist/esm/index.js) 的 `useIsomorphicLayoutEffect` **没有 deps 数组**，每次 render 后都遍历下面这个 `fieldsToTrack` 列表（节选）：
+
+```
+nodes / edges / defaultNodes / defaultEdges /
+onConnect / onConnectStart / onConnectEnd /
+nodesDraggable / nodesConnectable / nodesFocusable / edgesFocusable /
+elevateNodesOnSelect / elevateEdgesOnSelect /
+minZoom / maxZoom / nodeExtent /
+onNodesChange / onEdgesChange /
+elementsSelectable / connectionMode / snapGrid / snapToGrid /
+translateExtent / connectOnClick / defaultEdgeOptions /
+fitView / fitViewOptions /
+onNodesDelete / onEdgesDelete / onDelete /
+onNodeDrag / onNodeDragStart / onNodeDragStop /
+onSelectionDrag / onSelectionDragStart / onSelectionDragStop /
+onMoveStart / onMove / onMoveEnd /
+noPanClassName / nodeOrigin /
+autoPanOnConnect / autoPanOnNodeDrag / onError /
+connectionRadius / isValidConnection /
+selectNodesOnDrag / nodeDragThreshold / connectionDragThreshold /
+onBeforeDelete / debug / autoPanSpeed / ariaLabelConfig / zIndexMode
+```
+
+只要 `Object.is(props[field], previousFields.current[field])` 失败 → 调 `store.setState`。setState 通知所有订阅者，订阅者重渲染若产生新引用 → 又触发 → 死循环。
+
+#### 强制规范：传给 `<ReactFlow>` 的所有「字段属于 fieldsToTrack」的 props 必须**引用稳定**
+
+[`Canvas.tsx`](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx) 已修正示例：
+
+```tsx
+// ✅ 正确：useMemo 锁住引用
+const memoSelectionKeyCode      = useMemo(() => ['Control', 'Meta'], []);
+const memoMultiSelectionKeyCode = useMemo(() => ['Control', 'Meta', 'Shift'], []);
+const memoProOptions            = useMemo(() => ({ hideAttribution: true }), []);
+const memoDefaultEdgeOptions    = useMemo(
+  () => ({ style: { stroke: edgeStroke, strokeWidth: isPixel ? 2.5 : 2 }, animated: false }),
+  [edgeStroke, isPixel]
+);
+
+// ❌ 反例：内联字面量 → 每次 render 新引用
+<ReactFlow
+  defaultEdgeOptions={{ style: {...}, animated: false }}
+  selectionKeyCode={['Control', 'Meta']}
+  proOptions={{ hideAttribution: true }}
+/>
+```
+
+#### 回调函数也要稳定
+
+`onConnect / onIsValidConnection / onNodesChange / onEdgesChange` 等**禁止**把 `nodes / edges` 列入 deps，应改为：
+
+```tsx
+const nodesRef = useRef<Node[]>(nodes);
+const edgesRef = useRef<Edge[]>(edges);
+useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+const onConnect = useCallback((params) => {
+  const curNodes = nodesRef.current;
+  const curEdges = edgesRef.current;
+  // ... 用 ref 拿最新值，回调本身保持空 deps
+}, []);
+```
+
+### 22.4 OutputNode 单输入产品约束（已落地）
+
+- 设计：[OutputNode](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/OutputNode.tsx) 是终端展示节点，理论可接多源，但多源同时连入会显著放大渲染压力，且语义上"一个 output 节点 = 一份输出"更直观。
+- 约束实现位置：[Canvas.tsx · onConnect](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx)
+  ```tsx
+  if (tgt && tgt.type === 'output') {
+    const targetHasConn = curEdges.some((e) => e.target === tgt.id);
+    if (targetHasConn) {
+      // 派生新 output 节点，放在原节点右侧 360px
+      const newNode = { id: newId, type: 'output', position: {...}, data: {} };
+      setNodes((prev) => [...prev, newNode]);
+      params = { ...params, target: newId };
+    }
+  }
+  ```
+- 用户体验：第一根线连 output → 正常；第二根线再来 → 自动在右侧生成新 output 节点，线指向新节点，原节点保持单一上游。
+
+### 22.5 ErrorBoundary 兜底（强制）
+
+[`<ErrorBoundary>`](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/ErrorBoundary.tsx) 在 [`App.tsx`](file:///e:/PenguinPravite/T8-penguin-canvas/src/App.tsx) 中包裹 `<Canvas>`：
+
+```tsx
+<ErrorBoundary fallbackTitle="画布渲染出错了，已被错误边界捕获">
+  <Canvas onAddNodeRef={addNodeRef} />
+</ErrorBoundary>
+```
+
+效果：
+- 任何节点抛出运行时异常 / 死循环 / Maximum update depth 都不会让整页白屏
+- 显示红色错误面板 + 错误堆栈 + "重试渲染" / "刷新页面" 两个按钮
+- 关键意义：**让 bug 暴露在 UI 上而不是被吞掉**，用户截图 = 我们诊断现场
+
+**今后所有挂 ReactFlow 子树的根级 UI 必须配 ErrorBoundary。**
+
+### 22.6 dev 环境踩坑
+
+| 现象 | 根因 | 处理 |
+|---|---|---|
+| 启动后整页米色空白，但 Vite 控制台无报错 | concurrently 把 Vite + 后端起在一起，后端因端口 18766 被占用 (`EADDRINUSE`) 崩溃，把 Vite 一起拖死，浏览器持有旧 chunk 但 HMR 不工作 | `Get-Process node \| Stop-Process -Force` 杀干净再 `npm run dev` |
+| 修代码后浏览器仍报旧版本错（chunk 哈希 `?v=cef6e763` 不变） | 浏览器 / Service Worker 缓存了旧 module | **Ctrl + F5** 硬刷新；必要时 Ctrl+Shift+Del 清缓存 |
+| F12 报错文字含乱码 / git commit 中文乱码 | PowerShell 7 默认 OEM 编码渲染 UTF-8 中文出错，**仓库内文件本身正常** | 看 GitHub 网页确认即可，不要徒劳改终端编码 |
+| `tsc --noEmit` 通过但 IDE 红线 | IDE TS Server 缓存陈旧 | 重启 TS Server / 重开窗口 |
+
+### 22.7 节点开发自检清单（强约束）
+
+新写一个节点 / 改老节点前，逐条核对：
+
+- [ ] 没有 `useEffect(() => {...})` 写法（必须带 deps 数组）
+- [ ] effect 里若调 `update()` / `setNodes`，deps 必须是**字符串签名**或**精确字段**，**绝不是 `[nodes]` / `[edges]`**
+- [ ] 自动透传逻辑使用 `useMemo` 计算 `upstreamSignature`，effect 仅依赖该签名
+- [ ] 节点内部不调用 `useStore((s) => ...)` 自定义 selector，除非 selector 返回**原始类型**（string / number / boolean）且经实测稳定
+- [ ] 节点向 `<ReactFlow>` 暴露的回调（如通过 `onAddNodeRef`）保持引用稳定
+- [ ] 在 `<ErrorBoundary>` 包裹下做白屏压测（拓扑：自身 + 至少 2 个上游 + 1 个下游 OutputNode）
+
+### 22.8 关键 Commit 索引
+
+| Commit | 修复内容 |
+|---|---|
+| `459f746` | Sidebar / Canvas 的 `COLOR_HEX` 补 `teal: '#5eead4'`（OutputNode 图标底色） |
+| `a9ddb2d` | OutputNode 移除 `setInterval/setTick`，初版改 `useStore` 订阅（后续被 0fb11e7 撤掉） |
+| `f56e701` | 引入 ErrorBoundary 兜底；OutputNode 撤回 useStore 订阅，对齐 VideoOutputNode |
+| `0fb11e7` | Canvas memoize `defaultEdgeOptions / proOptions / selectionKeyCode / multiSelectionKeyCode`；onConnect / onIsValidConnection 改 ref 模式；onConnect 实现 output 单输入自动派生新节点 |
+| `5aac649` | **根因修复** —— RelayNode `useEffect` 加 `[upstreamSignature]` deps，彻底杜绝 setState 风暴 |
+
 
 ---
