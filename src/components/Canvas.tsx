@@ -61,6 +61,7 @@ import DrawingBoardNode from './nodes/DrawingBoardNode';
 import BrowserNode from './nodes/BrowserNode';
 import FrameExtractorNode from './nodes/FrameExtractorNode';
 import UploadNode from './nodes/UploadNode';
+import OutputNode from './nodes/OutputNode';
 import GroupBoxNode from './nodes/GroupBoxNode';
 import DeletableEdge from './edges/DeletableEdge';
 import { NODE_REGISTRY } from '../config/nodeRegistry';
@@ -114,6 +115,8 @@ const SPECIFIC_NODES: Record<string, any> = {
   'video-motion': ToolboxParamNode,
   // Input (1) - 上传素材
   upload: UploadNode,
+  // Output (1) - 输出素材(文本/图像/视频/音频 预览 + 文本双击编辑)
+  output: OutputNode,
 };
 
 // 节点初始 data(用于区分共享组件的 kind/preset/model 等)

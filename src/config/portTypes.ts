@@ -89,6 +89,10 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   // ========== 上传素材节点 (NEW) ==========
   // 动态:由 data.uploadType 决定具体输出。未上传时 outputs=[],不允许连出。
   upload: { inputs: [], outputs: [] },
+
+  // ========== 输出素材节点 (NEW) ==========
+  // 任意上游节点的 文本/图像/视频/音频 都可连入;作为终端预览，不再向下游输出。
+  output: { inputs: ['text', 'image', 'video', 'audio', 'any'], outputs: [] },
 };
 
 /**

@@ -6,8 +6,9 @@ import type { NodeMeta } from '../types/canvas';
  * 图标使用 lucide-react 名称(运行时由 Sidebar 动态查找)
  */
 export const NODE_REGISTRY: NodeMeta[] = [
-  // ========== Input 输入素材(1) ==========
+  // ========== Input 输出素材(2) ==========
   { type: 'upload', label: '上传素材', category: 'input', description: '图像 / 视频 / 音频 三合一上传(自适应输出端口)', icon: 'Upload', color: 'emerald' },
+  { type: 'output', label: '输出素材', category: 'input', description: '起于上游任意节点的 文本/图像/视频/音频 结果预览(原始宽高比 + 文本双击编辑)', icon: 'MonitorPlay', color: 'teal' },
 
   // ========== Core 核心节点(6) ==========
   { type: 'text', label: '文本', category: 'core', description: '提示词文本节点', icon: 'Type', color: 'sky' },
@@ -53,7 +54,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
 
 // 按分类分组,便于 Sidebar 渲染
 export const NODE_GROUPS: Record<string, { label: string; nodes: NodeMeta[] }> = {
-  input: { label: '输入素材', nodes: NODE_REGISTRY.filter((n) => n.category === 'input') },
+  input: { label: '输出素材', nodes: NODE_REGISTRY.filter((n) => n.category === 'input') },
   core: { label: '核心节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'core') },
   rh: { label: 'RH', nodes: NODE_REGISTRY.filter((n) => n.category === 'rh') },
   special: { label: '特殊节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'special') },
