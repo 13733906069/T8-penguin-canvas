@@ -1906,14 +1906,63 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       const lastSig = autoOutputProcessedRef.current.get(n.id);
       if (lastSig === sig) continue;
 
-      // 统计已连的下游 OutputNode 数量
-      const existingOutputCount = edges
-        .filter((e) => e.source === n.id)
-        .map((e) => nodes.find((x) => x.id === e.target))
-        .filter((x) => x && x.type === 'output').length;
+      // 收集当前下游 OutputNode（手动 + 自动）
+      // 意图：N 个产物 → N 个独立 OutputNode。只要某个 OutputNode 仅从本节点连入且未带 pickKind，
+      // 就给它“升级”为 pickKind+pickIndex（按 items 排序中未被占用的下一个），让它只显示一项；
+      // 不够再补建 autoOutput 节点。
+      const downstreamOutputs: Array<{ id: string; pickKind?: string; pickIndex?: number; incomingFromMe: number }> = [];
+      for (const e of edges) {
+        if (e.source !== n.id) continue;
+        const t = nodes.find((x) => x.id === e.target);
+        if (!t || t.type !== 'output') continue;
+        const td: any = t.data || {};
+        // 限仅封闭: 如果该 OutputNode 还连了别的上游, 不能随便修改它的 pickKind
+        const incomingFromMe = edges.filter((x) => x.target === t.id && x.source === n.id).length;
+        const totalIncoming = edges.filter((x) => x.target === t.id).length;
+        if (totalIncoming > 1) {
+          // 多上游合并节点 → 不动 data, 但计数占位
+          downstreamOutputs.push({ id: t.id, pickKind: td.pickKind, pickIndex: td.pickIndex, incomingFromMe });
+          continue;
+        }
+        downstreamOutputs.push({ id: t.id, pickKind: td.pickKind, pickIndex: td.pickIndex, incomingFromMe });
+      }
 
-      const needCount = items.length - existingOutputCount;
+      // 差异化处理:
+      //   1) 已带 pickKind+pickIndex 的 → 计作“已占用该项”
+      //   2) 未带 pickKind 的 → 依次升级为 items 中还未被占用的项
+      const occupied = new Set<string>(); // key=`${kind}:${kindIndex}`
+      for (const o of downstreamOutputs) {
+        if (o.pickKind && typeof o.pickIndex === 'number') {
+          occupied.add(`${o.pickKind}:${o.pickIndex}`);
+        }
+      }
+      const itemKey = (it: { kind: string; kindIndex: number }) => `${it.kind}:${it.kindIndex}`;
+      const upgradePatches: Array<[string, { pickKind: string; pickIndex: number }]> = [];
+      for (const o of downstreamOutputs) {
+        if (o.pickKind) continue;
+        // 指定下一个未占用项
+        const next = items.find((it) => !occupied.has(itemKey(it)));
+        if (!next) break;
+        occupied.add(itemKey(next));
+        upgradePatches.push([o.id, { pickKind: next.kind, pickIndex: next.kindIndex }]);
+      }
+
+      // 仍然未被占用的 items 数量 = 需要补建的 OutputNode 个数
+      const remainingItems = items.filter((it) => !occupied.has(itemKey(it)));
+      const needCount = remainingItems.length;
       newSigPatches.push([n.id, sig]);
+
+      // 接下来先应用 upgradePatches 再补建节点
+      if (upgradePatches.length > 0) {
+        const patchMap = new Map(upgradePatches);
+        setNodes((prev) =>
+          prev.map((nd) => {
+            const p = patchMap.get(nd.id);
+            if (!p) return nd;
+            return { ...nd, data: { ...(nd.data as any), pickKind: p.pickKind, pickIndex: p.pickIndex } };
+          })
+        );
+      }
       if (needCount <= 0) continue;
 
       const srcW = (n as any).width || (n as any).measured?.width || 320;
@@ -1921,9 +1970,10 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       const baseY = n.position?.y ?? 0;
 
       for (let i = 0; i < needCount; i++) {
-        const offsetIndex = existingOutputCount + i;
-        const item = items[offsetIndex];
-        if (!item) break; // 安全走位: items 不够了就不再创建
+        const item = remainingItems[i];
+        if (!item) break;
+        // 排列 offsetIndex 以 items 中 item 的全局位置为准，保证不同 kind 不会重叠
+        const offsetIndex = items.findIndex((it) => it.kind === item.kind && it.kindIndex === item.kindIndex);
         const newId = `output-auto-${n.id}-${Date.now()}-${offsetIndex}-${Math.random()
           .toString(36)
           .slice(2, 6)}`;
