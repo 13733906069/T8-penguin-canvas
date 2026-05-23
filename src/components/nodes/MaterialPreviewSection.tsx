@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -13,8 +13,6 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import {
-  ChevronDown,
-  ChevronUp,
   Image as ImageIcon,
   Video as VideoIcon,
   Music,
@@ -31,13 +29,8 @@ import type { Material } from './useUpstreamMaterials';
  * 职责:
  *   1. 分组渲染 (text / image / video / audio) 上游聚合素材 + 本地上传素材
  *   2. dnd-kit 跨类型自由排序, onReorder 回调输出新 order 数组 (写到 data.materialOrder)
- *   3. 折叠/展开切换, 折叠态显示头条 + 一行迷你预览, 让用户清楚知道是「折叠」而不是「空」
+ *   3. 始终展开显示 (取消折叠功能, 头条仅作为分组标识 + 数量徽章)
  *   4. 双主题适配 (科技风 dark / 像素风 pixel-light), 通过 isDark + isPixel props 切换
- *
- * 折叠默认值规则:
- *   - selected=true   → 默认展开, 用户可点头条手动折叠
- *   - selected=false  → 默认折叠, 节省垂直空间, 用户可点头条手动展开
- *   - 用户手动操作过则保留手动状态 (forceCollapsed 优先于 selected)
  *
  * 调用方:
  *   - ImageNode (主战场, 含本地上传 + 多张参考图)
@@ -46,7 +39,6 @@ import type { Material } from './useUpstreamMaterials';
  * 与 xyflow 的协同:
  *   - 顶层 onMouseDown stopPropagation 防止触发节点拖动
  *   - 内部 dnd-kit useSortable 给每个缩略加 className="nodrag"
- *   - 头部按钮也是 nodrag, 不会被节点拖动捕获
  */
 
 interface UploadAction {
@@ -66,7 +58,7 @@ interface Props {
   onReorder: (newOrder: string[]) => void;
   /** 仅 origin='local' 的素材会显示删除按钮, 点击触发本回调 */
   onRemoveLocal?: (m: Material) => void;
-  /** 节点是否被 selected, 用于决定默认折叠状态 */
+  /** 节点是否被 selected (兼容保留, 已不再用于折叠逻辑) */
   selected?: boolean;
   isDark: boolean;
   isPixel: boolean;
@@ -99,7 +91,6 @@ const MaterialPreviewSection = ({
   order,
   onReorder,
   onRemoveLocal,
-  selected,
   isDark,
   isPixel,
   groups = ['text', 'image', 'video', 'audio'],
@@ -107,10 +98,6 @@ const MaterialPreviewSection = ({
   title = '上游素材',
 }: Props) => {
   const total = texts.length + images.length + videos.length + audios.length;
-
-  // 折叠状态: null = 跟随 selected, true/false = 用户手动覆盖
-  const [forceCollapsed, setForceCollapsed] = useState<boolean | null>(null);
-  const collapsed = forceCollapsed != null ? forceCollapsed : !selected;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -143,7 +130,7 @@ const MaterialPreviewSection = ({
   // ============== 主题样式 ==============
   const headerStyle: React.CSSProperties = isPixel
     ? {
-        background: collapsed ? '#cffafe' : '#67e8f9',
+        background: '#67e8f9',
         color: '#1a1a1a',
         border: '1.5px solid #1a1a1a',
         boxShadow: '1px 1px 0 #1a1a1a',
@@ -152,13 +139,7 @@ const MaterialPreviewSection = ({
         fontSize: 11,
       }
     : {
-        background: collapsed
-          ? isDark
-            ? 'rgba(20,184,166,.10)'
-            : 'rgba(20,184,166,.08)'
-          : isDark
-            ? 'rgba(20,184,166,.20)'
-            : 'rgba(20,184,166,.15)',
+        background: isDark ? 'rgba(20,184,166,.20)' : 'rgba(20,184,166,.15)',
         color: isDark ? '#5eead4' : '#0d9488',
         border: `1px solid ${isDark ? 'rgba(94,234,212,.35)' : 'rgba(13,148,136,.35)'}`,
         borderRadius: 6,
@@ -182,11 +163,6 @@ const MaterialPreviewSection = ({
         fontSize: 10,
         lineHeight: '14px',
       };
-
-  // 折叠时迷你预览方块的样式
-  const miniBoxStyle: React.CSSProperties = isPixel
-    ? { border: '1.5px solid #1a1a1a', background: '#fefce8' }
-    : { border: `1px solid ${isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.12)'}`, borderRadius: 3 };
 
   const groupLabelStyle: React.CSSProperties = isPixel
     ? { color: '#1a1a1a', fontWeight: 700, fontSize: 10 }
@@ -225,68 +201,18 @@ const MaterialPreviewSection = ({
       className="space-y-1.5"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* ============== 折叠头 ============== */}
-      <button
-        type="button"
-        onClick={() => setForceCollapsed(!collapsed)}
-        className="nodrag w-full flex items-center gap-1.5 cursor-pointer select-none"
+      {/* ============== 标题头 (仅作为分组标识 + 数量徽章, 不再可折叠) ============== */}
+      <div
+        className="w-full flex items-center gap-1.5 select-none"
         style={headerStyle}
-        title={collapsed ? '点击展开素材列表' : '点击折叠素材列表'}
       >
         <Layers size={12} />
         <span style={{ flex: 1, textAlign: 'left' }}>{title}</span>
         <span style={headerCountStyle}>{total}</span>
-        {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-      </button>
+      </div>
 
-      {/* ============== 折叠态 - 迷你预览条 ============== */}
-      {collapsed && total > 0 && (
-        <div className="flex flex-wrap gap-1 px-0.5">
-          {allItems.slice(0, 8).map((m, i) => {
-            const Ic = ICON_MAP[m.kind];
-            return (
-              <div
-                key={m.id}
-                style={{
-                  ...miniBoxStyle,
-                  width: 18,
-                  height: 18,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                }}
-                title={`${LABEL_MAP[m.kind]} ${i + 1} · ${m.label || ''}`}
-              >
-                {m.kind === 'image' ? (
-                  <img
-                    src={m.url}
-                    alt=""
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <Ic size={10} color={isPixel ? '#1a1a1a' : isDark ? '#5eead4' : '#0d9488'} />
-                )}
-              </div>
-            );
-          })}
-          {allItems.length > 8 && (
-            <span
-              style={{
-                fontSize: 10,
-                alignSelf: 'center',
-                color: isPixel ? '#1a1a1a' : isDark ? 'rgba(255,255,255,.5)' : 'rgba(0,0,0,.5)',
-                fontWeight: isPixel ? 700 : 500,
-              }}
-            >
-              +{allItems.length - 8}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ============== 展开态 - 分组 + dnd-kit ============== */}
-      {!collapsed && (
+      {/* ============== 内容区 - 分组 + dnd-kit (始终展开) ============== */}
+      {total > 0 || imageUploadAction ? (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -356,7 +282,7 @@ const MaterialPreviewSection = ({
             })}
           </SortableContext>
         </DndContext>
-      )}
+      ) : null}
     </div>
   );
 };

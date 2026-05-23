@@ -1,9 +1,12 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useReactFlow, useNodes, type NodeProps, type Node } from '@xyflow/react';
+import { useReactFlow, useNodes, Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Play, X, Edit2 } from 'lucide-react';
 import { useThemeStore } from '../../stores/theme';
 import { useGroupBusStore, GROUP_COLORS } from '../../stores/groupBus';
 
+// 文件名后缀识别(与 OutputNode 一致): 剑中低代价修正「上游用 imageUrl 装视频/音频」兑底
+const isVideoUrl = (u: string) => /\.(mp4|webm|mov|m4v|mkv)(\?|$)/i.test(u);
+const isAudioUrl = (u: string) => /\.(mp3|wav|ogg|m4a|flac)(\?|$)/i.test(u);
 export interface GroupBoxData {
   name: string;
   color: string;
@@ -77,6 +80,97 @@ const GroupBoxNode = ({ id, data, selected }: NodeProps) => {
     'tl' | 'tr' | 'bl' | 'br' | null
   >(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // === 聚合组内所有节点的输出供右侧 source handle 传出 ===
+  // 计算逻辑与 OutputNode 中继透传保持一致(同一组字段/同一组兼容性)
+  type Collected = { texts: string[]; images: string[]; videos: string[]; audios: string[] };
+  const collected = useMemo<Collected>(() => {
+    const out: Collected = { texts: [], images: [], videos: [], audios: [] };
+    const pushUnique = (arr: string[], v: any) => {
+      if (typeof v !== 'string') return;
+      const s = v.trim();
+      if (!s) return;
+      if (arr.indexOf(s) === -1) arr.push(s);
+    };
+    const memberSet = new Set(liveMemberIds);
+    for (const n of allNodes as Node[]) {
+      if (!memberSet.has(n.id)) continue;
+      if (n.type === 'groupBox') continue;
+      const ud: any = n.data || {};
+      // 文本
+      pushUnique(out.texts, ud.outputText);
+      pushUnique(out.texts, ud.reply);
+      pushUnique(out.texts, ud.prompt);
+      pushUnique(out.texts, ud.text);
+      // 图像 - 单
+      pushUnique(out.images, ud.imageUrl);
+      // 图像 - 多
+      for (const f of ['imageUrls', 'urls', 'generatedImages']) {
+        const v = ud[f];
+        if (Array.isArray(v)) v.forEach((u: any) => pushUnique(out.images, u));
+      }
+      // 视频 / 音频
+      pushUnique(out.videos, ud.videoUrl);
+      pushUnique(out.audios, ud.audioUrl);
+    }
+    // 后缀净化: image 里装了视频/音频 → 调整到对应桶
+    out.images = out.images.filter((u) => {
+      if (isVideoUrl(u)) { if (out.videos.indexOf(u) === -1) out.videos.push(u); return false; }
+      if (isAudioUrl(u)) { if (out.audios.indexOf(u) === -1) out.audios.push(u); return false; }
+      return true;
+    });
+    return out;
+  }, [allNodes, liveMemberIds]);
+
+  const aggregateText = collected.texts.join('\n\n──────\n\n');
+
+  // 透传到自身 data 供下游节点读取 (与 OutputNode 同样手式 cur/next 比较防循环)
+  useEffect(() => {
+    const next: any = {
+      prompt: aggregateText,
+      text: aggregateText,
+      reply: aggregateText,
+      imageUrl: collected.images[0] || '',
+      imageUrls: collected.images.slice(),
+      urls: collected.images.slice(),
+      videoUrl: collected.videos[0] || '',
+      audioUrl: collected.audios[0] || '',
+    };
+    const cur: any = {
+      prompt: (d as any).prompt || '',
+      text: (d as any).text || '',
+      reply: (d as any).reply || '',
+      imageUrl: (d as any).imageUrl || '',
+      imageUrls: Array.isArray((d as any).imageUrls) ? (d as any).imageUrls : [],
+      urls: Array.isArray((d as any).urls) ? (d as any).urls : [],
+      videoUrl: (d as any).videoUrl || '',
+      audioUrl: (d as any).audioUrl || '',
+    };
+    const changed =
+      cur.prompt !== next.prompt ||
+      cur.text !== next.text ||
+      cur.reply !== next.reply ||
+      cur.imageUrl !== next.imageUrl ||
+      cur.videoUrl !== next.videoUrl ||
+      cur.audioUrl !== next.audioUrl ||
+      JSON.stringify(cur.imageUrls) !== JSON.stringify(next.imageUrls) ||
+      JSON.stringify(cur.urls) !== JSON.stringify(next.urls);
+    if (changed) updateData(next as Partial<GroupBoxData>);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aggregateText, collected]);
+
+  // 同步 liveMemberIds 回写 data.memberIds, 供 Canvas.onConnect 等外部逻辑读到「实时成员集」
+  // (节点拖入/拖出组后会随之更新)
+  useEffect(() => {
+    const prev: string[] = Array.isArray((d as any).memberIds) ? (d as any).memberIds : [];
+    if (
+      prev.length !== liveMemberIds.length ||
+      prev.some((pid, i) => pid !== liveMemberIds[i])
+    ) {
+      updateData({ memberIds: liveMemberIds });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveMemberIds]);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -244,6 +338,35 @@ const GroupBoxNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div style={outerStyle}>
+      {/* === 右侧 source Handle: 聚合组内所有节点输出一次性向组外传出 === */}
+      {/*  - 主题适配: 科技风使用组颜色圆形, 像素风使用方形+黑边+硬阴影  */}
+      {/*  - title 提示实时聚合数量, 让用户一眼看到能传出多少资源 */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="group-out"
+        isConnectableStart={true}
+        isConnectableEnd={false}
+        className="!border-0"
+        style={{
+          background: isPixel ? '#1A1410' : color,
+          width: isPixel ? 14 : 14,
+          height: isPixel ? 14 : 14,
+          minWidth: 14,
+          minHeight: 14,
+          top: '50%',
+          right: -7,
+          transform: 'translateY(-50%)',
+          borderRadius: isPixel ? 3 : '50%',
+          border: isPixel ? `2px solid ${color}` : `2px solid #FFFFFF`,
+          boxShadow: isPixel
+            ? `2px 2px 0 ${color}`
+            : `0 0 0 2px ${color}55, 0 1px 4px rgba(0,0,0,0.3)`,
+          zIndex: 12,
+          pointerEvents: 'all',
+        }}
+        title={`组输出: ${collected.texts.length}文本 / ${collected.images.length}图 / ${collected.videos.length}视频 / ${collected.audios.length}音频`}
+      />
       {/* 顶部标题栏 */}
       <div
         style={{
