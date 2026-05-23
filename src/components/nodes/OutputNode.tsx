@@ -8,7 +8,7 @@ import {
   type NodeProps,
   type Node,
 } from '@xyflow/react';
-import { MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check } from 'lucide-react';
+import { MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check, Edit3 } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useThemeStore } from '../../stores/theme';
 import { PORT_COLOR } from '../../config/portTypes';
@@ -311,12 +311,53 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayText, collected]);
 
+  // === 选中节点上方浮动「Edit」按钮 ===
+  // 仅当节点被选中且至少存在一张图像时出现，等价于双击图像触发
+  // ImageEditModal（裁剪 / 宫格切分），多图时编辑第一张。
+  const canEditImage = selected && collected.images.length > 0;
+  const onClickEditTopBtn = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (collected.images.length > 0) setEditingUrl(collected.images[0]);
+  };
+
   return (
     <div
       className="relative"
       style={{ width: 320 }}
       {...dropProps}
     >
+      {/* 选中时浮动「Edit」按钮 — 仅图像类型可用，与双击预览图等价 */}
+      {canEditImage && (
+        <button
+          type="button"
+          className="nodrag nopan"
+          onClick={onClickEditTopBtn}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="编辑图像（裁剪 / 宫格切分），等同双击预览图"
+          style={{
+            position: 'absolute',
+            top: -34,
+            left: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            height: 26,
+            background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
+            color: accent,
+            border: `1px solid ${accent}66`,
+            borderRadius: 6,
+            boxShadow: isDark ? '0 6px 24px rgba(0,0,0,0.4)' : '0 6px 24px rgba(0,0,0,0.12)',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            zIndex: 30,
+          }}
+        >
+          <Edit3 size={12} />
+          <span>Edit</span>
+        </button>
+      )}
       {/* target handle (左侧) - 上游任意类型可连入 */}
       <Handle
         type="target"

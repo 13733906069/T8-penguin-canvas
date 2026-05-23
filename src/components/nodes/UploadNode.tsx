@@ -2,6 +2,7 @@ import { memo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { Handle, Position, useReactFlow, type Node, type Edge, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
+  Edit3,
   FileImage,
   FileVideo,
   Music,
@@ -14,6 +15,7 @@ import { useThemeStore } from '../../stores/theme';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
+import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
 
 /**
  * UploadNode - 通用上传素材节点
@@ -91,6 +93,8 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  // 图像编辑弹窗 src URL（与 OutputNode 双击逻辑保持一致）
+  const [editingUrl, setEditingUrl] = useState<string | null>(null);
 
   const d = data as any;
   const uploadType: UploadKind | null = d?.uploadType ?? null;
@@ -255,6 +259,45 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
 
   const triggerPick = () => fileInputRef.current?.click();
 
+  // === 双击 / 上方「Edit」 → 启动图像编辑弹窗（仅 image 类型生效） ===
+  // 逻辑对齐 OutputNode：编辑产物以独立 OutputNode 外挂到右侧，
+  // 不修改当前上传节点本身的 imageUrl。
+  const canEditImage = !!url && uploadType === 'image';
+  const openEdit = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (canEditImage && url) setEditingUrl(url);
+  };
+  const handleProduce = (urls: string[], _meta: ImageEditProduceMeta) => {
+    if (!urls || urls.length === 0) return;
+    const me = rf.getNode(id);
+    const myW = (me as any)?.measured?.width || (me as any)?.width || 260;
+    const myH = (me as any)?.measured?.height || (me as any)?.height || 360;
+    const baseX = (me?.position?.x ?? 0) + myW + 80;
+    const baseY = me?.position?.y ?? 0;
+    const COLS = 3;
+    const COL_W = 350;
+    const ROW_H = Math.max(360, myH);
+    const ts = Date.now();
+    const newNodes: Node[] = urls.map((u, i) => {
+      const newId = `output-auto-edit-${id}-${ts}-${i}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+      return {
+        id: newId,
+        type: 'output',
+        position: {
+          x: baseX + (i % COLS) * COL_W,
+          y: baseY + Math.floor(i / COLS) * ROW_H,
+        },
+        data: {
+          directImageUrl: u,
+          imageUrl: u,
+        },
+      } as Node;
+    });
+    rf.addNodes(newNodes);
+  };
+
   // ==================== 渲染 ====================
   const handleColor = meta?.color || PORT_COLOR.any;
   const headerLabel = meta ? `上传${meta.label}` : '上传素材';
@@ -268,6 +311,42 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
         borderColor: selected ? handleColor : isDark ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.1)',
       }}
     >
+      {/* 选中时浮动「Edit」按钮 — 仅图像类型可用，与双击预览图等价 */}
+      {selected && canEditImage && (
+        <button
+          type="button"
+          className="nodrag nopan"
+          onClick={openEdit}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="编辑图像（裁剪 / 宫格切分），等同双击预览图"
+          style={{
+            position: 'absolute',
+            top: -34,
+            left: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            height: 26,
+            background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
+            color: handleColor,
+            border: `1px solid ${handleColor}66`,
+            borderRadius: isPixel ? 0 : 6,
+            boxShadow: isPixel
+              ? `2px 2px 0 ${handleColor}`
+              : isDark
+                ? '0 6px 24px rgba(0,0,0,0.4)'
+                : '0 6px 24px rgba(0,0,0,0.12)',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            zIndex: 30,
+          }}
+        >
+          <Edit3 size={12} />
+          <span>Edit</span>
+        </button>
+      )}
       {/* 仅有 source handle(上传节点不接收输入) */}
       <Handle
         type="source"
@@ -361,7 +440,7 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
               <img
                 src={url}
                 alt={fileName}
-                className="w-full h-auto rounded block"
+                className="w-full h-auto rounded block cursor-zoom-in"
                 style={{ background: '#0008', objectFit: 'contain', maxHeight: 480 }}
                 data-drag-source
                 data-drag-kind="image"
@@ -371,7 +450,11 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
                 onMouseDown={(e) =>
                   beginMaterialDrag(e, { kind: 'image', url, sourceNodeId: id, previewUrl: url })
                 }
-                title="Ctrl+拖拽可送到其他节点"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  openEdit();
+                }}
+                title="双击编辑（裁剪 / 宫格切分） · Ctrl+拖拽可送到其他节点"
               />
             )}
             {uploadType === 'video' && (
@@ -458,6 +541,14 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
       </div>
+      {/* 图像编辑弹窗：产物以独立 OutputNode 外挂到右侧 */}
+      {editingUrl && (
+        <ImageEditModal
+          srcUrl={editingUrl}
+          onClose={() => setEditingUrl(null)}
+          onProduce={handleProduce}
+        />
+      )}
     </div>
   );
 };
