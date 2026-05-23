@@ -116,7 +116,7 @@ function App() {
                   }`
             }
           >
-            v1.0.1
+            v1.1.0
           </span>
           {/* 后端状态 */}
           {isPixel ? (

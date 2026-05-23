@@ -408,9 +408,9 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
         }`}
       >
         {isPixel ? (
-          <span className="px-chip px-chip--muted">T8 · v1.0.1</span>
+          <span className="px-chip px-chip--muted">T8 · v1.1.0</span>
         ) : (
-          <>T8-penguin-canvas · v1.0.1</>
+          <>T8-penguin-canvas · v1.1.0</>
         )}
       </div>
     </div>
