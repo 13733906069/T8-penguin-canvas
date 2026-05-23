@@ -507,6 +507,28 @@ html[data-theme-style="pixel"] .react-flow__handle:hover {
 html[data-theme-style="pixel"] .react-flow__handle::before {
   border-radius: 0 !important;
 }
+
+/* === 像素风 SHIFT 剩刀模式 === */
+/* 黄色填充+黑边 8-bit 剩刀 */
+html[data-theme-style="pixel"] body.cut-mode,
+html[data-theme-style="pixel"] body.cut-mode * {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='%23FFE066' stroke='%231A1410' stroke-width='2.5' stroke-linecap='square' stroke-linejoin='miter' shape-rendering='crispEdges'><circle cx='6' cy='6' r='3'/><circle cx='6' cy='18' r='3'/><line x1='20' y1='4' x2='8.12' y2='15.88'/><line x1='14.47' y1='14.48' x2='20' y2='20'/><line x1='8.12' y1='8.12' x2='12' y2='12'/></svg>") 14 14, crosshair !important;
+}
+/* 像素风待切 edge: 使用 粉色(px-pink) 高亮 + 均匀虚线 */
+html[data-theme-style="pixel"] .react-flow__edge.cut-marked .react-flow__edge-path {
+  stroke: var(--px-pink-deep, #C73B6B) !important;
+  stroke-width: 3.5 !important;
+  stroke-dasharray: 4 4 !important;
+  stroke-linecap: square !important;
+}
+/* 像素风轨迹: 黑色方虚线 */
+html[data-theme-style="pixel"] .cut-overlay-svg .cut-overlay-path {
+  stroke: var(--px-ink, #1A1410);
+  stroke-width: 2.5;
+  stroke-dasharray: 4 4;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
 html[data-theme-style="pixel"] .react-flow__handle.target {
   background: var(--px-mint) !important;
 }

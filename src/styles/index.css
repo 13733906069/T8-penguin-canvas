@@ -144,6 +144,34 @@ body.bulk-reconnecting .react-flow__handle {
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.35);
 }
 
+/* === SHIFT 剩刀划线断连模式 === */
+/* 触发: SHIFT + 画布空白 / GroupBoxNode 空白 左键拖动
+   - body.cut-mode 期间全局光标变为剩刀(双主题不同颜色)
+   - .cut-marked 表示被划过的 edge, 红色高亮预览
+   - .cut-overlay-svg/cut-overlay-path 为临时轨迹覆盖层 */
+body.cut-mode,
+body.cut-mode * {
+  /* 科技风红色剩刀 */
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='%23EF4444' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='6' cy='6' r='3'/><circle cx='6' cy='18' r='3'/><line x1='20' y1='4' x2='8.12' y2='15.88'/><line x1='14.47' y1='14.48' x2='20' y2='20'/><line x1='8.12' y1='8.12' x2='12' y2='12'/></svg>") 14 14, crosshair !important;
+  user-select: none !important;
+}
+/* 待切 edge 高亮(主路径变红 + 变粗 + 虚线) */
+.react-flow__edge.cut-marked .react-flow__edge-path {
+  stroke: #EF4444 !important;
+  stroke-width: 3.2 !important;
+  stroke-dasharray: 6 4 !important;
+  opacity: 0.9 !important;
+}
+/* 轨迹 SVG overlay (鼠标划过的轨迹, 红色虚线) */
+.cut-overlay-svg .cut-overlay-path {
+  stroke: rgba(239, 68, 68, 0.85);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
 /* === 批量移线 phantom 节点(透明锚点) === */
 .react-flow__node-bulkPhantom {
   width: 1px !important;

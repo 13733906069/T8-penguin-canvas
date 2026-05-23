@@ -1374,6 +1374,132 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     const onBlur = () => document.body.classList.remove('shift-mode');
     window.addEventListener('blur', onBlur);
 
+    // ===== 剩刀划线断连模式 =====
+    // 触发条件: SHIFT + 空白区域(.react-flow__pane 或 GroupBoxNode 内部空白) 左键按下
+    // 交互: mousemove 实时探测鼠标下的 .react-flow__edge 并标记为待切, mouseup 批量删除
+    // 视觉: body.cut-mode (剩刀光标) + 临时 SVG overlay 画出鼠标轨迹 + 待切 edge 高亮
+    let cutSvg: SVGSVGElement | null = null;
+    let cutPath: SVGPolylineElement | null = null;
+    let cutPoints: number[][] = [];
+    let cutSet: Set<string> = new Set();
+    let cutting = false;
+
+    const finishCut = () => {
+      if (!cutting) return;
+      cutting = false;
+      // 提交删除
+      if (cutSet.size > 0) {
+        const idsToCut = new Set(cutSet);
+        setEdges((prev) => prev.filter((ed) => !idsToCut.has(ed.id)));
+      }
+      // 清理 DOM
+      document.body.classList.remove('cut-mode');
+      if (cutSvg && cutSvg.parentNode) cutSvg.parentNode.removeChild(cutSvg);
+      cutSvg = null;
+      cutPath = null;
+      cutPoints = [];
+      // 清除高亮 class
+      document
+        .querySelectorAll('.react-flow__edge.cut-marked')
+        .forEach((el) => el.classList.remove('cut-marked'));
+      cutSet = new Set();
+      window.removeEventListener('mousemove', onCutMove, true);
+      window.removeEventListener('mouseup', onCutUp, true);
+    };
+
+    const onCutMove = (mv: MouseEvent) => {
+      if (!cutting) return;
+      cutPoints.push([mv.clientX, mv.clientY]);
+      // 最多保留近 200 个点, 避免 polyline 过长
+      if (cutPoints.length > 200) cutPoints = cutPoints.slice(-200);
+      if (cutPath) {
+        cutPath.setAttribute('points', cutPoints.map((p) => p.join(',')).join(' '));
+      }
+      // 命中检测: 当前鼠标下所有元素
+      const els = document.elementsFromPoint(mv.clientX, mv.clientY);
+      for (const el of els) {
+        const edgeEl = (el as Element).closest?.('.react-flow__edge') as Element | null;
+        if (!edgeEl) continue;
+        const id = edgeEl.getAttribute('data-id') || '';
+        if (!id) continue;
+        if (!cutSet.has(id)) {
+          cutSet.add(id);
+          edgeEl.classList.add('cut-marked');
+        }
+      }
+    };
+
+    const onCutUp = () => finishCut();
+
+    const onCutMouseDownCapture = (e: MouseEvent) => {
+      if (!e.shiftKey) return;
+      if (e.button !== 0) return;
+      const targetEl = e.target as HTMLElement | null;
+      if (!targetEl) return;
+      // 排除: handle / button / input / textarea / [contenteditable] / edge 本体
+      if (
+        targetEl.closest('.react-flow__handle') ||
+        targetEl.closest('button') ||
+        targetEl.closest('input') ||
+        targetEl.closest('textarea') ||
+        targetEl.closest('[contenteditable="true"]') ||
+        targetEl.closest('.react-flow__edge')
+      ) {
+        return;
+      }
+      // 只在: react-flow pane(画布空白) 或 GroupBoxNode 内部空白 触发
+      const onPane = !!targetEl.closest('.react-flow__pane');
+      const groupNode = targetEl.closest('.react-flow__node-groupBox') as HTMLElement | null;
+      // 如果在普通节点内部(非 GroupBox) 不触发, 避免与节点拖动冲突
+      const inOtherNode =
+        !!targetEl.closest('.react-flow__node') && !groupNode;
+      if (!onPane && !groupNode) return;
+      if (inOtherNode) return;
+
+      // 拦截 ReactFlow 默认 panning
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      cutting = true;
+      cutSet = new Set();
+      cutPoints = [[e.clientX, e.clientY]];
+      document.body.classList.add('cut-mode');
+
+      // 创建临时 SVG overlay (fixed, pointer-events:none)
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
+      svg.style.position = 'fixed';
+      svg.style.left = '0';
+      svg.style.top = '0';
+      svg.style.right = '0';
+      svg.style.bottom = '0';
+      svg.style.width = '100vw';
+      svg.style.height = '100vh';
+      svg.style.pointerEvents = 'none';
+      svg.style.zIndex = '99999';
+      svg.setAttribute('class', 'cut-overlay-svg');
+      const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      polyline.setAttribute('fill', 'none');
+      polyline.setAttribute('points', `${e.clientX},${e.clientY}`);
+      polyline.setAttribute('class', 'cut-overlay-path');
+      svg.appendChild(polyline);
+      document.body.appendChild(svg);
+      cutSvg = svg;
+      cutPath = polyline;
+
+      window.addEventListener('mousemove', onCutMove, true);
+      window.addEventListener('mouseup', onCutUp, true);
+    };
+
+    // SHIFT 释放期间中途中断: 也收尾
+    const onCutKeyUp = (kev: KeyboardEvent) => {
+      if (kev.key === 'Shift' && cutting) finishCut();
+    };
+    window.addEventListener('keyup', onCutKeyUp);
+    window.addEventListener('mousedown', onCutMouseDownCapture, true);
+
     const onMouseDownCapture = (e: MouseEvent) => {
       if (!e.shiftKey) return;
       if (e.button !== 0) return; // 仅左键
@@ -1607,11 +1733,20 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     window.addEventListener('mousedown', onMouseDownCapture, true);
     return () => {
       window.removeEventListener('mousedown', onMouseDownCapture, true);
+      window.removeEventListener('mousedown', onCutMouseDownCapture, true);
+      window.removeEventListener('keyup', onCutKeyUp);
+      window.removeEventListener('mousemove', onCutMove, true);
+      window.removeEventListener('mouseup', onCutUp, true);
       window.removeEventListener('keydown', onShiftDown);
       window.removeEventListener('keyup', onShiftUp);
       window.removeEventListener('blur', onBlur);
       document.body.classList.remove('shift-mode');
       document.body.classList.remove('bulk-reconnecting');
+      document.body.classList.remove('cut-mode');
+      if (cutSvg && cutSvg.parentNode) cutSvg.parentNode.removeChild(cutSvg);
+      document
+        .querySelectorAll('.react-flow__edge.cut-marked')
+        .forEach((el) => el.classList.remove('cut-marked'));
     };
   }, [screenToFlowPosition]);
 
