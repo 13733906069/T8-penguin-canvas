@@ -109,8 +109,34 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       return true;
     });
 
+    // === pickKind / pickIndex 过滤 ===
+    // Canvas 自动创建多个 OutputNode 映射上游多项输出时,
+    // 会在 data 里标记 pickKind ('image'/'video'/'audio') + pickIndex,
+    // 则本节点只保留对应 kind 的第 pickIndex 项, 避免多图场景下
+    // 所有 OutputNode 都重复显示全部输出。
+    // 手动连连的 OutputNode 不带 pickKind => 保留原语义 (显示上游全部).
+    const pickKind: string | undefined = d.pickKind;
+    const pickIndex: number | undefined =
+      typeof d.pickIndex === 'number' ? d.pickIndex : undefined;
+    if (pickKind && typeof pickIndex === 'number') {
+      if (pickKind === 'image') {
+        out.images = out.images[pickIndex] ? [out.images[pickIndex]] : [];
+        out.videos = [];
+        out.audios = [];
+        // 图像项模式下还保留文本 (提示词) 以便下游可读
+      } else if (pickKind === 'video') {
+        out.videos = out.videos[pickIndex] ? [out.videos[pickIndex]] : [];
+        out.images = [];
+        out.audios = [];
+      } else if (pickKind === 'audio') {
+        out.audios = out.audios[pickIndex] ? [out.audios[pickIndex]] : [];
+        out.images = [];
+        out.videos = [];
+      }
+    }
+
     return out;
-  }, [upstreamNodes]);
+  }, [upstreamNodes, d.pickKind, d.pickIndex]);
 
   // 文本编辑
   const overrideText: string = typeof d.outputText === 'string' ? d.outputText : '';

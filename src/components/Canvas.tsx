@@ -1661,23 +1661,25 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       if (!t || SKIP_TYPES.has(t)) continue;
       const d = (n.data as any) || {};
 
-      // 提取输出项 (去重 + 过滤)
+      // 提取输出项 (去重 + 过滤 + 同类型内序号)
       const seen = new Set<string>();
-      const items: Array<{ kind: 'image' | 'video' | 'audio'; url: string }> = [];
+      const imgs: string[] = [];
+      const vids: string[] = [];
+      const auds: string[] = [];
       const pushImg = (u: any) => {
         if (typeof u !== 'string' || !u || seen.has(u)) return;
         seen.add(u);
-        items.push({ kind: 'image', url: u });
+        imgs.push(u);
       };
       const pushVid = (u: any) => {
         if (typeof u !== 'string' || !u || seen.has(u)) return;
         seen.add(u);
-        items.push({ kind: 'video', url: u });
+        vids.push(u);
       };
       const pushAud = (u: any) => {
         if (typeof u !== 'string' || !u || seen.has(u)) return;
         seen.add(u);
-        items.push({ kind: 'audio', url: u });
+        auds.push(u);
       };
       pushImg(d.imageUrl);
       if (Array.isArray(d.imageUrls)) d.imageUrls.forEach(pushImg);
@@ -1685,6 +1687,12 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       if (Array.isArray(d.generatedImages)) d.generatedImages.forEach(pushImg);
       pushVid(d.videoUrl);
       pushAud(d.audioUrl);
+      // 合成 items: 靠 kindIndex 让下游 OutputNode 能准确拾取对应索引的那一项
+      const items: Array<{ kind: 'image' | 'video' | 'audio'; url: string; kindIndex: number }> = [
+        ...imgs.map((url, i) => ({ kind: 'image' as const, url, kindIndex: i })),
+        ...vids.map((url, i) => ({ kind: 'video' as const, url, kindIndex: i })),
+        ...auds.map((url, i) => ({ kind: 'audio' as const, url, kindIndex: i })),
+      ];
       if (items.length === 0) continue;
 
       const sig = items.map((x) => `${x.kind}:${x.url}`).join('|');
@@ -1707,6 +1715,8 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
 
       for (let i = 0; i < needCount; i++) {
         const offsetIndex = existingOutputCount + i;
+        const item = items[offsetIndex];
+        if (!item) break; // 安全走位: items 不够了就不再创建
         const newId = `output-auto-${n.id}-${Date.now()}-${offsetIndex}-${Math.random()
           .toString(36)
           .slice(2, 6)}`;
@@ -1717,7 +1727,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
             x: baseX,
             y: baseY + offsetIndex * 360,
           },
-          data: {},
+          // pickKind/pickIndex: 下游 OutputNode 只拾上游对应 kind 的第 kindIndex 项,
+          // 避免多图场景下所有 OutputNode 都重复显示全部输出
+          data: { pickKind: item.kind, pickIndex: item.kindIndex },
           selected: false,
         } as Node);
         toAddEdges.push({
