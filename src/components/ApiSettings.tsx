@@ -149,11 +149,23 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     ? 'px-btn px-btn--icon px-btn--ghost'
     : `p-2 rounded-md ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`;
 
+  // 防御性脱敏：始终只显示尾4位（与之前 `****9zVR` 一致），
+  // 即使后端意外返回明文也不会暴露完整 Key
+  const toMaskedDisplay = (v?: string): string => {
+    if (!v) return '';
+    const s = String(v);
+    // 后端已脱敏（****xxxx 形式）直接原样
+    if (/^\*{2,}/.test(s)) return s;
+    if (s.length <= 4) return '****';
+    return '****' + s.slice(-4);
+  };
+
   // 渲染单个 Key 表项
   const renderKey = (spec: KeySpec, opts: { fallbackHint?: boolean; baseUrlNote?: string }) => {
     const f = spec.field;
-    const masked = (settings as any)[f] as string | undefined;
-    const hasSaved = !!masked;
+    const rawVal = (settings as any)[f] as string | undefined;
+    const hasSaved = !!rawVal;
+    const maskedDisplay = toMaskedDisplay(rawVal);
     return (
       <div key={f} className="space-y-2">
         <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
@@ -162,7 +174,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           <span className={`text-[11px] font-normal ${hintCls}`}>{spec.desc}</span>
           {hasSaved && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              ✓ 已保存 {masked}
+              ✓ 已保存 {maskedDisplay}
             </span>
           )}
           {opts.fallbackHint && !hasSaved && (
