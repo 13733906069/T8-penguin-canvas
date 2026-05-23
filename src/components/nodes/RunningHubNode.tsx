@@ -9,6 +9,7 @@ import { useUpstreamMaterials } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import { useThemeStore } from '../../stores/theme';
+import { logBus } from '../../stores/logs';
 
 /**
  * RunningHubNode - 主工作流节点
@@ -168,6 +169,9 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   const orderedImages = useOrderedMaterials(upstream.images, materialOrder);
   const orderedVideos = useOrderedMaterials(upstream.videos, materialOrder);
   const orderedAudios = useOrderedMaterials(upstream.audios, materialOrder);
+  // 日志来源标识：供 TerminalPanel 面板展示 [src] 前缀。
+  // 与 VideoNode/SeedanceNode 保持一致，不同节点类型使用不同前缀 rh / rh-wallet。
+  const src = `${type === 'rhWallet' ? 'rh-wallet' : 'rh'}:${id}`;
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
   const { style, theme } = useThemeStore();
   const isPixel = style === 'pixel';
@@ -335,6 +339,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
         if (v.includes('\n')) {
           const first = v.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0] || '';
           console.log('[RH/resolve] strip multiline', fieldName, '→ keep first only');
+          logBus.warn(`多行 fieldValue 检测到1-${fieldName}，仅保留首行`, src);
           v = first;
         }
         // 最后一道兼底：如果当前值看起来不是 url（可能是 RH 内部默认 hash 或用户手填 fileName），
@@ -353,6 +358,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
             const upUrl = findUpstreamUrl(vt as any);
             if (upUrl) {
               console.log('[RH/resolve] override field', fieldName, 'from', v || '(empty)', '→ upstream', upUrl);
+              logBus.debug(`字段 ${fieldName} 从上游覆写 → ${upUrl}`, src);
               v = upUrl;
             }
           }
@@ -396,6 +402,10 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       try {
         const r = await queryRh(tid, useWallet);
         console.log('[RH/poll] taskId=', tid, 'status=', r.status, 'code=', r.code, 'urls=', r.urls?.length || 0);
+        // 轮询进度写入面板：每 30s 一条 debug，避免刷屏
+        if (elapsed % 6 === 0) {
+          logBus.debug(`[${elapsed * 5}s] status=${r.status} code=${r.code} urls=${r.urls?.length || 0}`, src);
+        }
         if (r.status === 'SUCCESS') {
           stopPoll();
           // 按后缀分流到 imageUrl/videoUrl/audioUrl，避免视频 url 被填到 imageUrl 导致
@@ -414,6 +424,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
           // 都不匹配时退回原逻辑（首个当 imageUrl）以保证向后兼容
           if (!firstImg && !firstVid && !firstAud && list[0]) patch.imageUrl = list[0];
           console.log('[RH/done] taskId=', tid, 'urls=', list);
+          logBus.success(`任务完成 · ${list.length} 个输出 → ${list[0] || ''}`, src);
           update(patch);
         } else if (r.status === 'FAILED') {
           stopPoll();
@@ -434,11 +445,13 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
           }
           update({ status: 'error', error: reason });
           setError(reason);
+          logBus.error(`生成失败: ${reason}`, src);
         } else {
           update({ status: 'polling', rhCode: r.code });
         }
       } catch (e: any) {
         console.warn('RH 轮询出错', e?.message);
+        logBus.warn(`轮询出错: ${e?.message || e}`, src);
       }
     }, POLL_INT);
   };
@@ -462,6 +475,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       try {
         console.log('[RH/fetchInfo] webappId=', webappId, 'nodeInfoList=', JSON.parse(JSON.stringify(list)));
       } catch {}
+      logBus.info(`拉取应用信息 · webappId=${webappId} · ${list.length} 个字段`, src);
       const next: Record<string, { value: string; sourceFromUpstream?: boolean }> = { ...paramValues };
       for (const it of list) {
         const k = paramKey(it.nodeId, it.fieldName);
@@ -482,6 +496,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       return { list, paramValues: next };
     } catch (e: any) {
       setError(e?.message || '查询失败');
+      logBus.error(`拉取应用信息失败: ${e?.message || e}`, src);
       return null;
     } finally {
       setFetchingInfo(false);
@@ -537,6 +552,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       // 提交前：把媒体类 url 转成 RH 内部 fileName
       const nodeInfoList = await resolveNodeInfoList(rawList);
       console.log('[RH/submit] webappId=', webappId, 'nodeInfoList=', JSON.parse(JSON.stringify(nodeInfoList)));
+      logBus.info(`提交任务 · webappId=${webappId} · ${nodeInfoList.length} 个字段${useWallet ? ' · 钱包模式' : ''}`, src);
       const r = await submitRh({
         webappId,
         nodeInfoList,
@@ -544,10 +560,12 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
         useWallet,
       });
       console.log('[RH/submit] taskId=', r.taskId);
+      logBus.success(`异步任务已提交 taskId=${r.taskId} 进入轮询…`, src);
       update({ status: 'polling', taskId: r.taskId });
       startPolling(r.taskId);
     } catch (e: any) {
       console.error('[RH/submit] error:', e);
+      logBus.error(`提交失败: ${e?.message || e}`, src);
       setError(e?.message || '提交失败');
       update({ status: 'error', error: e?.message });
     }
@@ -562,6 +580,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   const handleStop = () => {
     stopPoll();
     update({ status: 'idle' });
+    logBus.warn('用户主动停止', src);
   };
 
   const isBusy = status === 'submitting' || status === 'polling';
@@ -572,7 +591,12 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       className={`relative rounded-xl border-2 transition-all w-[340px] ${
         selected ? `${accent.ring} shadow-2xl ${accent.shadow}` : 'border-white/15 hover:border-white/30'
       }`}
-      style={{ background: 'rgba(20,20,22,.92)', backdropFilter: 'blur(8px)' }}
+      style={{
+        // 像素风：不透明背景 + 取消 backdrop blur，避免亚像素渲染导致节点内文字发虚
+        background: isPixel ? 'var(--px-surface)' : 'rgba(20,20,22,.92)',
+        backdropFilter: isPixel ? 'none' : 'blur(8px)',
+        color: isPixel ? 'var(--px-ink)' : undefined,
+      }}
     >
       <Handle type="target" position={Position.Left} className={`${accent.handle} !border-0`} />
       <Handle type="source" position={Position.Right} className={`${accent.handle} !border-0`} />

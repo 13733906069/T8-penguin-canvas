@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import { Plus, Settings2, Trash2, RefreshCw } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
+import { useThemeStore } from '../../stores/theme';
 
 /**
  * RhConfigNode 条目
@@ -54,6 +55,8 @@ const RhConfigNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const { getEdges, getNodes } = useReactFlow();
   const d = data as any;
+  const { style } = useThemeStore();
+  const isPixel = style === 'pixel';
   const [list, setList] = useState<NodeInfo[]>(() => {
     const arr = d?.nodeInfoList;
     if (Array.isArray(arr)) return arr.map((x: any) => ({
@@ -120,7 +123,12 @@ const RhConfigNode = ({ id, data, selected }: NodeProps) => {
       className={`relative rounded-xl border-2 transition-all w-[320px] ${
         selected ? 'border-cyan-400 shadow-2xl shadow-cyan-500/20' : 'border-white/15 hover:border-white/30'
       }`}
-      style={{ background: 'rgba(20,20,22,.92)', backdropFilter: 'blur(8px)' }}
+      style={{
+        // 像素风：不透明背景 + 取消 backdrop blur，避免亚像素渲染导致文字发虚
+        background: isPixel ? 'var(--px-surface)' : 'rgba(20,20,22,.92)',
+        backdropFilter: isPixel ? 'none' : 'blur(8px)',
+        color: isPixel ? 'var(--px-ink)' : undefined,
+      }}
     >
       {/* 左侧 target Handle: 接受上游 image/video/audio/upload 节点 */}
       <Handle type="target" position={Position.Left} className="!bg-cyan-400 !border-0" />

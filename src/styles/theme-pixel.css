@@ -103,6 +103,21 @@ html[data-theme-style="pixel"] ::selection {
 }
 
 /* ===========================================
+ * 像素风全局兜底：所有节点容器禁用 backdrop-filter blur
+ * -------------------------------------------
+ * 多数节点容器使用了 `style={{ backdropFilter: 'blur(8px)' }}`（inline 样式），
+ * 在像素风（半透明背景 + 模糊滤镜 + GPU 子像素渲染）下会让节点内文字看起来发虚 / 模糊。
+ * 此处用 `!important` 全局覆盖 inline style，无需逐个节点改 tsx 文件。
+ * 影响范围：所有 react-flow 节点 + 行内带 backdrop-filter 的容器；不影响科技风。
+ * =========================================== */
+html[data-theme-style="pixel"] .react-flow__node,
+html[data-theme-style="pixel"] .react-flow__node > div,
+html[data-theme-style="pixel"] .react-flow__node * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ===========================================
  * 实用类(在组件中通过 className="px-*" 启用)
  * =========================================== */
 
