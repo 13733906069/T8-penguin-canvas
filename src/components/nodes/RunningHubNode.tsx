@@ -492,8 +492,12 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
         </div>
 
         {/* 参数表单：拉取 nodeInfoList 后逐条展开 */}
+        {/* nowheel: 阻止 xyflow 把滚轮事件接管成画布缩放，让节点内列表可滚动；nodrag: 鼠标按下不触发节点拖动 */}
         {nodeInfoList.length > 0 && (
-          <div className={`rounded border ${accent.subBg} p-2 space-y-2 max-h-[420px] overflow-auto`}>
+          <div
+            className={`nowheel nodrag rounded border ${accent.subBg} p-2 space-y-2 max-h-[420px] overflow-auto overscroll-contain`}
+            onWheelCapture={(e) => e.stopPropagation()}
+          >
             <div className={`text-[10px] ${accent.sub} flex items-center justify-between`}>
               <span>参数 ({nodeInfoList.length})</span>
               <span className="text-white/30">点击字段可编辑</span>
