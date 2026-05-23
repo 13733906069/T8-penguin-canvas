@@ -1,7 +1,9 @@
 # T8-penguin-canvas · skill.md
 
 > 项目能力 / 接口 / 文件用途速查手册。
-> 版本：v1.4.0 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+> 版本：v1.5.0 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+>
+> v1.5.0 增量：跨节点素材拖拽（Ctrl+拖 图/视/音/文）· 拦截 ReactFlow Pane onPointerDownCapture· 全节点 source/target 覆盖（33）
 >
 > v1.4.0 增量：输出图片双击编辑·裁剪+宫格切分+自定义切线+gap 边缘去缝(32)
 >
@@ -2703,6 +2705,254 @@ if (Array.isArray(d.directImageUrls)) {
 - 弹窗组件：[src/components/nodes/ImageEditModal.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/ImageEditModal.tsx)
 - 节点接入：[src/components/nodes/OutputNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/OutputNode.tsx)
 - 样式：[src/styles/index.css](file:///e:/PenguinPravite/T8-penguin-canvas/src/styles/index.css) + [src/styles/theme-pixel.css](file:///e:/PenguinPravite/T8-penguin-canvas/src/styles/theme-pixel.css)
+
+---
+
+## 33. 跨节点素材拖拽（Ctrl+拖 图/视/音/文）
+
+需求：在画布上任意节点的图片/视频/音频缩略图上按住 Ctrl + 鼠标左键拖拽，可跨节点将该素材“送”到另一个节点。同时 **不能破坏** 原有 Ctrl 在画布/组空白处的框选多选逻辑。
+
+### 33.1 架构总览
+
+```
+±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
+ source: 节点里有 [data-drag-source]
+        元素（图/视/音 thumbnail）
+         |
+         |  Ctrl + 鼠标左键按下
+         v
+ MaterialDragOverlay
+   document.addEventListener('pointerdown', fn, capture=true)
+   document.addEventListener('mousedown',   fn, capture=true)
+   ├─ elementsFromPoint(x,y) 穿透 SelectionPane 查找 [data-drag-source]
+   ├─ e.preventDefault() + stopPropagation() + stopImmediatePropagation()
+   └─ useDragMaterialStore.start(payload, x, y)
+         |
+         | mousemove 全局监听
+         v
+   elementsFromPoint(x,y) 查 [data-drop-kinds]
+   → store.move(x, y, hoverTargetId, accepts)
+   → 幽灵缩略图 createPortal(body) 跟随鼠标
+         |
+         | mouseup
+         v
+   window.dispatchEvent(new CustomEvent(MATERIAL_DROP_EVENT, { targetNodeId, payload }))
+         |
+         v
+ target: 节点 useMaterialDropTarget({ id, accepts, onDrop })
+   ├─ 返回 dropProps {data-drop-kinds, data-node-id}
+   ├─ isAccepting=true 时节点 border-emerald + 双层绿色光晕
+   └─ 由 onDrop(payload) 实际收下素材到节点 data
+```
+
+### 33.2 关键踩坑：ReactFlow Pane onPointerDownCapture
+
+ReactFlow v12 在 [Pane](file:///e:/PenguinPravite/T8-penguin-canvas/node_modules/%40xyflow/react/dist/esm/index.mjs) 上使用 React 合成事件 `onPointerDownCapture` 启动 userSelection：
+
+```js
+// node_modules/@xyflow/react/dist/esm/index.mjs L1559
+onPointerDownCapture: isSelectionEnabled ? onPointerDownCapture : undefined
+```
+
+同时浏览器事件顺序：**`pointerdown` → `mousedown`**。
+
+这导致两个现象：
+
+1. 节点内部的 React `onMouseDown` 是 bubble 阶段事件，理论上能拿到，但“userSelection”在 pointerdown 阶段已启动。
+2. 仅拦截 `mousedown` 是太晚的：pointerdown 已经让 SelectionPane 进入 selection，“只看到框选，看不到拖拽”。
+
+唯一可靠的拦截点是 **document 原生 capture 阶段上同时拦 pointerdown 与 mousedown**（`document.addEventListener('pointerdown', fn, true)`），它会 **先于 React root 上的 capture 事件** 触发，然后 `e.stopImmediatePropagation()` 阻止 React 合成事件分发。
+
+```ts
+// src/components/MaterialDragOverlay.tsx
+useEffect(() => {
+  const handleDown = (e: PointerEvent | MouseEvent): boolean => {
+    if (e.button !== 0) return false;
+    if (!(e.ctrlKey || e.metaKey)) return false;
+    if ('isPrimary' in e && (e as PointerEvent).isPrimary === false) return false;
+    if (useDragMaterialStore.getState().dragging) return false;
+
+    // 穿透 SelectionPane 覆盖层
+    const stack = document.elementsFromPoint(e.clientX, e.clientY);
+    let dragEl: HTMLElement | null = null;
+    for (const el of stack) {
+      if (!(el instanceof HTMLElement)) continue;
+      if (el.hasAttribute('data-drag-source')) { dragEl = el; break; }
+      const closest = el.closest('[data-drag-source]') as HTMLElement | null;
+      if (closest) { dragEl = closest; break; }
+    }
+    if (!dragEl) return false; // 未命中素材→放行，保留原有 Ctrl 框选
+
+    const kind = dragEl.getAttribute('data-drag-kind') as MaterialKind | null;
+    if (!kind) return false;
+    const url = dragEl.getAttribute('data-drag-url') || undefined;
+    const text = dragEl.getAttribute('data-drag-text') || undefined;
+    const sourceNodeId = dragEl.getAttribute('data-drag-node-id') || undefined;
+    const previewUrl = dragEl.getAttribute('data-drag-preview') || url;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    if (!useDragMaterialStore.getState().dragging) {
+      start({ kind, url, text, sourceNodeId, previewUrl }, e.clientX, e.clientY);
+    }
+    return true;
+  };
+
+  const onPointerDown = (e: PointerEvent) => { handleDown(e); };
+  const onMouseDown   = (e: MouseEvent)   => { handleDown(e); };
+  document.addEventListener('pointerdown', onPointerDown, true);
+  document.addEventListener('mousedown',   onMouseDown,   true);
+  return () => {
+    document.removeEventListener('pointerdown', onPointerDown, true);
+    document.removeEventListener('mousedown',   onMouseDown,   true);
+  };
+}, [start]);
+```
+
+### 33.3 为什么 mousemove 命中检测也要用 elementsFromPoint
+
+拖拽期间用户 Ctrl 仍然按着，所以 SelectionPane 仍会覆盖在节点之上。`elementFromPoint` 只返回顶层元素（= SelectionPane），拿不到下面的 target 节点。必须用 `elementsFromPoint` 拿到堆叠列表，逐个检查 `closest('[data-drop-kinds]')`。
+
+```ts
+const onMove = (e: MouseEvent) => {
+  const stack = document.elementsFromPoint(e.clientX, e.clientY);
+  let dropEl: HTMLElement | null = null;
+  for (const el of stack) {
+    if (!(el instanceof HTMLElement)) continue;
+    if (el.hasAttribute('data-drop-kinds')) { dropEl = el; break; }
+    const closest = el.closest('[data-drop-kinds]') as HTMLElement | null;
+    if (closest) { dropEl = closest; break; }
+  }
+  // ...
+};
+```
+
+### 33.4 store / hooks / overlay
+
+| 文件 | 职责 |
+|---|---|
+| [src/stores/dragMaterial.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/stores/dragMaterial.ts) | zustand store：`{ dragging, payload, clientX, clientY, hoverTargetId, hoverAccepts }` + `start/move/end`；导出 `MATERIAL_DROP_EVENT` (CustomEvent name) + 类型 `MaterialKind = 'image'\|'video'\|'audio'\|'text'` |
+| [src/hooks/useMaterialDragSource.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/hooks/useMaterialDragSource.ts) | 选用。主路径仅靠 `data-drag-*` 属性 + capture 拦截启动拖拽 |
+| [src/hooks/useMaterialDropTarget.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/hooks/useMaterialDropTarget.ts) | 节点 target 注册：返回 `dropProps {data-drop-kinds, data-node-id}` + `isAccepting`；中部监听 MATERIAL_DROP_EVENT、仅在 `targetNodeId === id` 时调 `onDrop(payload)` |
+| [src/components/MaterialDragOverlay.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/MaterialDragOverlay.tsx) | 全局拖拽幽灵浮层 + 拦截启动 + 命中检测 + ESC 取消；createPortal(document.body) 不受 ReactFlow transform 影响 |
+
+### 33.5 完整节点 source/target 能力表
+
+| 节点 | 作为 source （可拖出） | 作为 target （可拖入） | 拖入后写入字段 |
+|---|---|---|---|
+| OutputNode | 收集到的 image/video/audio | 全部：image/video/audio/text | `directImageUrl/directVideoUrl/directAudioUrl/directText` |
+| UploadNode | 上传后的 image/video/audio | 不接收 | — |
+| ImageNode | 输出 imageUrl | image → referenceImages；text → prompt | `data.referenceImages` / `data.prompt` |
+| VideoNode | 输出 videoUrl | image → localRefImages；text → prompt | `data.localRefImages[]` / `data.prompt` |
+| AudioNode | 领 audioUrl（各 track） | audio → localRefAudio；text → prompt | `data.localRefAudio` / `data.prompt` |
+| LLMNode | 历史与当前 picked 图 | image → pickedFiles；text → prompt | `pickedFiles[]` / `data.prompt` |
+| SeedanceNode | 输出 videoUrl | image/video/audio/text 全支持 | `localRefImages/Videos/Audios` / `data.prompt` |
+
+### 33.6 source 素材元素标记 (必填)
+
+所有缩略图 / 播放器都要加 `data-drag-*` 属性，供 document capture 拦截使用：
+
+```tsx
+<img
+  src={imageUrl}
+  data-drag-source
+  data-drag-kind="image"          // 'image' | 'video' | 'audio' | 'text'
+  data-drag-url={imageUrl}
+  data-drag-preview={imageUrl}     // 可选，缝略默认 = data-drag-url
+  data-drag-node-id={id}
+  onMouseDown={(e) => beginMaterialDrag(e, { kind: 'image', url: imageUrl, sourceNodeId: id, previewUrl: imageUrl })}
+  title="Ctrl+拖拽可送到其他节点"
+/>
+```
+
+> **注意**：React 中 `<img data-drag-source />` 会被渲染为 `data-drag-source=""`，`hasAttribute('data-drag-source')` 返回 true。
+
+### 33.7 target 节点接入样例
+
+```ts
+// VideoNode
+const handleDrop = (payload: MaterialPayload) => {
+  if (payload.kind === 'image' && payload.url) {
+    update({ localRefImages: dedupePush(localRefImages, payload.url) });
+  } else if (payload.kind === 'text' && typeof payload.text === 'string') {
+    update({ prompt: payload.text });
+  }
+};
+const { dropProps, isAccepting } = useMaterialDropTarget({
+  id,
+  accepts: ['image', 'text'],
+  onDrop: handleDrop,
+});
+
+// 根 div 上面:
+<div
+  className={`... ${isAccepting ? 'border-emerald-400' : 'border-white/10'}`}
+  style={{
+    boxShadow: isAccepting
+      ? '0 0 0 2px rgba(52,211,153,.45), 0 12px 30px rgba(52,211,153,.18)'
+      : undefined,
+  }}
+  {...dropProps}
+>
+  ...
+</div>
+```
+
+### 33.8 本地拖入字段与 collectUpstream 合并去重
+
+为让拖入的素材**在生成时也起作用**，Video/Seedance/Audio 节点增加 d.localRefXxx 字段并合并进 collectUpstream：
+
+```ts
+// VideoNode
+const localRefImages: string[] = Array.isArray(d?.localRefImages) ? d.localRefImages : [];
+const collectUpstream = () => {
+  const upImageUrls = orderedImages.map((m) => m.url).filter(Boolean);
+  const merged: string[] = [];
+  for (const u of [...upImageUrls, ...localRefImages]) {
+    if (u && merged.indexOf(u) === -1) merged.push(u);
+  }
+  return { prompt, imageUrls: merged };
+};
+```
+
+SeedanceNode 同时有 image / video / audio 三类本地拖入字段 + dedupe 合并。
+
+### 33.9 零破坏保证
+
+- 未点中 `data-drag-source` 时拦截函数 `return false` 放行，原有逻辑都保留：
+  - 画布/组空白处 Ctrl+拖动 → ReactFlow 原框选多节点
+  - Ctrl+Shift+点击 → 叠加多选
+  - 右键菜单 / 组执行 / GroupBox 拖动联动 / runBus / Handle 连线 / 双击编辑 都不受影响
+- isAccepting 动态边框仅在 `dragging && hoverTargetId === id` 时出现，不会干扰默认 selected/non-selected 状态。
+
+### 33.10 验证清单
+
+- [ ] 按住 Ctrl + 左键拖动任何节点上的图片/视频/音频缩略图 → 出现跟随光标的幽灵缩略图（不出选框）
+- [ ] 拖入兼容节点时该节点 border 变绿 + 双层绿光晕
+- [ ] mouseup 后拖入字段被写入节点 data（刷新页面后仍持久化）
+- [ ] ESC 取消拖拽
+- [ ] 拖到不兼容节点时不会写入
+- [ ] 拖到画布空白处不会变为原框选
+- [ ] **仍可以在画布/组空白处 Ctrl+拖动启动 ReactFlow 原框选多选**（零破坏）
+- [ ] Ctrl+Shift+点击叠加多选仍然有效
+- [ ] 拖入后在节点里可以重新 Ctrl+拖出去（本地素材本身也是 source）
+
+### 33.11 提交记录
+
+- `feat(canvas): add cross-node material drag-drop (Ctrl+drag image/video/audio/text)` · commit `4196415`·12 files·+842 -35
+- `fix(canvas): intercept Ctrl+mousedown via document capture so SelectionPane no longer swallows material drag` · commit `4dc24aa`·8 files·+147 -2
+- `fix(canvas): intercept pointerdown (not just mousedown) to win over ReactFlow Pane onPointerDownCapture` · commit `f962f59`·1 file·+33 -19
+
+### 33.12 关键文件清单
+
+- store：[src/stores/dragMaterial.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/stores/dragMaterial.ts)
+- hooks：[src/hooks/useMaterialDragSource.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/hooks/useMaterialDragSource.ts) + [src/hooks/useMaterialDropTarget.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/hooks/useMaterialDropTarget.ts)
+- overlay：[src/components/MaterialDragOverlay.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/MaterialDragOverlay.tsx)
+- 节点接入：[OutputNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/OutputNode.tsx) / [UploadNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/UploadNode.tsx) / [ImageNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/ImageNode.tsx) / [VideoNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/VideoNode.tsx) / [AudioNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/AudioNode.tsx) / [LLMNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/LLMNode.tsx) / [SeedanceNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/SeedanceNode.tsx)
+- 画布挂载：[src/components/Canvas.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx)（`<MaterialDragOverlay />` 节点树外渲染）
+
 
 ---
 
