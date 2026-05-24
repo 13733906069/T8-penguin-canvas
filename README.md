@@ -1,23 +1,30 @@
-# 🐧 T8-penguin-canvas
+# 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
-> AI 节点画布 · Web 端轻量化重构版 ｜ v1.0.0
+> AI 节点画布工作流工具 · Web + Electron 桌面端｜v1.2.2
 >
-> 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+> GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
- **纯浏览器节点画布** 的核心：拖拽节点、连线、生成图像/视频/音频、调用 LLM、串接 RunningHub 工作流，并叠加批量执行与智能对齐能力。
+一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、双主题与终端日志。Web 浏览器即可使用，亦可一键打包为 Windows 桌面端（NSIS 安装包）。
+
+![status](https://img.shields.io/badge/version-v1.2.2-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
 ## ✨ 功能亮点
 
-- 🎨 **24 个节点** 全部业务化：文本 / 图像 / 视频 / 音频 / LLM / RunningHub / 画板 / 浏览器 / 抽帧 / 工具箱 …
-- 🧩 **xyflow 12** 画布引擎：缩放、平移、连线、迷你地图、控制条
-- 🔑 **三套独立 API Key**：贞贞工坊 / RunningHub / LLM 额度隔离，后端代理隐藏 Key
-- 🚀 **一键批量运行**：拓扑排序串行触发可执行节点，进度可视化、可中断
-- 🧲 **智能对齐辅助线 + snap-to-grid**：拖动时自动检测同列/同行/居中对齐并弱吸附
-- ⏪ **Undo / Redo / 复制粘贴 / 导入导出 / 工作流模板**：完整画布交互
-- 🌗 浅色 / 深色主题双模
-- 🛡️ **防空数据覆盖**：双层防护（前端 + 后端）保护已保存画布
+- 🎨 **27 个业务节点**，覆盖文本 / 图像 / 视频 / 音频 / LLM / RunningHub / 工具 / 辅助 / 工具箱 / 输出预览 / 上传素材
+- 🧩 **xyflow 12** 画布引擎：缩放、平移、连线、迷你地图、控制条、SPA 兜底
+- 🔑 **四套独立 API Key 隔离**：贞贞工坊 / RunningHub / RH 钱包应用 / LLM —— 全部经后端代理脱敏，前端永远拿不到明文
+- 🚀 **一键批量运行**：Kahn 拓扑排序串行触发可执行节点，进度可视化，支持中断
+- 🧲 **智能对齐辅助线 + snap-to-grid**：拖动时检测同列 / 同行 / 居中对齐并弱吸附
+- 📦 **GroupBox 打组**：框选 ≥2 节点一键套色框容器，可拖拽联动、整体执行、12 色调色板
+- 🖱️ **右键画布快速添加节点**：菜单列出 7 个高频节点（upload / text / image / video / seedance / audio / llm）
+- 🎯 **框选自动菜单**：≥2 节点框选后自动弹出操作面板（组执行 / 复制 / 快复制 / 删除 / 打组）
+- ⏪ **Undo / Redo / 复制粘贴 / 导入导出 / 工作流模板** 完整画布交互
+- 🌗 **双主题双模式**：科技风（默认） + 像素糖果风，浅色 / 深色 4 种组合任意切换
+- 🖥️ **终端日志面板**：底部抽屉式实时日志，对齐主项目 logBus 协议
+- 🛡️ **防空数据覆盖**：双层防护（前端 + 后端）保护已保存画布数据
+- 📦 **一键 Electron 打包**：bytenode + T8ENC1 加密后端 + NSIS 安装包，开箱即用桌面端
 
 ---
 
@@ -25,50 +32,74 @@
 
 ### 环境要求
 
-- Node.js 18+
+- **Node.js ≥ 18**
 - Windows / macOS / Linux 浏览器（推荐 Chromium 内核）
+- （可选）Windows 系统用于 Electron 桌面端打包
 
 ### 安装
 
-```powershell
+```bash
 git clone https://github.com/T8mars/T8-penguin-canvas.git
 cd T8-penguin-canvas
 npm install
-cd backend; npm install; cd ..
+cd backend && npm install && cd ..
 ```
 
 ### 启动开发模式
 
-```powershell
+```bash
 npm run dev
 ```
 
 `concurrently` 会同时拉起：
 
-- 后端：`http://127.0.0.1:18766`
-- 前端：`http://127.0.0.1:11422`
+- 后端：<http://127.0.0.1:18766>
+- 前端：<http://127.0.0.1:11422>
 
-打开浏览器访问前端地址即可。Windows 下也可以双击 `start-dev.bat`。
+浏览器自动打开前端地址即可使用。Windows 下也可以双击 `start-dev.bat` 一键启动。
 
 ### 配置 API Key
 
-首次进入点击右上角 ⚙️ 打开设置弹窗，填入：
+首次进入点击右上角 ⚙️ 打开设置弹窗，按需填入：
 
-| Key | 用途 | BaseUrl |
+| Key | 用途 | 默认 BaseUrl |
 |---|---|---|
-| 贞贞工坊 API Key | image / video / audio | `https://ai.t8star.org`（固定） |
-| LLM 独立 API Key | llm / vision（额度隔离） | `https://ai.t8star.org`（固定） |
-| RunningHub API Key | runninghub 工作流 | `https://www.runninghub.cn`（可调） |
+| 贞贞工坊 API Key | image / video / audio | `https://ai.t8star.org` |
+| LLM 独立 API Key | llm / vision（额度隔离） | OpenAI 兼容协议任意上游 |
+| RunningHub API Key | RunningHub 个人工作流 | `https://www.runninghub.cn` |
+| RH 钱包应用 APIKEY | RH 企业级共享 APIKEY（钱包应用专用） | `https://www.runninghub.cn` |
 
-Key 保存到 `data/settings.json`；GET 接口仅返回 `****xxxx` 脱敏，明文仅供后端代理调用。
+Key 保存到 `data/settings.json`；前端 GET 接口仅返回 `****xxxx` 脱敏值，明文仅供后端代理本地使用，永不泄露。
+
+> **不需要全部配置**：只填需要使用的那一类即可，其它节点会在运行时友好提示「未配置 XXX API Key」。
+
+---
+
+## 🖥️ Electron 桌面端打包
+
+```bash
+# 一键出 Windows NSIS 安装包
+npm run dist
+```
+
+产物：`dist_electron/T8-PenguinCanvas-Setup-<version>.exe`（约 87 MB）
+
+打包链路：`vite build` → `bytenode + T8ENC1` 加密后端为 `.t8c` 字节码 → `electron-builder --win --x64` 出 NSIS 安装包 → `_post_build.cjs` 自动校验 7 个 .t8c + 前端 dist 完整性。
+
+详细 SOP 与三处历史踩坑修复记录见 [`skill.md` §47](./skill.md)。
 
 ---
 
 ## 🧱 技术栈
 
-- **前端**：React 19 · TypeScript · Vite 6 · Tailwind CSS 3 · @xyflow/react 12 · zustand 5 · lucide-react
-- **后端**：Node.js · Express · sharp（图像处理）· multer（上传）
-- **AI 上游**：贞贞工坊（图像/视频/Suno）· RunningHub · LLM(OpenAI 兼容协议)
+| 层 | 技术 |
+|---|---|
+| 前端框架 | React 19 · TypeScript 5 · Vite 6 |
+| 样式 | Tailwind CSS 3 · CSS Modules · 双主题（科技风 / 像素糖果风） |
+| 画布引擎 | @xyflow/react 12 · zustand 5 · lucide-react |
+| 后端 | Node.js · Express · sharp（图像处理） · multer（上传） |
+| 桌面端 | Electron 33 · electron-builder 25 · bytenode 1.5 · T8ENC1（自研 AES-256-CBC 二次加密） |
+| AI 上游 | 贞贞工坊（图像/视频/Suno）· RunningHub · 任意 OpenAI 兼容 LLM |
 
 ---
 
@@ -78,27 +109,36 @@ Key 保存到 `data/settings.json`；GET 接口仅返回 `****xxxx` 脱敏，明
 T8-penguin-canvas/
 ├── backend/                 # Express 后端（端口 18766）
 │   └── src/
-│       ├── server.js
-│       ├── config.js
+│       ├── server.js        # 入口，挂载 5 类路由 + SPA 兜底
+│       ├── config.js        # 端口 / 目录 / 上游 baseUrl
 │       └── routes/          # canvas / settings / files / imageOps / proxy
 ├── src/                     # 前端
-│   ├── App.tsx
+│   ├── App.tsx              # 三栏布局 + 状态栏
 │   ├── components/
-│   │   ├── Canvas.tsx       # 画布主体 + 批量运行 + 对齐辅助
+│   │   ├── Canvas.tsx       # 画布主体 + 批量运行 + 对齐辅助 + GroupBox
 │   │   ├── CanvasToolbar.tsx
+│   │   ├── TerminalPanel.tsx
 │   │   ├── CanvasManager.tsx
 │   │   ├── Sidebar.tsx
 │   │   ├── ApiSettings.tsx
 │   │   └── nodes/           # 27 个节点组件
-│   ├── stores/              # canvas / apiKeys / theme / runBus
+│   ├── stores/              # canvas / apiKeys / theme / runBus / logs
 │   ├── hooks/               # useCanvasHistory / useRunTrigger
 │   ├── services/            # api / generation / imageOps
-│   ├── config/              # nodeRegistry / canvasTemplates
-│   ├── utils/               # topologicalSort
-│   └── providers/           # 模型注册表
-├── features.json            # 节点防丢失锁 + 接口快照
-├── skill.md                 # 项目能力 / 接口 / 文件用途速查
+│   ├── config/              # nodeRegistry / canvasTemplates / portTypes
+│   ├── providers/           # 模型注册表
+│   ├── utils/               # topologicalSort / wheelBlock
+│   └── types/canvas.ts
+├── electron/                # Electron 主进程（CommonJS）
+│   ├── main.cjs             # 主进程 + 后端拉起 + IPC
+│   ├── loader.cjs           # bytenode .jsc loader 复刻 + MODULE_NOT_FOUND 兜底
+│   ├── encrypt.cjs          # T8ENC1 加密脚本
+│   ├── preload.cjs          # IPC 桥接
+│   └── _post_build.cjs      # 打包后置校验
+├── features.json            # 节点防丢失锁 + 接口快照 + 打包 SOP
+├── skill.md                 # 项目能力 / 接口 / 文件用途 / 打包 SOP 速查
 ├── vite.config.ts           # 前端 11422 + /api → 18766 代理
+├── start-dev.bat            # Windows 一键启动
 └── package.json
 ```
 
@@ -177,26 +217,48 @@ npm run preview       # 本地预览构建产物
 
 ---
 
-## 📋 节点清单（24 个）
+## 📋 节点清单（27 个，可见 + 隐藏）
 
 | 分组 | 节点 |
 |---|---|
-| 核心 (8) | text · image · video · seedance · audio · llm · runninghub · rh-config |
-| 特殊 (5) | multi-angle-3d · panorama-720 · penguin-portrait · portrait-metadata · storyboard-grid |
+| 素材资源 (2) | upload（上传素材） · output（输出素材终端预览） |
+| 核心 (6) | text · image · video · seedance · audio · llm |
+| RunningHub (3) | runninghub · runninghub-wallet（RH 钱包应用） · rh-config（隐藏） |
+| 特殊 (5, 隐藏) | multi-angle-3d · panorama-720 · penguin-portrait · portrait-metadata · storyboard-grid |
 | 工具 (9) | drawing-board · browser · image-compare · frame-extractor · resize · combine · remove-bg · upscale · grid-crop |
-| 辅助 (5) | edit · idea · bp · relay · video-output |
+| 辅助 (5) | edit（隐藏） · idea · bp · relay · video-output（隐藏） |
 | 工具箱 (2) | cinematic · video-motion |
 
-> 任何节点的删减都需在 [features.json](./features.json) 中说明。
+> 任何节点的删减都需在 [features.json](./features.json) 中说明并同步 [skill.md](./skill.md)。
+
+---
+
+## 🤝 贡献
+
+欢迎 Issue / PR ！
+
+- 提交 Issue 前请先搜索是否已存在；附上复现步骤、期望与实际行为、截图（如有）
+- 提交 PR 前请保证：
+  - `npm run type-check` 通过
+  - `npm run build` 通过
+  - 涉及节点变动需同步 [features.json](./features.json) 与 [skill.md](./skill.md)
+  - Commit 信息使用 [Conventional Commits](https://www.conventionalcommits.org/) 风格（`feat:` `fix:` `chore:` `docs:` 等）
 
 ---
 
 ## 📜 License
 
-私有项目，仅限授权使用。
+MIT License © T8mars
+
+本项目以 MIT 协议开源。允许在保留版权与许可声明的前提下自由使用、复制、修改、合并、出版、分发、再授权及销售本软件副本。详见 [LICENSE](./LICENSE)（如未单独提供，请参考 [MIT 协议全文](https://opensource.org/licenses/MIT)）。
 
 ---
 
 ## 🐧 Credits
 
-T8 企鹅画布 · 部分代码参考PenguinPravite以及infinite canvas以及zhenzhen-web项目。
+- 主作者：[T8mars](https://github.com/T8mars)
+- 灵感来源：PenguinPravite · Infinite Canvas · zhenzhen-web
+- 致谢上游服务：贞贞工坊（T8star）· RunningHub · OpenAI 兼容生态
+- 桌面端打包方案：bytenode + electron-builder + NSIS
+
+如果这个项目对你有帮助，欢迎给一个 ⭐ Star！

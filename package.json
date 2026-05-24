@@ -1,10 +1,30 @@
 {
   "name": "t8-penguin-canvas",
-  "private": true,
+  "private": false,
   "version": "1.2.2",
   "type": "module",
   "main": "electron/main.cjs",
-  "description": "T8-penguin-canvas — AI 节点画布 (Web 端轻量化重构)",
+  "description": "T8-penguin-canvas — AI 节点画布工作流工具（Web + Electron 桌面端）",
+  "author": "T8mars",
+  "license": "MIT",
+  "homepage": "https://github.com/T8mars/T8-penguin-canvas",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/T8mars/T8-penguin-canvas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/T8mars/T8-penguin-canvas/issues"
+  },
+  "keywords": [
+    "ai",
+    "canvas",
+    "node-editor",
+    "workflow",
+    "runninghub",
+    "electron",
+    "react",
+    "xyflow"
+  ],
   "scripts": {
     "dev": "concurrently \"cd backend && npm start\" \"vite\"",
     "dev:vite": "vite",
