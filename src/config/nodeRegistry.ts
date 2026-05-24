@@ -60,7 +60,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
 
 // 按分类分组,便于 Sidebar 渲染 (在这里过滤 hidden 节点 —— 它们仍在 NODE_REGISTRY 中保证节点类型注册)
 export const NODE_GROUPS: Record<string, { label: string; nodes: NodeMeta[] }> = {
-  input: { label: '输出素材', nodes: NODE_REGISTRY.filter((n) => n.category === 'input' && !n.hidden) },
+  input: { label: '素材资源', nodes: NODE_REGISTRY.filter((n) => n.category === 'input' && !n.hidden) },
   core: { label: '核心节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'core' && !n.hidden) },
   rh: { label: 'RH', nodes: NODE_REGISTRY.filter((n) => n.category === 'rh' && !n.hidden) },
   special: { label: '特殊节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'special' && !n.hidden) },
