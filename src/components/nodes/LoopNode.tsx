@@ -251,11 +251,83 @@ const LoopNode = (p: NodeProps) => {
     const collected: Array<string | null> = [];
     let okCount = 0; let failCount = 0;
 
-    // v1.2.9.2: LoopNode 不再跨节点写 OutputNode direct*Urls —— 改由 OutputNode 自己在 useEffect 内
-    //         检测上游 __loopAccumulate 后追加 fresh 到自身 direct*Urls (避免跨节点 setNodes 时序冲突/覆盖)。
-    //         LoopNode 仅负责: 进入前清空 OutputNode direct*Urls + 注入 EXEC 节点 __loopAccumulate + finally 清除标记。
-
-    const pushUniq = (_arr: string[], _v: any) => { /* v1.2.9.2: 保留签名防别处引用, 实际累积逻辑在 OutputNode */ };
+    // === v1.2.9.8: 彻底放弃「OutputNode useEffect 自动累积 fresh」机制 (v1.2.9.2/4/7 均被抩废)
+    //   原因:
+    //     - FramePair 等节点每轮多次 update (reset / 首帧 / success) 让 OutputNode useEffect 多次 fire
+    //     - StrictMode 双调 + 二级链路 (right OutputNode 接 left OutputNode) + finally 清除 __loopAccumulate 后
+    //       collected useMemo 重算 → fresh 会被最后多加一次进去, 造成“快跳后又多出一个」
+        //     - ref 去重也无法掩盖跨 useEffect / 多 OutputNode / 二级链路 的所有 race
+    //   新策略:
+    //     LoopNode 每轮 awaitNode 完成后用 functional setNodes 一次性写入子图内所有 OutputNode.direct*Urls。
+    //     时机严格可控 (一轮息严格一次写入) + functional setNodes 读取 store 最新 cur + 本轮内全局 seen 去重。
+    //   OutputNode 侧: collected useMemo 仍保留 __loopAccumulate 跳过 fresh 逻辑 (避免中间眨烁 fresh 未走 direct 装准 OUT), 但不再有 useEffect 累积。
+    const pushUniq = (arr: string[], seen: Set<string>, v: any) => {
+      if (typeof v !== 'string') return;
+      const s = v.trim();
+      if (!s) return;
+      if (seen.has(s)) return;
+      seen.add(s);
+      arr.push(s);
+    };
+    // 根据当前 edges + execSubIds + outputNodeIds ，按 OutputNode 结集 “本轮 fresh” 写入 direct*Urls。
+    const writeFreshToOutputs = () => {
+      if (outputNodeIds.size === 0) return;
+      rf.setNodes((nds) => {
+        const curEdges = rf.getEdges();
+        return nds.map((nd) => {
+          if (!outputNodeIds.has(nd.id)) return nd;
+          // 仅采集 EXEC 节点 → 本 OutputNode 的上游边 (二级链路如 OutputNode→OutputNode 不收集, 由透传链路自然流动)
+          const inEdges = curEdges.filter((e) => e.target === nd.id);
+          const fImgs: string[] = []; const fVids: string[] = []; const fAuds: string[] = []; const fTxts: string[] = [];
+          const seenI = new Set<string>(); const seenV = new Set<string>(); const seenA = new Set<string>(); const seenT = new Set<string>();
+          for (const e of inEdges) {
+            if (!execSubIds.has(e.source)) continue;
+            const up = nds.find((n) => n.id === e.source);
+            if (!up) continue;
+            const ud: any = up.data || {};
+            const handle = (e as any).sourceHandle as string | null | undefined;
+            const isFP = Object.prototype.hasOwnProperty.call(ud, 'firstFrameUrl') &&
+                         Object.prototype.hasOwnProperty.call(ud, 'lastFrameUrl');
+            if (isFP) {
+              if (handle === 'first' || handle == null) pushUniq(fImgs, seenI, ud.firstFrameUrl);
+              if (handle === 'last' || handle == null) pushUniq(fImgs, seenI, ud.lastFrameUrl);
+              continue;
+            }
+            // 通用字段采集 (任何 EXEC 节点 update 进以下字段均能被累积)
+            pushUniq(fImgs, seenI, ud.imageUrl);
+            if (Array.isArray(ud.imageUrls)) ud.imageUrls.forEach((u: any) => pushUniq(fImgs, seenI, u));
+            if (Array.isArray(ud.urls)) ud.urls.forEach((u: any) => pushUniq(fImgs, seenI, u));
+            if (Array.isArray(ud.generatedImages)) ud.generatedImages.forEach((u: any) => pushUniq(fImgs, seenI, u));
+            pushUniq(fVids, seenV, ud.videoUrl);
+            if (Array.isArray(ud.videoUrls)) ud.videoUrls.forEach((u: any) => pushUniq(fVids, seenV, u));
+            pushUniq(fAuds, seenA, ud.audioUrl);
+            pushUniq(fAuds, seenA, ud.audioUrl_1);
+            if (Array.isArray(ud.audioUrls)) ud.audioUrls.forEach((u: any) => pushUniq(fAuds, seenA, u));
+            if (typeof ud.outputText === 'string' && ud.outputText) pushUniq(fTxts, seenT, ud.outputText);
+            if (typeof ud.reply === 'string' && ud.reply) pushUniq(fTxts, seenT, ud.reply);
+            if (typeof ud.text === 'string' && ud.text) pushUniq(fTxts, seenT, ud.text);
+          }
+          if (fImgs.length === 0 && fVids.length === 0 && fAuds.length === 0 && fTxts.length === 0) return nd;
+          const od: any = nd.data || {};
+          const curImgs: string[] = Array.isArray(od.directImageUrls) ? od.directImageUrls : [];
+          const curVids: string[] = Array.isArray(od.directVideoUrls) ? od.directVideoUrls : [];
+          const curAuds: string[] = Array.isArray(od.directAudioUrls) ? od.directAudioUrls : [];
+          const curTxts: string[] = typeof od.directOutputText === 'string' && od.directOutputText
+            ? od.directOutputText.split('\n\n') : [];
+          const mergedI = curImgs.slice(); fImgs.forEach((u) => { if (mergedI.indexOf(u) === -1) mergedI.push(u); });
+          const mergedV = curVids.slice(); fVids.forEach((u) => { if (mergedV.indexOf(u) === -1) mergedV.push(u); });
+          const mergedA = curAuds.slice(); fAuds.forEach((u) => { if (mergedA.indexOf(u) === -1) mergedA.push(u); });
+          const mergedT = curTxts.slice(); fTxts.forEach((t) => { if (mergedT.indexOf(t) === -1) mergedT.push(t); });
+          let changed = false;
+          const nextData: any = { ...od };
+          if (mergedI.length !== curImgs.length) { nextData.directImageUrls = mergedI; changed = true; }
+          if (mergedV.length !== curVids.length) { nextData.directVideoUrls = mergedV; changed = true; }
+          if (mergedA.length !== curAuds.length) { nextData.directAudioUrls = mergedA; changed = true; }
+          if (mergedT.length !== curTxts.length) { nextData.directOutputText = mergedT.join('\n\n'); changed = true; }
+          return changed ? { ...nd, data: nextData } : nd;
+        });
+      });
+    };
 
     // v1.2.9.0: 包 try/finally 保证 __loopAccumulate 标记总能被清除 (避免异常/取消后下游节点被永久冻住于累积模式)
     try {
@@ -285,10 +357,13 @@ const LoopNode = (p: NodeProps) => {
       if (result) okCount++; else failCount++;
       update({ outputs: [...collected], progress: { done: i + 1, total: items.length, ok: okCount, fail: failCount } });
 
-      // v1.2.9.2: 本轮收尾——累积交由 OutputNode 自己 useEffect 负责 (避免跨节点 setNodes 冲突)
-      // LoopNode 只需推进进度 + 让 React reconcile fresh 变化 → OutputNode useEffect 自动追加到 direct*Urls
-      if (outputNodeIds.size > 0) {
-        await new Promise<void>((r) => setTimeout(() => r(), 40));
+      // === v1.2.9.8: 本轮收尾——LoopNode 主动一次性写 OutputNode.direct*Urls (原地去重 merge)
+      //   时机: awaitNode 同步返回后, FramePair / Image / Video 等本轮终态已落 store, 此刻写入零 race。
+      if (outputNodeIds.size > 0 && chainOk) {
+        // 等一个微微的 setTimeout(20) 仅为了让可能的跨节点多 update batch (如 FramePair: 首帧后 success) 全部落 store
+        await new Promise<void>((r) => setTimeout(() => r(), 30));
+        writeFreshToOutputs();
+        await new Promise<void>((r) => setTimeout(() => r(), 20));
       }
     }
     } finally {
