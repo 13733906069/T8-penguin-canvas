@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Loader2, Lock, Save, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, EyeOff, KeyRound, Loader2, Lock, Save, Settings2, X } from 'lucide-react';
 import { useApiKeysStore, FIXED_ZHENZHEN_BASE, RH_BASE } from '../stores/apiKeys';
 import { useThemeStore } from '../stores/theme';
 import type { ApiSettings } from '../types/canvas';
@@ -73,6 +73,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [inputs, setInputs] = useState<Record<KeyField, string>>(emptyMap());
   const [shows, setShows] = useState<Record<KeyField, boolean>>(emptyShow());
   const [saved, setSaved] = useState(false);
+  // 分类独立 Key 区块折叠状态（新手友好：默认折叠，点击展开）
+  const [classifiedOpen, setClassifiedOpen] = useState(false);
   // 眼睛预览拉取的明文（仅缓存，不提交）
   const revealedRef = useRef<Partial<Record<KeyField, string>>>({});
 
@@ -87,6 +89,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setShows(emptyShow());
       revealedRef.current = {};
       setSaved(false);
+      setClassifiedOpen(false);
     }
   }, [open]);
 
@@ -269,17 +272,70 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           {renderKey(COMMON_KEYS[2], { baseUrlNote: '注意：本节点用于RH钱包应用，需要设置RH企业级-共享APIKEY' })}
           {renderKey(COMMON_KEYS[3], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与贞贞同地址, Key 独立)` })}
 
-          {/* 分类独立 Key */}
+          {/* 分类独立 Key（默认折叠，点击展开 —— 新手友好） */}
           <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
-            <div className={`text-xs font-bold mb-1 ${labelCls}`}>
-              分类独立 API Key【可选】
-            </div>
-            <div className={`text-[11px] ${hintCls} mb-3`}>
-              为不同模型系列单独配置 Key；<b>未填则自动 fallback 到贞贞工坊通用 Key</b>。后端会根据调用的模型名/路由自动选择。
-            </div>
-            <div className="space-y-4">
-              {CLASSIFIED_KEYS.map((spec) => renderKey(spec, { fallbackHint: true }))}
-            </div>
+            {(() => {
+              const configuredCount = CLASSIFIED_KEYS.filter((spec) => {
+                const v = (settings as any)?.[spec.field];
+                return typeof v === 'string' && v.trim().length > 0;
+              }).length;
+              const totalCount = CLASSIFIED_KEYS.length;
+              return (
+                <button
+                  type="button"
+                  onClick={() => setClassifiedOpen((v) => !v)}
+                  aria-expanded={classifiedOpen}
+                  className={
+                    isPixel
+                      ? `w-full flex items-center gap-2 px-3 py-2 px-btn ${classifiedOpen ? 'px-btn--mint' : ''}`
+                      : `w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition ${
+                          isDark
+                            ? 'border-white/10 hover:bg-white/5 text-white/85'
+                            : 'border-black/10 hover:bg-black/5 text-zinc-800'
+                        }`
+                  }
+                >
+                  <Settings2 size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-white/70' : 'text-zinc-600'} />
+                  <span className={`text-xs font-bold ${isPixel ? 'text-[var(--px-ink)]' : ''}`}>分类独立 API Key【可选】</span>
+                  <span
+                    className={
+                      isPixel
+                        ? 'ml-1 px-1.5 py-0.5 text-[10px] border border-[var(--px-ink)] bg-white text-[var(--px-ink)]'
+                        : `ml-1 px-1.5 py-0.5 text-[10px] rounded ${
+                            configuredCount > 0
+                              ? isDark
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                              : isDark
+                                ? 'bg-white/10 text-white/60 border border-white/10'
+                                : 'bg-black/5 text-zinc-500 border border-black/10'
+                          }`
+                    }
+                  >
+                    已配置 {configuredCount}/{totalCount}
+                  </span>
+                  <span className={`ml-auto flex items-center gap-1 text-[11px] ${hintCls}`}>
+                    {classifiedOpen ? '收起' : '展开'}
+                    {classifiedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </span>
+                </button>
+              );
+            })()}
+            {!classifiedOpen && (
+              <div className={`text-[11px] mt-2 ${hintCls}`}>
+                不必担心：<b>未填项会自动 fallback 到贞贞工坊通用 Key</b>，新手可直接保存忽略此区块。
+              </div>
+            )}
+            {classifiedOpen && (
+              <div className="mt-3">
+                <div className={`text-[11px] ${hintCls} mb-3`}>
+                  为不同模型系列单独配置 Key；<b>未填则自动 fallback 到贞贞工坊通用 Key</b>。后端会根据调用的模型名/路由自动选择。
+                </div>
+                <div className="space-y-4">
+                  {CLASSIFIED_KEYS.map((spec) => renderKey(spec, { fallbackHint: true }))}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
