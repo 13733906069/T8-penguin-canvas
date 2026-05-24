@@ -1,3 +1,13 @@
+# 网站：[https://ai.t8star.org](https://ai.t8star.org/register?aff=dP7j)
+# 致谢企鹅-企鹅的在线画布：[https://art.pebbling.cn](https://art.pebbling.cn/?invite=T8STAR)
+# Online workflow overseas：
+https://www.runninghub.ai/?inviteCode=rh-v1121
+# 在线工作流国内版：
+https://www.runninghub.cn/?inviteCode=rh-v1121
+# 👋🏻 Welcome to Zhenzhen
+
+<img src="https://github.com/T8mars/Comfyui-zhenzhen/blob/main/pic/1.png" width="30%" alt="My favorite girl">
+My favorite girl Go YounJung
 # 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
 > AI 节点画布工作流工具 · Web + Electron 桌面端｜v1.2.2
