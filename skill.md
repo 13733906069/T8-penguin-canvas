@@ -35,7 +35,7 @@
 
 T8-penguin-canvas 是 PenguinPravite 画布功能的 **轻量化重构版**，定位为 **纯 Web 端 AI 创作画布工具**：
 
-- 仅运行于浏览器（前端 Vite 5180 端口 + 后端 Node Express 18766 端口）。
+- 仅运行于浏览器（前端 Vite 11422 端口 + 后端 Node Express 18766 端口）。
 - 严格剔除桌面端封装、CLI、登录系统、创意库等非画布能力。
 - 26 个业务节点（含 upload + output）全部落地，覆盖文本 / 图像 / 视频 / 音频 / LLM / 工作流 / 工具 / 辅助 / 工具箱 / 输出预览。
 - 支持 **批量执行（拓扑顺序串行）**、**节点对齐辅助线（snap-to-grid + 智能吸附）**、**双主题（科技风 / 像素糖果风）**、**终端日志面板**。
@@ -95,7 +95,7 @@ T8-penguin-canvas/
 ├── data/                        # 画布 JSON / 设置 JSON（gitignore）
 ├── input/  output/  thumbnails/ # 用户上传 / 生成产物 / 缩略（gitignore）
 ├── features.json                # 节点防丢失锁 + 接口快照
-├── vite.config.ts               # 5180 端口 + /api → 18766 代理
+├── vite.config.ts               # 11422 端口 + /api → 18766 代理
 ├── package.json
 └── tsconfig.json
 ```
@@ -352,7 +352,7 @@ ReactFlow 内置：`snapToGrid={snapEnabled} snapGrid={[20, 20]}`。
 npm install
 cd backend; npm install; cd ..
 
-# 开发（前端 5180 + 后端 18766，concurrently 并发）
+# 开发（前端 11422 + 后端 18766，concurrently 并发）
 npm run dev
 
 # 类型检查 / 构建
@@ -1542,7 +1542,7 @@ nodes/
 
 | 约定 | 说明 |
 |---|---|
-| 前端端口 | `5180`（Vite dev server） |
+| 前端端口 | `11422`（Vite dev server） |
 | 后端端口 | `18766`（Express） |
 | Vite 代理 | `/api/*` → `http://127.0.0.1:18766` |
 | 数据目录 | `data/`（画布JSON） / `input/`（上传） / `output/`（生成产物） / `thumbnails/` |
@@ -4712,11 +4712,12 @@ if (config.IS_PACKAGED && config.FRONTEND_DIST && fs.existsSync(config.FRONTEND_
 
 ### 47.6 标准化打包 SOP（**下次打包必照做**）
 
-#### 步骤 0 · 打包前必检 checklist（6 项）
+#### 步骤 0 · 打包前必检 checklist（7 项）
 
 - [ ] **package.json 版本号已 bump**（`version` 字段决定 `T8-PenguinCanvas-Setup-${version}.exe`）
 - [ ] **electron/main.cjs 三处版本号已同步**：① `BrowserWindow.title` ② log 窗口 HTML `<span>v...</span>` ③ `ipcMain.handle('t8pc:get-info')` 返回 `version` —— 否则窗口标题与安装包不一致，用户疑惑
 - [ ] **vite.config.ts / vite.config.js 的 `__APP_VERSION__` 已同步**（默认 `JSON.stringify('1.0.0')` 是伺服默认，必须与 package.json 版本号一致）
+- [ ] **端口约定以后端 18766 为准，前端 dev = 11422**（Electron 打包后主窗口 `loadURL('http://127.0.0.1:18766/')` 由 Express 静态托管 dist/，**不依赖 Vite dev port**）。若后端端口变更，需同步改：`backend/src/config.js` `BACKEND_PORT` 默认值 + `vite.config.ts/js` 三个 proxy target（/api,/files,/output） + `electron/main.cjs` `backendPort`；前端 dev port 变更只需改 `vite.config.ts/js` `server.port` 一处
 - [ ] **backend/src/{config.js,server.js} 改动后必须重新 `npm run encrypt`**（否则 .t8c 还是旧字节码）
 - [ ] **bytenode 已 npm install**（`dependencies` 中 `bytenode: ^1.5.7`，`postinstall` 跑 `electron-builder install-app-deps`）
 - [ ] **dist_electron / build / *.tsbuildinfo / electron/*.js / _temp_* 已在 .gitignore**（永不上传到仓库）

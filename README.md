@@ -46,7 +46,7 @@ npm run dev
 `concurrently` 会同时拉起：
 
 - 后端：`http://127.0.0.1:18766`
-- 前端：`http://127.0.0.1:5180`
+- 前端：`http://127.0.0.1:11422`
 
 打开浏览器访问前端地址即可。Windows 下也可以双击 `start-dev.bat`。
 
@@ -98,7 +98,7 @@ T8-penguin-canvas/
 │   └── providers/           # 模型注册表
 ├── features.json            # 节点防丢失锁 + 接口快照
 ├── skill.md                 # 项目能力 / 接口 / 文件用途速查
-├── vite.config.ts           # 前端 5180 + /api → 18766 代理
+├── vite.config.ts           # 前端 11422 + /api → 18766 代理
 └── package.json
 ```
 

@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 // T8-penguin-canvas Vite 配置
-// 端口策略:前端 5180 / 后端 18766(避开主项目 5176/18765)
+// 端口策略:前端 11422 / 后端 18766(避开主项目 5176/18765 与常见 51xx 占用)
 export default defineConfig({
     plugins: [react()],
     resolve: {
@@ -11,7 +11,7 @@ export default defineConfig({
         },
     },
     server: {
-        port: 5180,
+        port: 11422,
         strictPort: true,
         host: '127.0.0.1',
         proxy: {
