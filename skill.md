@@ -5047,3 +5047,78 @@ const src = `rh:${id}`;          // RunningHubNode
 4. **每次 push 前都用 `git diff --stat <upstream> HEAD`** 检查 diff 规模——如果 deletions 远多于 insertions，必须警觉。
 
 ---
+
+## §50 Suno 双轨节点输出素材只显示 1 首歌的修复
+
+### 50.1 用户反馈
+
+> "suno 节点,应该生成两首歌曲,但是输出素材只显示了 1 首,检查问题并修复,不要破坏其他功能"
+
+截图证据:
+- SunoNode 右侧有两个 source handle (id=`audio-0`, id=`audio-1`,top 48% / 52%)
+- 右侧手动连一根边到 OutputNode → OutputNode 只显示 "音频 (1)" 1 项
+
+### 50.2 根因
+
+Suno API 的 `AudioQueryResult.tracks[]` 是数组(2 首歌),AudioNode 把两首歌分别写入 `data.audioUrl` (轨 1) 和 `data.audioUrl_1` (轨 2) 两个字段(对应 Handle id `audio-0` / `audio-1`)。
+
+但下游分流路径**只读了主轨 `audioUrl`,漏读副轨 `audioUrl_1`**:
+
+1. [Canvas.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx#L1937) autoOutput 第 1937 行 `pushAud(d.audioUrl)` 只取 1 项 → 只创建 1 个 auto OutputNode
+2. [OutputNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/OutputNode.tsx#L158) collected 第 158 行只 `pushUnique(out.audios, ud.audioUrl)` → 手动连边的 OutputNode 也只见 1 首
+3. [OutputNode.tsx upstreamSig](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/OutputNode.tsx#L88) 第 88 行字段签名也漏 → 即使后续修了 collected,签名不变 useMemo 不重算
+4. OutputNode 下游透传 effect 没传 `audioUrl_1` → OutputNode 串联场景副轨进一步丢失
+
+注意: [useUpstreamMaterials.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/useUpstreamMaterials.ts#L127-L129) 业务节点 hook 已正确读取双字段(phase24/26 已修),所以 LLMNode/SeedanceNode 作为下游能拿到两首。**只有展示链路 (OutputNode + autoOutput) 漏修**。
+
+### 50.3 修复(4 处全改)
+
+1. **OutputNode.tsx upstreamSig 签名补 audioUrl_1**:
+```tsx
+ud.audioUrl || '',
+ud.audioUrl_1 || '', // Suno 双轨副轨; 漏写会导致只显示第 1 首
+```
+
+2. **OutputNode.tsx collected 同时读双字段**:
+```tsx
+// 音频 (audioUrl 主轨, audioUrl_1 副轨——AudioNode/SunoNode 双输出口)
+pushUnique(out.audios, ud.audioUrl);
+pushUnique(out.audios, ud.audioUrl_1);
+```
+
+3. **OutputNode.tsx 下游透传 effect 加 audioUrl_1**:
+```tsx
+audioUrl: collected.audios[0] || '',
+audioUrl_1: collected.audios[1] || '', // 透传 Suno 双轨副轨避免串联丢失
+// cur 比较与 changed 判断同步加入 audioUrl_1
+```
+
+4. **Canvas.tsx autoOutput 同时分流副轨**:
+```tsx
+pushAud(d.audioUrl);
+// Suno / AudioNode 双轨输出口: audioUrl=轨1, audioUrl_1=轨2
+// 不取 audioUrl_1 会导致 autoOutput 只创建 1 个 OutputNode
+pushAud(d.audioUrl_1);
+```
+
+### 50.4 设计要点
+
+- **保持向后兼容**: 单轨节点(语音合成等)只写 `audioUrl`,`audioUrl_1` 为 undefined → `pushUnique`/`pushAud` 会因 typeof !== 'string' 跳过,不影响
+- **autoOutput 升级路径**: items 数组现在多 1 项 audio → autoOutput 会自动按 needCount 补建 1 个 OutputNode 并标 pickKind='audio'/pickIndex=1,与已修的 OutputNode collected 联动正确选中第 2 首
+- **手动连边场景**: 用户在截图中是手动从 SunoNode 拉边到一个 OutputNode → OutputNode 不带 pickKind 走"显示上游全部"分支,修复后两首歌都在 collected.audios 里 → 显示"音频 (2)"
+
+### 50.5 反 SunoNode 改名/重构检查表
+
+- [ ] SunoNode (=AudioNode) 是否仍把第 2 首歌写入 `data.audioUrl_1`?(grep `audioUrl_1: r.tracks`)
+- [ ] 第 2 个 source Handle id 是否仍是 `audio-1`?(grep `id="audio-1"`)
+- [ ] [OutputNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/OutputNode.tsx) collected/upstreamSig/下游透传三处是否都包含 `audioUrl_1`?(grep `audioUrl_1` 应有 ≥ 4 处)
+- [ ] [Canvas.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx) autoOutput 是否有 `pushAud(d.audioUrl_1)`?
+- [ ] [useUpstreamMaterials.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/useUpstreamMaterials.ts) 是否仍 `pushUrl(sid, 'audio', ud.audioUrl_1, audios)`?
+
+### 50.6 经验教训
+
+1. **多输出口节点必须在所有下游路径上对齐字段**: SunoNode 早在 phase24/26 就已支持双轨,但当时只改了 useUpstreamMaterials,**漏掉了 OutputNode 和 autoOutput**。
+2. **"看似某个 hook 改完就完事"是错觉**——展示节点 (OutputNode) 有自己的独立 collected 逻辑,**任何新增字段都需要双路径同步**。
+3. **后续若新增 audioUrl_2/audioUrl_3 (多轨扩展),应考虑改成数组 `data.audioUrls: string[]`**,避免每加一轨都要四改。
+
+---

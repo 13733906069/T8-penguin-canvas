@@ -86,6 +86,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           ud.imageUrl || '',
           ud.videoUrl || '',
           ud.audioUrl || '',
+          ud.audioUrl_1 || '', // Suno 双轨副轨; 漏写会导致只显示第 1 首
           arr1,
           arr2,
           arr3,
@@ -154,8 +155,9 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       // 视频
       pushUnique(out.videos, ud.videoUrl);
 
-      // 音频
+      // 音频 (audioUrl 主轨, audioUrl_1 副轨——AudioNode/SunoNode 双输出口)
       pushUnique(out.audios, ud.audioUrl);
+      pushUnique(out.audios, ud.audioUrl_1);
     }
 
     // 独立模式 (双击编辑生成的产物 OutputNode):
@@ -343,6 +345,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       urls: collected.images.slice(),
       videoUrl: collected.videos[0] || '',
       audioUrl: collected.audios[0] || '',
+      audioUrl_1: collected.audios[1] || '', // 透传 Suno 双轨副轨避免串联丢失
     };
     const cur: any = {
       prompt: d.prompt || '',
@@ -353,6 +356,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       urls: Array.isArray(d.urls) ? d.urls : [],
       videoUrl: d.videoUrl || '',
       audioUrl: d.audioUrl || '',
+      audioUrl_1: d.audioUrl_1 || '',
     };
     const changed =
       cur.prompt !== next.prompt ||
@@ -361,6 +365,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       cur.imageUrl !== next.imageUrl ||
       cur.videoUrl !== next.videoUrl ||
       cur.audioUrl !== next.audioUrl ||
+      cur.audioUrl_1 !== next.audioUrl_1 ||
       JSON.stringify(cur.imageUrls) !== JSON.stringify(next.imageUrls) ||
       JSON.stringify(cur.urls) !== JSON.stringify(next.urls);
     if (changed) update(next);

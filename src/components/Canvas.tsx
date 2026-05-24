@@ -1935,6 +1935,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       if (Array.isArray(d.generatedImages)) d.generatedImages.forEach(pushImg);
       pushVid(d.videoUrl);
       pushAud(d.audioUrl);
+      // Suno / AudioNode 双轨输出口: audioUrl=轨1, audioUrl_1=轨2
+      // 不取 audioUrl_1 会导致 autoOutput 只创建 1 个 OutputNode
+      pushAud(d.audioUrl_1);
       // 合成 items: 靠 kindIndex 让下游 OutputNode 能准确拾取对应索引的那一项
       const items: Array<{ kind: 'image' | 'video' | 'audio'; url: string; kindIndex: number }> = [
         ...imgs.map((url, i) => ({ kind: 'image' as const, url, kindIndex: i })),
