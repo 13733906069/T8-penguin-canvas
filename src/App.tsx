@@ -133,16 +133,27 @@ function App() {
 
   // 全局 MutationObserver: 为动态挂载的 textarea / input 自动设置 spellcheck=false
   // (Chromium 对 textarea 默认 spellcheck=true,不会从祖先继承 → 需逐个设置)
+  //
+  // 同时：全局为所有 textarea / input / select 添加 `nodrag` + `nowheel` className
+  // — xyflow v12 识别 `nodrag` 后不触发节点拖动，避免「框选文字时整个节点跟着鼠标走」
+  // — `nowheel` 让 textarea 内部可独立滚轮滚动，不被 xyflow 接管为画布缩放
+  // — 不覆盖节点原有 className(classList.add 只追加)，零侵入
   useEffect(() => {
     const apply = (el: Element) => {
-      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-        el.setAttribute('spellcheck', 'false');
-        el.setAttribute('autocorrect', 'off');
-        el.setAttribute('autocapitalize', 'off');
+      const tag = el.tagName;
+      if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') {
+        if (tag !== 'SELECT') {
+          el.setAttribute('spellcheck', 'false');
+          el.setAttribute('autocorrect', 'off');
+          el.setAttribute('autocapitalize', 'off');
+        }
+        // xyflow noDragClassName / noWheelClassName 默认 'nodrag' / 'nowheel'
+        // 加上后该元素上的 pointerdown 不会被 xyflow 当作节点拖拽启动
+        el.classList.add('nodrag', 'nowheel');
       }
     };
     // 初始扫描
-    document.querySelectorAll('textarea, input').forEach(apply);
+    document.querySelectorAll('textarea, input, select').forEach(apply);
     // 增量监听
     const mo = new MutationObserver((muts) => {
       for (const m of muts) {
@@ -150,7 +161,7 @@ function App() {
           if (n.nodeType !== 1) return;
           const el = n as Element;
           apply(el);
-          el.querySelectorAll?.('textarea, input').forEach(apply);
+          el.querySelectorAll?.('textarea, input, select').forEach(apply);
         });
       }
     });

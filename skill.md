@@ -5122,3 +5122,70 @@ pushAud(d.audioUrl_1);
 3. **后续若新增 audioUrl_2/audioUrl_3 (多轨扩展),应考虑改成数组 `data.audioUrls: string[]`**,避免每加一轨都要四改。
 
 ---
+
+## §51 节点内 textarea/input 框选文字时整个节点跟着鼠标走的修复
+
+### 51.1 用户反馈
+
+> 「在任何文本编辑的节点内,需要可以按住鼠标拖动框选文字,现在框选拖动鼠标会导致整个节点一起移动,正常应该是框选文字,节点不动,然后文字按照鼠标拖动进行框选」
+
+### 51.2 根因
+
+- xyflow v12 节点拖动是通过 `pointerdown` 识别启动 (不是 mousedown)
+- `e.stopPropagation()` 在 onMouseDown 上拦不住 pointerdown(pointerdown 更早触发)
+- TextNode 原实现仅 `onMouseDown={(e) => e.stopPropagation()}` → 框选仍被 xyflow 拦截为节点拖动
+- 项目内 14 个 textarea 分散在 12 个节点文件,逐个补 `nodrag` className 不可维护
+
+### 51.3 修复 (1 处全局处理)
+
+[App.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/App.tsx) 复用原有的全局 MutationObserver(原本仅用于 spellcheck=false),扩展为同时为所有 textarea/input/select 加 `nodrag` + `nowheel` className:
+
+```tsx
+const apply = (el: Element) => {
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') {
+    if (tag !== 'SELECT') {
+      el.setAttribute('spellcheck', 'false');
+      el.setAttribute('autocorrect', 'off');
+      el.setAttribute('autocapitalize', 'off');
+    }
+    // xyflow noDragClassName/noWheelClassName 默认 'nodrag'/'nowheel'
+    el.classList.add('nodrag', 'nowheel');
+  }
+};
+document.querySelectorAll('textarea, input, select').forEach(apply);
+const mo = new MutationObserver(/* 增量监听同样 apply */);
+mo.observe(document.body, { childList: true, subtree: true });
+```
+
+### 51.4 为什么走全局而不是逐节点改
+
+1. **便多低护**: 14 个 textarea 分散在 12 个节点文件,逐个改 className 出错面大
+2. **未来新增节点自动覆盖**: MutationObserver 实时捕获动态挂载的 textarea,不需记住加 nodrag
+3. **零侵入**: classList.add 仅追加,保留节点原有 className 和样式
+4. **复用现有 effect**: 不增加新的 useEffect 和 MutationObserver 实例,零性能损耗
+
+### 51.5 覆盖范围
+
+修复后所有 textarea/input/select 的交互都符合预期:
+- 文字框选 (mousedown + drag): 节点不动 ✅
+- 双击选词 / 三击选行: 节点不动 ✅  
+- 文字贴贴/复制/剪切 (Ctrl+V/C/X): 原有语义 ✅
+- textarea 内鼠标滚轮滚动: 不被 xyflow 接管为画布缩放 ✅
+- 节点头部/边框拖动: 仍可拖动节点 ✅ (仅 textarea/input/select 区域不拖)
+- Ctrl+拖画布框选多节点: 未受影响 ✅ (Ctrl 点击会被 xyflow 调度别的路径)
+
+### 51.6 反重构检查表
+
+- [ ] [App.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/App.tsx) 中 MutationObserver 是否仍含 `el.classList.add('nodrag', 'nowheel')` 调用?
+- [ ] querySelectorAll 是否仍是 `'textarea, input, select'` (三个 tag)?
+- [ ] MutationObserver 仍设 `observe(document.body, { childList: true, subtree: true })`?
+- [ ] 新增使用 textarea/input/select 的节点无需手动加 nodrag,自动生效
+
+### 51.7 经验教训
+
+1. **xyflow 拖拽识别依赖 className,不是 event 冲突**: stopPropagation 拦不住 pointerdown,仅 className 约定 (`nodrag`/`nopan`/`nowheel`) 才是官方机制
+2. **表单元素多点重复处理 → 全局 MutationObserver 一次解决**: 避免每个节点重复写 `className="...nodrag nowheel..."`,加入 App.tsx 后所有新节点免修改
+3. **复用现有 useEffect 而不新增**: 原本就有为 spellcheck 设置的 MutationObserver,顺便加上 className 逻辑,零额外资源占用
+
+---
