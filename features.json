@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.2.10.13",
-  "lastUpdated": "2026-05-25-v1.2.10.13-recharge-package-secret-gate",
+  "version": "1.3.0",
+  "lastUpdated": "2026-05-25-v1.3.0-public-recharge-version-rule",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,10 +16,10 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.2.10.13",
-    "semverVersion": "1.2.1013",
-    "versionNote": "display 版本(__APP_VERSION__/标题/skill/features) 用 4 段 1.2.10.13；package.json 必须 semver 兼容用 1.2.1013（electron-builder 严格校验）。",
-    "installer": "dist_electron/T8-PenguinCanvas-Setup-1.2.1013.exe (NSIS, 约 87 MB)",
+    "version": "1.3.0",
+    "semverVersion": "1.3.0",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；阶段内 patch 从 1.3.0 → 1.3.9，下一阶段进位 1.4.0；package.json / package-lock.json / __APP_VERSION__ / Electron 标题 / IPC / features / README 全部同号，不再使用 4 段 display + 压缩 semver。",
+    "installer": "dist_electron/T8-PenguinCanvas-Setup-1.3.0.exe (NSIS, 约 87 MB)",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
       "backend/src/ 任何文件修改后必须重新 npm run encrypt 再打包",
@@ -124,7 +124,8 @@
     "phase39": { "label": "充值确认弹窗 + 安全硬化 (v1.2.10.10)", "status": "complete", "items": ["创建订单并付款前新增同主题 alertdialog，醒目提示「请核对绑定的用户ID，一旦充错无法退回！」，展示绑定 ID / 套餐 / 金额，用户二次确认后才调用创建订单接口", "后端 CORS 从全开放改为只允许 127.0.0.1/localhost 来源或无 Origin 请求，降低网页跨站驱动本地服务风险", "支付通知 /pay/notify 在缺少 DULUPAY_KEY 时直接 fail，避免空密钥 MD5 被伪造触发转额度", "订单号随机后缀从 3 bytes 提升到 8 bytes，降低碰撞和枚举风险", "GET /api/recharge/order/:orderId 与 /api/recharge/orders 返回脱敏摘要，不再回传 trade_no"] },
     "phase40": { "label": "GitHub 推送密钥清理规则 (v1.2.10.11)", "status": "complete", "items": ["RECHARGE_DEFAULT_ENC 默认改为空字符串，公开仓库不再携带 AGENT_HMAC_KEY 或可逆代理配置", "充值代理配置改为仅通过 RECHARGE_AGENT_BASE_URL / RECHARGE_AGENT_HMAC_KEY / RECHARGE_WEBSITE_URL / RECHARGE_DULUPAY_KEY 等环境变量注入", "skill.md 追加 GitHub 推送前安全清单：严禁提交真实 HMAC、支付平台密钥、data 本地数据、build/dist_electron 打包产物与明文配置"] },
     "phase41": { "label": "本地私有充值配置恢复 (v1.2.10.12)", "status": "complete", "items": ["新增 data/recharge.private.json 本地私有配置兜底，文件被 .gitignore 忽略，本地开发可继续使用充值 agent", "配置读取顺序为公开默认空配置 < data/recharge.private.json < RECHARGE_* 环境变量，GitHub 仍不携带真实 HMAC", "config.js 增加 RECHARGE_PRIVATE_FILE，recharge.js 增加私有配置读取与规范化逻辑"] },
-    "phase42": { "label": "充值用户包密钥安全闸 (v1.2.10.13)", "status": "complete", "items": ["用户分发 Electron 包不得携带 AGENT_HMAC_KEY / DULUPAY_KEY / RECHARGE_DEFAULT_ENC 可逆密文，充值全局密钥只能留在 VPS 或本地私有开发环境", "_post_build.cjs 新增充值密钥扫描：发现源码非空 RECHARGE_DEFAULT_ENC、resources/data/recharge.private.json、非空 AGENT_HMAC_KEY / DULUPAY_KEY 或遗留 ZZENC1 密文即失败", "skill.md 打包 SOP 追加用户充值包安全边界：当前客户端 HMAC 方案只适合本地私有测试，正式用户版需要 VPS 提供无需客户端 HMAC 的公开下单/查单接口"] }
+    "phase42": { "label": "充值用户包密钥安全闸 (v1.2.10.13)", "status": "complete", "items": ["用户分发 Electron 包不得携带 AGENT_HMAC_KEY / DULUPAY_KEY / RECHARGE_DEFAULT_ENC 可逆密文，充值全局密钥只能留在 VPS 或本地私有开发环境", "_post_build.cjs 新增充值密钥扫描：发现源码非空 RECHARGE_DEFAULT_ENC、resources/data/recharge.private.json、非空 AGENT_HMAC_KEY / DULUPAY_KEY 或遗留 ZZENC1 密文即失败", "skill.md 打包 SOP 追加用户充值包安全边界：当前客户端 HMAC 方案只适合本地私有测试，正式用户版需要 VPS 提供无需客户端 HMAC 的公开下单/查单接口"] },
+    "phase43": { "label": "VPS 公开充值接口 + 三段阶段版本规则 (v1.3.0)", "status": "complete", "items": ["充值系统切换到 VPS /public/recharge/* 公开下单、查单和重试接口，T8 桌面端只保存绑定用户、订单摘要与 order_token，不再携带或使用全局 agent HMAC", "版本规则废弃 4 段 display + 压缩 semver，改为统一三段 x.y.z；从 1.3.0 开始，阶段内 1.3.1 到 1.3.9，下个阶段为 1.4.0", "package.json、package-lock.json、vite.config.ts、vite.config.js、electron/main.cjs、features.json、README.md 已同步到 1.3.0；skill.md 仅本地更新且不得推送 GitHub"] }
   },
   "categories": {
     "input": {

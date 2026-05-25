@@ -13,13 +13,13 @@ const config = require('../config');
 const apiRouter = express.Router();
 const payRouter = express.Router();
 
-// Public repository default must stay empty. Private builds may inject values
-// through environment variables; never commit AGENT_HMAC_KEY to GitHub.
+// Public repository default must stay empty. User builds must never ship a
+// global agent HMAC; recharge now uses the public VPS order API.
 const RECHARGE_DEFAULT_ENC = '';
+const DEFAULT_PUBLIC_BASE_URL = 'https://pay.t8star.org';
 
 const QUOTA_PER_POWER = 500000;
 const POWER_TIERS = [20, 30, 50, 100, 200, 300, 500];
-const processingOrders = new Set();
 let rechargeConfigCache = null;
 let deviceIdCache = null;
 
@@ -32,7 +32,7 @@ function nowText() {
 function normalizeRechargeConfig(raw) {
   const cfg = raw && typeof raw === 'object' ? raw : {};
   return Object.fromEntries(
-    ['AGENT_BASE_URL', 'AGENT_HMAC_KEY', 'WEBSITE_URL', 'DULUPAY_KEY']
+    ['PUBLIC_BASE_URL', 'WEBSITE_URL']
       .map((key) => [key, String(cfg[key] || '').trim()])
       .filter(([, value]) => value)
   );
@@ -51,26 +51,24 @@ function loadPrivateRechargeConfig() {
 function loadRechargeConfig() {
   if (rechargeConfigCache) return rechargeConfigCache;
   const envOverrides = normalizeRechargeConfig({
-    AGENT_BASE_URL: String(process.env.RECHARGE_AGENT_BASE_URL || '').trim(),
-    AGENT_HMAC_KEY: String(process.env.RECHARGE_AGENT_HMAC_KEY || '').trim(),
+    PUBLIC_BASE_URL: String(process.env.RECHARGE_PUBLIC_BASE_URL || '').trim(),
     WEBSITE_URL: String(process.env.RECHARGE_WEBSITE_URL || '').trim(),
-    DULUPAY_KEY: String(process.env.RECHARGE_DULUPAY_KEY || '').trim(),
   });
   const privateConfig = loadPrivateRechargeConfig();
   try {
     const magic = 'ZZENC1\n';
     if (!RECHARGE_DEFAULT_ENC.startsWith(magic)) {
-      rechargeConfigCache = { ...privateConfig, ...envOverrides };
+      rechargeConfigCache = { PUBLIC_BASE_URL: DEFAULT_PUBLIC_BASE_URL, WEBSITE_URL: 'https://ai.t8star.org', ...privateConfig, ...envOverrides };
       return rechargeConfigCache;
     }
     const key = crypto.createHash('sha256').update('ZhenzhenAI-Studio-T8star-2026').digest();
     const payload = Buffer.from(RECHARGE_DEFAULT_ENC.slice(magic.length), 'base64');
     const decoded = Buffer.alloc(payload.length);
     for (let i = 0; i < payload.length; i += 1) decoded[i] = payload[i] ^ key[i % key.length];
-    rechargeConfigCache = { ...normalizeRechargeConfig(JSON.parse(decoded.toString('utf-8'))), ...privateConfig, ...envOverrides };
+    rechargeConfigCache = { PUBLIC_BASE_URL: DEFAULT_PUBLIC_BASE_URL, WEBSITE_URL: 'https://ai.t8star.org', ...normalizeRechargeConfig(JSON.parse(decoded.toString('utf-8'))), ...privateConfig, ...envOverrides };
   } catch (e) {
     console.warn('[recharge] load config failed:', e?.message || e);
-    rechargeConfigCache = { ...privateConfig, ...envOverrides };
+    rechargeConfigCache = { PUBLIC_BASE_URL: DEFAULT_PUBLIC_BASE_URL, WEBSITE_URL: 'https://ai.t8star.org', ...privateConfig, ...envOverrides };
   }
   return rechargeConfigCache;
 }
@@ -159,34 +157,24 @@ function getDeviceId() {
   }
 }
 
-async function agentCall(method, agentPath, body, timeout = 20000) {
+async function publicCall(method, publicPath, body, timeout = 20000) {
   const cfg = loadRechargeConfig();
-  const base = String(cfg.AGENT_BASE_URL || '').replace(/\/+$/, '');
-  const key = String(cfg.AGENT_HMAC_KEY || '');
-  if (!base || !key) return { success: false, message: 'agent not configured' };
+  const base = String(cfg.PUBLIC_BASE_URL || DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/, '');
+  if (!base) return { success: false, message: 'public recharge server not configured' };
   if (typeof fetch !== 'function') return { success: false, message: 'fetch is not available in this Node runtime' };
 
   const upper = method.toUpperCase();
   const bodyText = body == null ? '' : JSON.stringify(body);
-  const bodyHash = crypto.createHash('sha256').update(bodyText).digest('hex');
-  const ts = String(Math.floor(Date.now() / 1000));
-  const nonce = crypto.randomBytes(16).toString('hex');
-  const signPayload = `${upper}\n${agentPath}\n${ts}\n${nonce}\n${bodyHash}`;
-  const sign = crypto.createHmac('sha256', key).update(signPayload).digest('hex');
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeout);
   try {
-    const res = await fetch(`${base}${agentPath}`, {
+    const res = await fetch(`${base}${publicPath}`, {
       method: upper,
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'User-Agent': 'T8-PenguinCanvas/1.0',
-        'X-Device-Id': getDeviceId(),
-        'X-Timestamp': ts,
-        'X-Nonce': nonce,
-        'X-Sign': sign,
       },
       body: upper === 'GET' ? undefined : bodyText,
       signal: ac.signal,
@@ -209,49 +197,31 @@ async function agentCall(method, agentPath, body, timeout = 20000) {
   }
 }
 
-async function createPayUrl(order, plan, payType) {
+async function createPublicOrder(order, plan, payType) {
   const payload = {
-    order_id: order.order_id,
-    amount: Number(plan.price),
-    name: plan.name,
-    pay_type: payType,
     website_user_id: Number(order.website_user_id),
-    quota: Number(plan.quota),
+    plan_id: plan.id,
+    pay_type: payType,
+    client_app: 't8-penguin-canvas',
+    device_id: getDeviceId(),
   };
-  const r = await agentCall('POST', '/agent/dulupay/create', payload, 20000);
-  if (r?.success && r?.pay_url) return r.pay_url;
-  console.warn('[recharge] create pay url failed:', r);
-  return '';
+  const r = await publicCall('POST', '/public/recharge/orders', payload, 20000);
+  if (r?.success && r?.pay_url && r?.order_id && r?.order_token) return r;
+  console.warn('[recharge] create public order failed:', r);
+  return null;
 }
 
-async function queryDuluPay(orderId) {
-  const r = await agentCall('POST', '/agent/dulupay/query', { order_id: orderId }, 20000);
-  if (!r?.success) {
-    console.warn('[recharge] query failed:', r);
-    return { paid: false, trade_no: '', raw: { error: r?.message || 'query failed' } };
-  }
-  return { paid: !!r.paid, trade_no: r.trade_no || '', raw: r.data || r };
+async function queryPublicOrder(order) {
+  if (!order?.order_token) return { success: false, message: 'missing order token' };
+  const q = new URLSearchParams({ token: String(order.order_token) });
+  return publicCall('GET', `/public/recharge/orders/${encodeURIComponent(order.order_id)}?${q}`, null, 20000);
 }
 
-async function transferQuota(order) {
-  const body = {
-    target_id: Number(order.website_user_id),
-    quota: Number(order.quota),
-    amount: Number(order.amount),
-    order_id: order.order_id,
-  };
-  const r = await agentCall('POST', '/agent/transfer-quota', body, 30000);
-  console.log(`[recharge] transfer order=${order.order_id} user=${order.website_user_id} quota=${order.quota} -> ${JSON.stringify(r)}`);
-  return r;
-}
-
-function makeDuluPaySign(params, key) {
-  const pairs = Object.keys(params || {})
-    .filter((k) => params[k] !== '' && params[k] != null && k !== 'sign' && k !== 'sign_type')
-    .sort()
-    .map((k) => `${k}=${params[k]}`)
-    .join('&');
-  return crypto.createHash('md5').update(`${pairs}${key}`).digest('hex');
+async function retryPublicOrder(order) {
+  if (!order?.order_token) return { success: false, message: 'missing order token' };
+  return publicCall('POST', `/public/recharge/orders/${encodeURIComponent(order.order_id)}/retry`, {
+    token: order.order_token,
+  }, 30000);
 }
 
 function orderPublic(order, extra = {}) {
@@ -324,8 +294,8 @@ apiRouter.get('/config', (_req, res) => {
   const cfg = loadRechargeConfig();
   res.json({
     website_url: cfg.WEBSITE_URL || 'https://ai.t8star.org',
-    agent_base_url: cfg.AGENT_BASE_URL || '',
-    configured: !!(cfg.AGENT_BASE_URL && cfg.AGENT_HMAC_KEY),
+    agent_base_url: cfg.PUBLIC_BASE_URL || DEFAULT_PUBLIC_BASE_URL,
+    configured: !!(cfg.PUBLIC_BASE_URL || DEFAULT_PUBLIC_BASE_URL),
     device_id: `${getDeviceId().slice(0, 16)}...`,
   });
 });
@@ -345,7 +315,8 @@ apiRouter.post('/order/create', asyncRoute(async (req, res) => {
   }
 
   const order = {
-    order_id: genOrderId(),
+    order_id: '',
+    order_token: '',
     website_user_id: store.binding.website_user_id,
     plan_id: plan.id,
     plan_name: plan.name,
@@ -359,10 +330,17 @@ apiRouter.post('/order/create', asyncRoute(async (req, res) => {
     pay_time: '',
     transfer_message: '',
   };
-  const payUrl = await createPayUrl(order, plan, payType);
-  if (!payUrl) {
+  const created = await createPublicOrder(order, plan, payType);
+  if (!created) {
     return res.status(502).json({ success: false, message: 'Failed to generate payment link' });
   }
+  order.order_id = String(created.order_id);
+  order.order_token = String(created.order_token);
+  order.plan_id = String(created.plan_id || plan.id);
+  order.plan_name = String(created.plan_name || plan.name);
+  order.power = Number(created.power || plan.power);
+  order.amount = Number(created.amount || plan.price);
+  order.quota = Number(created.quota || plan.quota);
 
   store.orders.unshift(order);
   saveStore(store);
@@ -370,11 +348,11 @@ apiRouter.post('/order/create', asyncRoute(async (req, res) => {
   res.json({
     success: true,
     order_id: order.order_id,
-    pay_url: payUrl,
-    amount: plan.price,
-    power: plan.power,
-    quota: plan.quota,
-    plan_name: plan.name,
+    pay_url: created.pay_url,
+    amount: order.amount,
+    power: order.power,
+    quota: order.quota,
+    plan_name: order.plan_name,
     pay_type: payType,
   });
 }));
@@ -397,38 +375,17 @@ apiRouter.get('/order/:orderId/check', asyncRoute(async (req, res) => {
       transfer_message: order.status === 'transferring' ? '正在处理中，请稍候' : order.transfer_message,
     }));
   }
-  if (processingOrders.has(orderId)) {
-    return res.json(orderPublic({ ...order, status: 'transferring' }, { transfer_message: '正在处理中，请稍候' }));
-  }
+  const query = await queryPublicOrder(order);
+  if (!query?.success) return res.json(orderPublic(order, { transfer_message: query?.message || '' }));
 
-  const query = await queryDuluPay(orderId);
-  if (!query.paid) return res.json(orderPublic(order));
-
-  // Atomic-ish claim inside the single Node process: reload and switch pending -> transferring synchronously.
   store = loadStore();
   order = store.orders.find((o) => o.order_id === orderId);
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-  if (order.status !== 'pending') return res.json(orderPublic(order));
-  order.status = 'transferring';
-  order.trade_no = query.trade_no || '';
+  order.status = query.status || order.status;
+  order.pay_time = query.pay_time || order.pay_time || '';
+  order.transfer_message = query.transfer_message || '';
   saveStore(store);
-
-  processingOrders.add(orderId);
-  try {
-    const transfer = await transferQuota(order);
-    const ok = !!transfer?.success;
-    const payTime = nowText();
-    store = loadStore();
-    order = store.orders.find((o) => o.order_id === orderId);
-    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-    order.status = ok ? 'success' : 'transfer_failed';
-    order.pay_time = payTime;
-    order.transfer_message = transfer?.message || '';
-    saveStore(store);
-    res.json(orderPublic(order));
-  } finally {
-    processingOrders.delete(orderId);
-  }
+  res.json(orderPublic(order));
 }));
 
 apiRouter.post('/order/:orderId/retry', asyncRoute(async (req, res) => {
@@ -439,28 +396,18 @@ apiRouter.post('/order/:orderId/retry', asyncRoute(async (req, res) => {
   if (order.status !== 'transfer_failed') {
     return res.status(400).json({ success: false, message: `Only transfer_failed orders can retry (current: ${order.status})` });
   }
-  if (processingOrders.has(orderId)) {
-    return res.status(409).json({ success: false, message: 'Order is already processing' });
+  const retry = await retryPublicOrder(order);
+  if (!retry?.success) {
+    return res.status(502).json({ success: false, message: retry?.message || 'retry failed' });
   }
-  order.status = 'transferring';
+  store = loadStore();
+  order = store.orders.find((o) => o.order_id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+  order.status = retry.status || order.status;
+  order.pay_time = retry.pay_time || order.pay_time || '';
+  order.transfer_message = retry.transfer_message || '';
   saveStore(store);
-
-  processingOrders.add(orderId);
-  try {
-    const transfer = await transferQuota(order);
-    const ok = !!transfer?.success;
-    const payTime = nowText();
-    store = loadStore();
-    order = store.orders.find((o) => o.order_id === orderId);
-    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-    order.status = ok ? 'success' : 'transfer_failed';
-    order.pay_time = payTime;
-    order.transfer_message = transfer?.message || '';
-    saveStore(store);
-    res.json(orderPublic(order));
-  } finally {
-    processingOrders.delete(orderId);
-  }
+  res.json(orderPublic(order));
 }));
 
 apiRouter.get('/orders', (req, res) => {
@@ -471,45 +418,8 @@ apiRouter.get('/orders', (req, res) => {
 });
 
 async function processNotify(params, res) {
-  const cfg = loadRechargeConfig();
-  const notifyKey = String(cfg.DULUPAY_KEY || '');
-  if (!notifyKey) {
-    console.warn('[recharge] ignore notify: missing DULUPAY_KEY');
-    return res.status(200).send('fail');
-  }
-  const sign = String(params?.sign || '');
-  const expected = makeDuluPaySign(params || {}, notifyKey);
-  if (!sign || sign !== expected) return res.status(200).send('fail');
-  if (params.trade_status !== 'TRADE_SUCCESS') return res.status(200).send('success');
-
-  const orderId = String(params.out_trade_no || '');
-  let store = loadStore();
-  let order = store.orders.find((o) => o.order_id === orderId);
-  if (!order) return res.status(200).send('fail');
-  if (['success', 'transferring', 'transfer_failed'].includes(order.status)) {
-    return res.status(200).send('success');
-  }
-  order.status = 'transferring';
-  order.trade_no = String(params.trade_no || '');
-  saveStore(store);
-
-  if (!processingOrders.has(orderId)) {
-    processingOrders.add(orderId);
-    try {
-      const transfer = await transferQuota(order);
-      store = loadStore();
-      order = store.orders.find((o) => o.order_id === orderId);
-      if (order) {
-        order.status = transfer?.success ? 'success' : 'transfer_failed';
-        order.pay_time = nowText();
-        order.transfer_message = transfer?.message || '';
-        saveStore(store);
-      }
-    } finally {
-      processingOrders.delete(orderId);
-    }
-  }
-  res.status(200).send('success');
+  console.warn('[recharge] local pay notify ignored; public VPS handles payment callbacks', params?.out_trade_no || '');
+  res.status(200).send('fail');
 }
 
 payRouter.post('/notify', asyncRoute(async (req, res) => {
