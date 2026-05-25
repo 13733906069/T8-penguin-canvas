@@ -5997,3 +5997,114 @@ const openExternal = (url: string) => {
 - [ ] 推送前用 `npm run dist:dir` 验证能启动再走 NSIS 完整打包
 
 ---
+
+## v1.2.10 · RH 工具节点（启动器 + 应用面板）
+
+### 设计目标
+左侧 RH 分类下追加第 3 个节点「RH 工具」。区别于现有的 RunningHub（单一 webappId）/ RH 钱包应用（同上），它是一个「内置启动器」：用户在节点里维护自己常用的 RunningHub AI 应用清单（按分类组织），然后在同一个节点内部直接搜索 / 选择 / 运行任意一个应用，免去频繁拖入新节点的成本。
+
+关键设计点：
+- **双视图**：启动器视图（默认）+ 应用运行视图（点击某应用后切换）
+- **多实例共享数据**：多个 RH 工具节点共享同一份「分类 + 应用」清单（通过 `RHToolsProvider` 广播），单节点改动立即被其他节点感知
+- **运行态写回 NodeData**：运行参数 / taskId / 输出 URL 全部持久化到节点 data，刷新画布后状态不丢；下游 OutputNode 直接读 imageUrl/videoUrl
+- **支持 Resize**：四角同比例缩放（最小 280×320，默认 320×440），用 `ResizableCorners`
+- **拼音首字母搜索**：`utils/pinyinMatch.ts::fuzzyMatch`，例：搜「hy」可匹配「画意」「换衣」等
+- **数据完全独立**：与现有 RHAppPreset（设置面板里的「RH 应用创意包」）分开两套 JSON 文件存储
+
+### 新增文件清单
+```
+src/utils/pinyinMatch.ts                            # 拼音首字母 + 子序列模糊匹配
+src/providers/RHToolsProvider.tsx                   # 跨节点共享 categories/tools
+src/components/nodes/RHToolsNode.tsx                # 节点主体（启动器/运行双视图）
+src/components/nodes/RHToolEditorModal.tsx         # 「+ 增加 / ✎ 编辑」浮层（应用/分类双 Tab）
+src/components/nodes/RHToolRunnerPanel.tsx          # 应用运行面板（节点内部展开）
+```
+
+### 改动文件清单
+```
+src/config/nodeRegistry.ts        # NODE_REGISTRY 新增 { type:'rh-tools', label:'RH工具', category:'rh', icon:'Sparkles', color:'violet' }
+src/types/canvas.ts               # NodeType 联合新增 'rh-tools'
+src/config/portTypes.ts           # NODE_PORTS 新增 'rh-tools': { inputs:[], outputs:['image','video'] }
+src/components/Canvas.tsx         # SPECIFIC_NODES 与 INITIAL_DATA 注册 'rh-tools'
+src/App.tsx                       # 顶层包裹 <RHToolsProvider>
+src/services/api.ts               # 末尾追加 RHTool / RHToolCategory 类型 + 10 个 CRUD/reorder API + safeRequest 工具函数
+backend/src/config.js             # 新增 RH_TOOL_CATEGORIES_FILE / RH_TOOL_APPS_FILE
+backend/src/routes/settings.js    # 新增 10 个 /rh-tool-categories 与 /rh-tool-apps 路由 + loadJson/saveJson/genId
+```
+
+### 后端路由（独立 18766 端口，与主项目 18765 互不影响）
+```
+GET    /api/settings/rh-tool-categories               // 列分类
+POST   /api/settings/rh-tool-categories               // 新增 { name }
+PUT    /api/settings/rh-tool-categories/:id           // 重命名 { name }
+DELETE /api/settings/rh-tool-categories/:id           // 删除（其下应用 categoryId 自动置 ''）
+POST   /api/settings/rh-tool-categories/reorder       // 排序 { ids: [...] }
+
+GET    /api/settings/rh-tool-apps                     // 列应用
+POST   /api/settings/rh-tool-apps                     // 新增 { webappId, title, description?, categoryId?, coverUrl? }
+PUT    /api/settings/rh-tool-apps/:id                 // 更新 Partial<同上>
+DELETE /api/settings/rh-tool-apps/:id                 // 删除
+POST   /api/settings/rh-tool-apps/reorder             // 排序 { ids: [...] }
+```
+存储：`data/rh-tool-categories.json` + `data/rh-tool-apps.json`（与 RHAppPreset 完全独立）。
+
+### 与主项目 RunningHub 协议适配
+主项目（`PenguinPravite/services/api/runninghub.ts`）的 `runAIApp(webappId, list)` 是一步出，T8 必须改为两阶段并自行轮询：
+
+```ts
+// 上传素材链（IMAGE/VIDEO/AUDIO 字段）
+//  ① uploadFile(File)            → /api/files/upload     → { url:'/files/input/xxx', filename }
+//  ② uploadRhAsset(absoluteUrl)  → /api/proxy/runninghub/upload-asset → { fileName, fileType }
+
+// 运行链
+const { taskId } = await submitRh({ webappId, nodeInfoList });
+// 自实现 setInterval 轮询，POLL_INTERVAL_MS=3000, POLL_MAX_TIMES=200（约 10 分钟）
+const { status, urls, failReason } = await queryRh(taskId);
+// status === 'SUCCESS' → urls[0] 写入 outputUrl，并按扩展名/字段提示推断 outputType=image|video|audio
+```
+
+### 端口与下游联动
+- 节点端口：`outputs:['image','video']`，运行成功时按推断写入 NodeData 的 `imageUrl` 或 `videoUrl`
+- 下游 OutputNode / ResizeNode / CombineNode 等通过既有协议自动消费
+
+### NodeData 字段约定（INITIAL_DATA 已注册）
+```ts
+{
+  rhToolsActiveCategoryId: 'all' | 'uncategorized' | <categoryId>,
+  rhToolsActiveAppId: '' | <toolId>,           // 空 = 启动器视图；非空 = 运行视图
+  rhToolsSearchQuery: string,                  // 搜索栏文本
+  rhToolsRunnerInputs: Record<string, string>, // 键：`${nodeId}__${fieldName}`
+  rhToolsRunnerUploadedNames: Record<string, string>, // 资源上传后的 RH fileName
+  rhToolsRunnerTaskId: string,
+  rhToolsRunnerStatus: string,
+  rhToolsRunnerOutputUrl: string,
+  rhToolsRunnerOutputType: 'image' | 'video' | 'audio' | '',
+  rhToolsRunnerError: string,
+  // 自动写入（下游消费）
+  imageUrl?: string,
+  videoUrl?: string,
+}
+```
+
+### Sidebar 自动出现机制
+本子项目 Sidebar 直接消费 `nodeRegistry.ts::NODE_GROUPS`，对 'rh' 分类自动渲染分组下所有 `NODE_REGISTRY` 条目。因此**仅需在 `NODE_REGISTRY` 中追加一条** `'rh-tools'`，Sidebar 即自动出现新节点入口；不需要单独改 Sidebar.tsx。
+
+### 验收清单
+- [ ] 左侧 RH 分类下能看到第 3 个节点「RH工具」（紫色 Sparkles 图标）
+- [ ] 拖入画布后默认显示启动器视图，「暂无应用」提示 + 「+ 增加 / ✎ 编辑」按钮可点
+- [ ] 编辑器 Modal 能添加分类、添加应用（含「自动填名」按钮通过 fetchRhAppInfo 拉取）
+- [ ] 添加完应用后启动器立即出现应用按钮，点击进入运行视图
+- [ ] 运行视图能渲染 IMAGE/VIDEO/AUDIO/LIST/STRING 各类参数；上传素材后能 ▶ 运行
+- [ ] 运行成功后底部出现输出预览（图/视频/音频），下游 OutputNode 也能读到
+- [ ] 多个 RH 工具节点并存时，任一节点的「+ 增加 / 删除 / 重命名」立即反映到其他节点
+- [ ] 刷新画布后，运行态（taskId/outputUrl）与启动器/运行视图正确恢复
+- [ ] 节点支持四角同比例缩放（最小 280×320）
+- [ ] 拼音搜索：输入「hy」匹配「画意」「换衣」等中文应用名
+
+### 与主项目（PenguinPravite）的对应关系
+本子项目复刻自主项目 `components/PebblingCanvas/RHTools*.tsx` + `contexts/RHToolsContext.tsx` + `services/api/runninghub.ts`，做了三点适配：
+1. 主项目 `getAIAppInfo / runAIApp / uploadToRunningHub` → T8 `fetchRhAppInfo / submitRh+queryRh / uploadFile+uploadRhAsset`
+2. 主项目用 `isLightTheme`（来自 useTheme），T8 用 `isLight`（来自 useThemeStore）
+3. 主项目后端基于 `JsonStorage` 工具，T8 后端用本文件内自实现 `loadJson/saveJson/genId`
+
+---
