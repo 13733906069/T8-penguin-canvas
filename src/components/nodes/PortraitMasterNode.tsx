@@ -301,6 +301,28 @@ const PreviewHair = ({ preview, layer }: { preview: PortraitPreviewState; layer:
   );
 };
 
+const PreviewHairlineCover = ({ preview }: { preview: PortraitPreviewState }) => {
+  const stroke = shadeColor(preview.hair, -48);
+  return (
+    <g>
+      <path
+        d="M64 87 C64 54 84 34 110 34 C136 34 156 54 156 87 C142 74 127 67 110 68 C93 67 78 74 64 87Z"
+        fill={preview.hair}
+        stroke={stroke}
+        strokeWidth="1.7"
+      />
+      <path
+        d="M70 77 C84 64 98 58 112 59 C126 58 140 64 150 77"
+        fill="none"
+        stroke={shadeColor(preview.hair, -22)}
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+    </g>
+  );
+};
+
 const PortraitAvatarPreview = ({ selection }: { selection: PortraitSelection }) => {
   const preview = resolvePortraitPreview(selection);
   const hair = selection.hairColor ? PORTRAIT_OPTION_BY_ID.get(selection.hairColor)?.label : '';
@@ -317,7 +339,7 @@ const PortraitAvatarPreview = ({ selection }: { selection: PortraitSelection }) 
         : `radial-gradient(circle at 50% 24%, color-mix(in srgb, var(--t8-accent) 22%, transparent), transparent 34%), linear-gradient(135deg, ${preview.background}44, var(--t8-bg-panel-muted))`;
   return (
     <div
-      className="relative flex h-44 w-full items-center justify-center overflow-hidden rounded-xl border"
+      className="relative flex h-60 w-full items-center justify-center overflow-hidden rounded-xl border"
       style={{
         borderColor: 'var(--t8-border)',
         background: bgMix,
@@ -326,54 +348,61 @@ const PortraitAvatarPreview = ({ selection }: { selection: PortraitSelection }) 
       <div className="absolute left-3 top-3 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--t8-text-dim)' }}>
         Avatar
       </div>
-      <svg className="absolute inset-x-0 top-0 mx-auto h-[154px] w-[210px]" viewBox="0 0 220 180" role="img" aria-label="肖像预览">
-        <ellipse cx="110" cy="166" rx="62" ry="10" fill="#000" opacity="0.12" />
-        <path
-          d="M61 174 C64 133 83 120 110 120 C137 120 156 133 159 174Z"
-          fill={preview.outfit}
-          stroke="#191714"
-          strokeWidth="2.4"
-          transform={`scale(${preview.bodyScale} 1) translate(${110 - 110 / preview.bodyScale} 0)`}
-        />
-        <path d="M93 125 L127 125 L133 153 Q110 164 87 153Z" fill={shadeColor(preview.skin, -8)} stroke="#191714" strokeWidth="2" />
-        <PreviewHair preview={preview} layer="back" />
-        <g transform={`translate(110 88) scale(${preview.headScaleX} ${preview.headScaleY}) translate(-110 -88)`}>
-          <ellipse cx="110" cy="88" rx="43" ry="53" fill={preview.skin} stroke="#191714" strokeWidth="2.6" />
-          {preview.blush !== 'transparent' && (
-            <g fill={preview.blush} opacity="0.36">
-              <ellipse cx="78" cy="107" rx="9" ry="5" />
-              <ellipse cx="142" cy="107" rx="9" ry="5" />
-            </g>
-          )}
-          <PreviewBrow x={86} preview={preview} />
-          <PreviewBrow x={134} preview={preview} flip />
-          <PreviewEye x={86} preview={preview} />
-          <PreviewEye x={134} preview={preview} />
-          <path d="M110 91 Q105 106 111 111" fill="none" stroke="#9f6a58" strokeWidth="2" strokeLinecap="round" />
-          <PreviewMouth preview={preview} />
-          {preview.mark === 'scar' && <path d="M139 79 L151 91 M143 78 L149 84" stroke="#8d2e2e" strokeWidth="2" strokeLinecap="round" />}
-          {preview.mark === 'tattoo' && <path d="M73 95 q9 -15 18 0 q-9 11 -18 0Z" fill="none" stroke={preview.accent} strokeWidth="2" />}
-          {preview.mark === 'magic' && <path d="M146 99 l5 8 l8 1 l-7 5 l1 8 l-7 -4 l-7 4 l1 -8 l-7 -5 l8 -1Z" fill={preview.accent} opacity="0.8" />}
-          {preview.mark === 'freckles' && (
-            <g fill="#9a6b52" opacity="0.65">
-              <circle cx="76" cy="104" r="1.4" /><circle cx="84" cy="111" r="1.2" /><circle cx="136" cy="111" r="1.2" /><circle cx="144" cy="104" r="1.4" />
-            </g>
-          )}
+      <svg className="absolute inset-x-0 top-5 mx-auto h-[158px] w-[214px] overflow-visible" viewBox="0 0 220 180" role="img" aria-label="肖像预览">
+        <g transform="translate(-30 0)">
+          <ellipse cx="110" cy="166" rx="62" ry="10" fill="#000" opacity="0.12" />
         </g>
-        <PreviewHair preview={preview} layer="front" />
-        <PreviewAccessory preview={preview} />
-        {preview.glasses && (
-          <g fill="none" stroke="#191714" strokeWidth="2">
-            <circle cx="86" cy="86" r="13" />
-            <circle cx="134" cy="86" r="13" />
-            <path d="M99 86 H121" />
+        <g transform="translate(-14 0)">
+          <path
+            d="M61 174 C64 133 83 120 110 120 C137 120 156 133 159 174Z"
+            fill={preview.outfit}
+            stroke="#191714"
+            strokeWidth="2.4"
+            transform={`scale(${preview.bodyScale} 1) translate(${110 - 110 / preview.bodyScale} 0)`}
+          />
+        </g>
+        <g transform="translate(-30 0)">
+          <path d="M93 125 L127 125 L133 153 Q110 164 87 153Z" fill={shadeColor(preview.skin, -8)} stroke="#191714" strokeWidth="2" />
+          <PreviewHair preview={preview} layer="back" />
+          <g transform={`translate(110 88) scale(${preview.headScaleX} ${preview.headScaleY}) translate(-110 -88)`}>
+            <ellipse cx="110" cy="88" rx="43" ry="53" fill={preview.skin} stroke="#191714" strokeWidth="2.6" />
+            <PreviewHairlineCover preview={preview} />
+            {preview.blush !== 'transparent' && (
+              <g fill={preview.blush} opacity="0.36">
+                <ellipse cx="78" cy="107" rx="9" ry="5" />
+                <ellipse cx="142" cy="107" rx="9" ry="5" />
+              </g>
+            )}
+            <PreviewBrow x={86} preview={preview} />
+            <PreviewBrow x={134} preview={preview} flip />
+            <PreviewEye x={86} preview={preview} />
+            <PreviewEye x={134} preview={preview} />
+            <path d="M110 91 Q105 106 111 111" fill="none" stroke="#9f6a58" strokeWidth="2" strokeLinecap="round" />
+            <PreviewMouth preview={preview} />
+            {preview.mark === 'scar' && <path d="M139 79 L151 91 M143 78 L149 84" stroke="#8d2e2e" strokeWidth="2" strokeLinecap="round" />}
+            {preview.mark === 'tattoo' && <path d="M73 95 q9 -15 18 0 q-9 11 -18 0Z" fill="none" stroke={preview.accent} strokeWidth="2" />}
+            {preview.mark === 'magic' && <path d="M146 99 l5 8 l8 1 l-7 5 l1 8 l-7 -4 l-7 4 l1 -8 l-7 -5 l8 -1Z" fill={preview.accent} opacity="0.8" />}
+            {preview.mark === 'freckles' && (
+              <g fill="#9a6b52" opacity="0.65">
+                <circle cx="76" cy="104" r="1.4" /><circle cx="84" cy="111" r="1.2" /><circle cx="136" cy="111" r="1.2" /><circle cx="144" cy="104" r="1.4" />
+              </g>
+            )}
           </g>
-        )}
-        <g opacity="0.34" stroke="var(--t8-text-main)" strokeWidth="1">
-          <path d="M48 156 C70 141 84 137 110 140 C136 137 150 141 172 156" fill="none" />
+          <PreviewHair preview={preview} layer="front" />
+          <PreviewAccessory preview={preview} />
+          {preview.glasses && (
+            <g fill="none" stroke="#191714" strokeWidth="2">
+              <circle cx="86" cy="86" r="13" />
+              <circle cx="134" cy="86" r="13" />
+              <path d="M99 86 H121" />
+            </g>
+          )}
+          <g opacity="0.34" stroke="var(--t8-text-main)" strokeWidth="1">
+            <path d="M48 156 C70 141 84 137 110 140 C136 137 150 141 172 156" fill="none" />
+          </g>
         </g>
       </svg>
-      <div className="absolute bottom-3 left-3 right-3 grid grid-cols-2 gap-1 text-[10px]" style={{ color: 'var(--t8-text-muted)' }}>
+      <div className="absolute bottom-4 left-5 right-5 grid grid-cols-2 gap-1.5 text-[11px]" style={{ color: 'var(--t8-text-muted)' }}>
         {[hair, eyes, outfit, mood].filter(Boolean).slice(0, 4).map((item) => (
           <span key={item} className="truncate rounded px-1.5 py-0.5" style={{ background: 'var(--t8-bg-panel-elevated)' }}>
             {item}
@@ -573,7 +602,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className={`t8-node relative w-[560px] overflow-hidden transition-all ${selected ? 'ring-2 ring-pink-300' : ''}`}
+      className={`t8-node relative w-[560px] overflow-visible transition-all ${selected ? 'ring-2 ring-pink-300' : ''}`}
       data-node-kind="portrait-master"
     >
       <Handle type="target" position={Position.Left} style={{ background: PORT_COLOR.text, border: 0 }} />
@@ -671,7 +700,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-black">肖像大师编辑器</div>
                 <div className="text-[11px]" style={{ color: 'var(--t8-text-muted)' }}>
-                  每个大类至少 100 个可选词条；Avatar 只做方向预览，不消耗 API。
+                  每个参数 100 个可选词条；Avatar 只做方向预览，不消耗 API。
                 </div>
               </div>
               <button type="button" className="t8-mini-icon-button" onClick={closeEditor} title="关闭">

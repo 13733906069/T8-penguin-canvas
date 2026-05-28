@@ -86,6 +86,42 @@ interface CategoryBlueprint {
 }
 
 const t = (zh: string, en: string, prompt = en): PortraitTerm => ({ zh, en, prompt });
+const PORTRAIT_OPTIONS_PER_GROUP = 100;
+
+const TERM_VARIANTS = [
+  { zhSuffix: ' · 精致', enPrefix: 'refined', promptPrefix: 'refined' },
+  { zhSuffix: ' · 写实', enPrefix: 'realistic', promptPrefix: 'realistic' },
+  { zhSuffix: ' · 电影感', enPrefix: 'cinematic', promptPrefix: 'cinematic' },
+  { zhSuffix: ' · 动漫感', enPrefix: 'anime-styled', promptPrefix: 'anime-styled' },
+  { zhSuffix: ' · 高级感', enPrefix: 'high-fashion', promptPrefix: 'high-fashion' },
+  { zhSuffix: ' · 柔和', enPrefix: 'soft', promptPrefix: 'soft' },
+  { zhSuffix: ' · 冷感', enPrefix: 'cool refined', promptPrefix: 'cool refined' },
+  { zhSuffix: ' · 华丽', enPrefix: 'ornate', promptPrefix: 'ornate' },
+  { zhSuffix: ' · 清透', enPrefix: 'clean translucent', promptPrefix: 'clean translucent' },
+  { zhSuffix: ' · 戏剧化', enPrefix: 'dramatic', promptPrefix: 'dramatic' },
+  { zhSuffix: ' · 复古', enPrefix: 'retro', promptPrefix: 'retro' },
+  { zhSuffix: ' · 未来感', enPrefix: 'futuristic', promptPrefix: 'futuristic' },
+] as const;
+
+function expandTermsToTarget(terms: PortraitTerm[]): PortraitTerm[] {
+  if (terms.length >= PORTRAIT_OPTIONS_PER_GROUP) return terms.slice(0, PORTRAIT_OPTIONS_PER_GROUP);
+  const out = [...terms];
+  let variantIndex = 0;
+  while (out.length < PORTRAIT_OPTIONS_PER_GROUP && terms.length > 0) {
+    const variant = TERM_VARIANTS[variantIndex % TERM_VARIANTS.length];
+    for (const term of terms) {
+      if (out.length >= PORTRAIT_OPTIONS_PER_GROUP) break;
+      const prompt = term.prompt || term.en;
+      out.push({
+        zh: `${term.zh}${variant.zhSuffix}`,
+        en: `${variant.enPrefix} ${term.en}`,
+        prompt: `${variant.promptPrefix} ${prompt}`,
+      });
+    }
+    variantIndex += 1;
+  }
+  return out;
+}
 
 const blueprints: CategoryBlueprint[] = [
   {
@@ -867,6 +903,28 @@ function deriveEye(text: string): PortraitPreviewPatch {
 function deriveOptionPreview(groupId: string, term: PortraitTerm): PortraitPreviewPatch {
   const text = `${term.zh} ${term.en} ${term.prompt || ''}`.toLowerCase();
   switch (groupId) {
+    case 'age':
+      if (hasAny(text, ['少女', 'teenage', 'young girl', 'girl'])) return { bodyScale: 0.94, mouth: 'soft-smile', mood: 'sweet', background: '#f1d9c6' };
+      if (hasAny(text, ['少年', 'boy', 'male'])) return { bodyScale: 0.96, brow: 'straight', mouth: 'neutral', outfit: '#2f5f9a' };
+      if (hasAny(text, ['成熟', 'mature', 'leader'])) return { bodyScale: 1.04, brow: 'arched', mouth: 'neutral', mood: 'cool' };
+      if (hasAny(text, ['王族', 'royal', '贵族'])) return { mood: 'royal', outfit: '#d7a74a', accent: '#f5c44b' };
+      if (hasAny(text, ['吸血鬼', 'vampire'])) return { mood: 'dark', outfit: '#22202a', accent: '#9b1f35', background: '#2c1b2e' };
+      if (hasAny(text, ['赛博', 'cyber', 'future'])) return { mood: 'cyber', outfit: '#263849', accent: '#69f7de', background: '#17243a' };
+      if (hasAny(text, ['战斗', 'battle'])) return { mood: 'battle', outfit: '#b7352c', accent: '#f06b3f' };
+      if (hasAny(text, ['人偶', 'doll'])) return { headScaleX: 1.05, headScaleY: 0.96, eyeShape: 'round', mouth: 'soft-smile' };
+      return {};
+    case 'identity':
+      if (hasAny(text, ['偶像', 'idol', '舞者', 'dancer'])) return { mood: 'sweet', outfit: '#e88bb1', accent: '#f5c44b' };
+      if (hasAny(text, ['魔法', 'mage', '巫女', 'shrine'])) return { mood: 'dream', outfit: '#5b4c87', accent: '#9f8cff', background: '#edd4ef' };
+      if (hasAny(text, ['剑士', 'knight', '骑士', 'commander', '忍者', 'ninja'])) return { mood: 'battle', outfit: '#263849', brow: 'sharp', accent: '#f06b3f' };
+      if (hasAny(text, ['女仆', 'maid'])) return { outfit: '#22202a', accent: '#f5efe2', mouth: 'soft-smile' };
+      if (hasAny(text, ['医生', 'doctor', '图书', 'librarian'])) return { outfit: '#f5efe2', mood: 'soft' };
+      if (hasAny(text, ['侦探', 'detective', '机械师', 'mechanic'])) return { outfit: '#4c3a32', mood: 'cool' };
+      if (hasAny(text, ['赛博', 'cyber', '宇航员', 'astronaut'])) return { mood: 'cyber', outfit: '#263849', accent: '#69f7de', background: '#17243a' };
+      if (hasAny(text, ['海盗', 'pirate'])) return { mood: 'dark', outfit: '#2c1f1a', accessory: 'hat' };
+      if (hasAny(text, ['学生', 'school', 'academy'])) return { outfit: '#2f5f9a', mood: 'soft' };
+      if (hasAny(text, ['贵族', 'aristocrat'])) return { outfit: '#d7a74a', mood: 'royal', accessory: 'crown' };
+      return {};
     case 'skinTone':
       return deriveSkin(text);
     case 'hairColor':
@@ -899,6 +957,12 @@ function deriveOptionPreview(groupId: string, term: PortraitTerm): PortraitPrevi
       if (hasAny(text, ['及腰', '超长', 'floor', 'very long', 'waist'])) return { hairShape: 'long' };
       if (hasAny(text, ['中长', 'shoulder', 'collarbone', 'medium'])) return { hairShape: 'bob' };
       return {};
+    case 'hairTexture':
+      if (hasAny(text, ['风吹', 'wind', '飘逸', 'airy'])) return { hairShape: 'long', mood: 'dream' };
+      if (hasAny(text, ['凌乱', 'messy', 'wet', '湿润'])) return { bangs: 'messy' };
+      if (hasAny(text, ['卷曲', 'curly', '蓬松', 'fluffy'])) return { hairShape: 'long', bangs: 'curtain' };
+      if (hasAny(text, ['高光', 'glossy', '光泽'])) return { accent: '#f5c44b' };
+      return {};
     case 'bangs':
       if (hasAny(text, ['无刘海', 'no bangs'])) return { bangs: 'none' };
       if (hasAny(text, ['齐刘海', 'straight', 'blunt'])) return { bangs: 'straight' };
@@ -930,10 +994,13 @@ function deriveOptionPreview(groupId: string, term: PortraitTerm): PortraitPrevi
       return { blush: '#ef9aa4' };
     case 'eyeMakeup':
     case 'eyelashes':
+    case 'makeupStyle':
       if (hasAny(text, ['烟熏', 'gothic', 'smoky'])) return { accent: '#34233d', mood: 'dark' };
       if (hasAny(text, ['赛博', 'cyber'])) return { accent: '#69f7de', mood: 'cyber' };
       if (hasAny(text, ['金', 'gold'])) return { accent: '#d99b16' };
       if (hasAny(text, ['红', 'red'])) return { accent: '#d0443f' };
+      if (hasAny(text, ['甜美', 'sweet', '日系', 'korean', 'pink'])) return { mood: 'sweet', blush: '#ef9aa4' };
+      if (hasAny(text, ['裸妆', 'natural'])) return { mood: 'soft', blush: '#ef9aa4' };
       return {};
     case 'top':
     case 'bottom':
@@ -978,17 +1045,33 @@ function deriveOptionPreview(groupId: string, term: PortraitTerm): PortraitPrevi
     case 'skinDetails':
       if (hasAny(text, ['雀斑', 'freckle'])) return { mark: 'freckles' };
       return {};
+    case 'bag':
+    case 'necklace':
+    case 'handAccessory':
+    case 'belt':
+      if (hasAny(text, ['金', 'gold', '珍珠', 'pearl', '水晶', 'crystal'])) return { accent: '#d7a74a', mood: 'royal' };
+      if (hasAny(text, ['机械', 'metal', 'cyber'])) return { accent: '#69f7de', mood: 'cyber' };
+      if (hasAny(text, ['黑', 'leather', '皮革', 'gothic'])) return { accent: '#2c1f1a', mood: 'dark' };
+      if (hasAny(text, ['红', 'red'])) return { accent: '#d0443f', mood: 'battle' };
+      return {};
     case 'temperament':
     case 'aura':
     case 'background':
     case 'lighting':
     case 'style':
+    case 'gaze':
+    case 'pose':
+    case 'hands':
+    case 'composition':
+    case 'camera':
       if (hasAny(text, ['赛博', 'cyber', 'neon'])) return { mood: 'cyber', background: '#17243a', accent: '#69f7de' };
       if (hasAny(text, ['黑暗', 'dark', 'gothic', 'rainy night'])) return { mood: 'dark', background: '#2c1b2e' };
       if (hasAny(text, ['梦', 'dream', '柔焦', 'pink'])) return { mood: 'dream', background: '#edd4ef' };
       if (hasAny(text, ['高贵', 'royal', 'palace'])) return { mood: 'royal', background: '#3a2845', accent: '#d7a74a' };
       if (hasAny(text, ['战斗', 'war', 'battle', 'dangerous'])) return { mood: 'battle', background: '#3a1f18', accent: '#f06b3f' };
       if (hasAny(text, ['温柔', 'soft', 'healing'])) return { mood: 'soft', background: '#f1d9c6' };
+      if (hasAny(text, ['冷', 'cool', 'distant', 'sharp'])) return { mood: 'cool', brow: 'sharp', mouth: 'neutral' };
+      if (hasAny(text, ['笑', 'smile', 'happy'])) return { mood: 'sweet', mouth: 'smile' };
       return {};
     default:
       return {};
@@ -1023,7 +1106,7 @@ export const PORTRAIT_CATEGORIES: PortraitCategory[] = blueprints.map((category)
     categoryId: category.id,
     label: group.label,
     labelEn: group.labelEn,
-    options: group.terms.map((term, index) => makeOption(category.id, group.id, index, term)),
+    options: expandTermsToTarget(group.terms).map((term, index) => makeOption(category.id, group.id, index, term)),
   })),
 }));
 

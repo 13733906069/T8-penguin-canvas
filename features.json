@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.6.4",
-  "lastUpdated": "2026-05-29-v1.6.4-portrait-master-text-resize",
+  "version": "1.6.5",
+  "lastUpdated": "2026-05-29-v1.6.5-portrait-master-avatar-llm-model",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,9 +16,9 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.6.4",
-    "semverVersion": "1.6.4",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.6.4：新增肖像大师基础版与 Avatar 分层预览，补充画布空白处 Z 缩放到全貌快捷键，修复文本节点手动缩放后输出端口和连线坐标分离的问题。已通过 npm run build；本次未重新打包 Electron。",
+    "version": "1.6.5",
+    "semverVersion": "1.6.5",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.6.5：肖像大师词库扩展为每个小参数 100 个可选词条，Avatar 预览修复秃顶、视觉偏右和左右端口裁切问题；LLM 默认模型显示名与后端调用模型统一为 gemini-3.1-flash-lite-preview。已通过 npm run build；本次未重新打包 Electron。",
     "installer": "本次未打包 Electron；最近一次安装包为 dist_electron/T8-PenguinCanvas-Setup-1.5.5.exe (NSIS, 108.96 MB)",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
@@ -1286,7 +1286,7 @@
       "items": [
         "新增 roadmap.md，记录肖像大师四阶段开发要求：基础可用版、Avatar 可视预览、角色库与复用、高级随机与批量角色；负面约束暂不开发。",
         "工具箱分类新增「肖像大师」节点，类型 portrait-master，节点只输出 prompt/text/metadata，不直接生成图片。",
-        "肖像大师内置基础人物、五官、头发、妆容、身体标记、服装、配饰、气质神情、画面控制 9 大类词库，每类至少 100 个可选词条，支持不选、锁定随机、权重与自定义补充。",
+        "肖像大师内置基础人物、五官、头发、妆容、身体标记、服装、配饰、气质神情、画面控制 9 大类词库，每个小参数自动补齐到 100 个可选词条，支持不选、锁定随机、权重与自定义补充。",
         "节点默认输出英文 prompt，同时保留中文 UI 摘要；运行按钮复用工具箱输出协议，会创建或更新下游 OutputNode，也可手动连线给图像、视频、SD2.0、LLM、RunningHub 等节点消费。",
         "UI 使用 t8-node / t8-card / t8-btn / t8-input / t8-mini-icon-button 主题语义类，随现有多主题模板自动适配。"
       ]
@@ -1297,7 +1297,7 @@
       "items": [
         "肖像大师节点的 Avatar 占位预览升级为轻量 SVG 分层预览，显示头发、脸型、肤色、眼睛、眉毛、嘴型、服装、发饰、眼镜/面饰、体表标记和氛围背景。",
         "portraitMasterOptions 词库新增 previewTag / preview 元数据，并通过 resolvePortraitPreview(selection) 统一汇总预览状态，避免在 UI 里为每个词条写绘图分支。",
-        "配饰大类补充「眼镜/面饰」分组，包含圆框眼镜、护目镜、墨镜、单片眼镜、眼罩、口罩、机械面罩等 20 项，既参与 prompt 也驱动 Avatar 可视层。",
+        "配饰大类补充「眼镜/面饰」分组，所有小参数统一扩展为 100 项，既参与 prompt 也驱动 Avatar 可视层。",
         "Avatar 预览只提供创作方向感，不生成真实图片、不调用后端、不消耗 API；运行输出 metadata 会携带 preview 快照，方便后续角色库阶段复用。"
       ]
     },
@@ -1309,6 +1309,17 @@
         "修复文本节点手动拉大/缩小时输出端口与连线分离：ResizableCorners 透出 onResizeEnd，TextNode 在 resize 中、resize 结束和 DOM 尺寸实际变化后都刷新 ReactFlow node internals。",
         "TextNode 使用 ResizeObserver + 双 requestAnimationFrame 兜底，确保 ReactFlow 读取的是最终落定后的 handleBounds，避免视觉节点尺寸与内部连线坐标晚一拍。",
         "公开版本同步到 1.6.4：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub。"
+      ]
+    },
+    "phase86": {
+      "label": "肖像大师 Avatar 与 LLM 默认模型修复 (v1.6.5)",
+      "status": "complete",
+      "items": [
+        "肖像大师词库扩展为每个小参数 100 个可选词条，README、features 和 roadmap 从“每类百项”统一改为“每个小参数 100 项”。",
+        "Avatar 轻量预览新增发际线遮罩，修复部分发型露出秃顶的问题；预览卡片增高，标签下移，人物主体按身体层与头部/配饰/阴影层分别校正，改善视觉居中。",
+        "肖像大师节点外层从 overflow-hidden 改为 overflow-visible，避免左右 ReactFlow 输入/输出端口被裁成半个。",
+        "LLM/Vision 第一个模型的显示名与实际后端模型 id 统一为 gemini-3.1-flash-lite-preview，减少用户误判。",
+        "公开版本同步到 1.6.5：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub。"
       ]
     }
   },
@@ -1556,7 +1567,7 @@
         {
           "type": "portrait-master",
           "label": "肖像大师",
-          "description": "捏人 Prompt 设计器：9 大类词库，每类至少 100 个可选词条；支持 Avatar 分层预览、不选、随机、锁定、权重、自定义补充、默认英文 prompt 与运行输出到 OutputNode"
+          "description": "捏人 Prompt 设计器：9 大类词库，每个小参数 100 个可选词条；支持 Avatar 分层预览、不选、随机、锁定、权重、自定义补充、默认英文 prompt 与运行输出到 OutputNode"
         }
       ]
     }
