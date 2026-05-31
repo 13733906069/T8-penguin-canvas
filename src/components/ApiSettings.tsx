@@ -112,6 +112,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [activeAdvancedProviderId, setActiveAdvancedProviderId] = useState<string>('');
   const [advancedDirty, setAdvancedDirty] = useState(false);
   const [advancedTestStatus, setAdvancedTestStatus] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({});
+  const [advancedComfyDrafts, setAdvancedComfyDrafts] = useState<Record<string, { workflowJson?: string; fields?: string }>>({});
   const [backupMessage, setBackupMessage] = useState<string>('');
   const backupFileInputRef = useRef<HTMLInputElement | null>(null);
   // 眼睛预览拉取的明文（仅缓存，不提交）
@@ -138,6 +139,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setActiveAdvancedProviderId(providers[0]?.id || '');
       setAdvancedDirty(false);
       setAdvancedTestStatus({});
+      setAdvancedComfyDrafts({});
       // 回填文件自动保存路径(明文字段，不脱敏)
       setFileSavePathInput((settings as any)?.fileSavePath || '');
       setCanvasAutoSavePathInput((settings as any)?.canvasAutoSavePath || '');
@@ -509,6 +511,36 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       ? 'border border-[var(--px-ink)] bg-white p-3 space-y-3'
       : `border rounded-lg p-3 space-y-3 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-black/10 bg-black/[0.02]'}`;
     const textareaCls = `${inputCls} min-h-[72px] resize-y font-mono text-xs`;
+    const comfyWorkflow = (provider.comfyuiConfig?.workflows?.[0] || { id: 'workflow-1', name: '默认工作流' }) as NonNullable<NonNullable<AdvancedProviderConfig['comfyuiConfig']>['workflows']>[number];
+    const comfyDraft = advancedComfyDrafts[provider.id] || {};
+    const setComfyDraft = (patch: { workflowJson?: string; fields?: string }) => {
+      setAdvancedComfyDrafts((prev) => ({ ...prev, [provider.id]: { ...(prev[provider.id] || {}), ...patch } }));
+    };
+    const updateComfyWorkflow = (patch: Record<string, any>) => {
+      updateAdvancedProviderNested(provider.id, 'comfyuiConfig', {
+        workflows: [{ ...comfyWorkflow, ...patch }],
+      });
+    };
+    const updateComfyWorkflowJson = (raw: string) => {
+      setComfyDraft({ workflowJson: raw });
+      try {
+        updateComfyWorkflow({ workflowJson: JSON.parse(raw) });
+        setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: true, message: '工作流 JSON 已解析' } }));
+      } catch {
+        setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: false, message: '工作流 JSON 格式不正确，修正后会自动保存' } }));
+      }
+    };
+    const updateComfyFields = (raw: string) => {
+      setComfyDraft({ fields: raw });
+      try {
+        const parsed = JSON.parse(raw || '[]');
+        if (!Array.isArray(parsed)) throw new Error('fields must be array');
+        updateComfyWorkflow({ fields: parsed });
+        setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: true, message: '参数映射已解析' } }));
+      } catch {
+        setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: false, message: '参数映射 JSON 需要是数组' } }));
+      }
+    };
 
     return (
       <div className={sectionCls}>
@@ -627,17 +659,57 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         )}
 
         {isComfy && (
-          <label className="space-y-1 block">
-            <span className={`text-[11px] ${labelCls}`}>实例地址列表</span>
-            <textarea
-              value={(provider.comfyuiConfig?.instances || [provider.baseUrl || '']).filter(Boolean).join('\n')}
-              onChange={(e) => updateAdvancedProviderNested(provider.id, 'comfyuiConfig', {
-                instances: parseAdvancedProviderModelText(e.target.value),
-              })}
-              className={textareaCls}
-              placeholder="http://127.0.0.1:8188"
-            />
-          </label>
+          <div className="space-y-3">
+            <label className="space-y-1 block">
+              <span className={`text-[11px] ${labelCls}`}>实例地址列表</span>
+              <textarea
+                value={(provider.comfyuiConfig?.instances || [provider.baseUrl || '']).filter(Boolean).join('\n')}
+                onChange={(e) => updateAdvancedProviderNested(provider.id, 'comfyuiConfig', {
+                  instances: parseAdvancedProviderModelText(e.target.value),
+                })}
+                className={textareaCls}
+                placeholder="http://127.0.0.1:8188"
+              />
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>工作流 ID</span>
+                <input
+                  value={comfyWorkflow.id || ''}
+                  onChange={(e) => updateComfyWorkflow({ id: e.target.value || 'workflow-1' })}
+                  className={inputCls}
+                  placeholder="workflow-1"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>工作流名称</span>
+                <input
+                  value={comfyWorkflow.name || ''}
+                  onChange={(e) => updateComfyWorkflow({ name: e.target.value || '默认工作流' })}
+                  className={inputCls}
+                  placeholder="默认工作流"
+                />
+              </label>
+            </div>
+            <label className="space-y-1 block">
+              <span className={`text-[11px] ${labelCls}`}>工作流 JSON</span>
+              <textarea
+                value={comfyDraft.workflowJson ?? (comfyWorkflow.workflowJson ? JSON.stringify(comfyWorkflow.workflowJson, null, 2) : '')}
+                onChange={(e) => updateComfyWorkflowJson(e.target.value)}
+                className={`${textareaCls} min-h-[140px]`}
+                placeholder='粘贴 ComfyUI API workflow JSON，例如 {"1":{"class_type":"CLIPTextEncode","inputs":{"text":""}}}'
+              />
+            </label>
+            <label className="space-y-1 block">
+              <span className={`text-[11px] ${labelCls}`}>参数映射 JSON（可选）</span>
+              <textarea
+                value={comfyDraft.fields ?? JSON.stringify(comfyWorkflow.fields || [], null, 2)}
+                onChange={(e) => updateComfyFields(e.target.value)}
+                className={textareaCls}
+                placeholder='[{"nodeId":"1","fieldName":"text","source":"prompt"}]'
+              />
+            </label>
+          </div>
         )}
 
         {isJimeng && (
