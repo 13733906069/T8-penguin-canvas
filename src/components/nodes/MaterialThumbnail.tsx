@@ -19,7 +19,7 @@ import type { Material } from './useUpstreamMaterials';
  *   - text   : 浅色卡片 + 文本前缀字
  *   - 左上角: 序号 (1/2/3…)
  *   - 右上角: 来源标识 📌 local / 🔗 upstream
- *   - 右下角: 删除按钮 (仅 local 来源)
+ *   - 右下角: 删除 / 排除按钮 (local 真删除, upstream 仅从当前节点排除)
  *
  * 主题:
  *   - isPixel=true  → 黑色像素描边 + 1px 偏移投影 + 高对比黄/青块
@@ -38,7 +38,9 @@ interface Props {
   isDark: boolean;
   draggable?: boolean;
   removable?: boolean;
+  excludeable?: boolean;
   onRemove?: () => void;
+  onExclude?: () => void;
   size?: number;
   cursor?: React.CSSProperties['cursor'];
   sortScope?: string;
@@ -54,7 +56,9 @@ const MaterialThumbnail = ({
   isDark,
   draggable = true,
   removable = false,
+  excludeable = false,
   onRemove,
+  onExclude,
   size = 56,
   cursor,
   sortScope,
@@ -205,14 +209,15 @@ const MaterialThumbnail = ({
         {material.origin === 'local' ? <Pin size={8} /> : <Link2 size={8} />}
       </div>
 
-      {/* 删除按钮 - 右下 (仅 local) */}
-      {removable && onRemove && (
+      {/* 删除 / 排除按钮 - 右下 */}
+      {((removable && onRemove) || (excludeable && onExclude)) && (
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
-            onRemove();
+            if (removable && onRemove) onRemove();
+            else if (excludeable && onExclude) onExclude();
           }}
           style={{
             position: 'absolute',
@@ -229,7 +234,7 @@ const MaterialThumbnail = ({
             cursor: 'pointer',
             ...(isPixel ? { borderLeft: '1.5px solid #1a1a1a', borderTop: '1.5px solid #1a1a1a' } : {}),
           }}
-          title="移除本地素材"
+          title={removable ? '移除本地素材' : '从本节点排除此上游素材'}
         >
           <X size={9} />
         </button>

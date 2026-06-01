@@ -44,6 +44,12 @@ import {
   advancedProvidersForNode,
   resolveAdvancedProviderSelection,
 } from '../../utils/advancedProviders';
+import {
+  countExcludedMaterials,
+  excludeMaterialId,
+  filterExcludedMaterials,
+  normalizeExcludedMaterialIds,
+} from '../../utils/materialExclusion';
 
 /**
  * VideoNode - 异步视频生成(完全对齐 gpt-image-2-web)
@@ -144,12 +150,44 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
   // === 上游素材聚合 (跨节点统一机制) ===
   const upstream = useUpstreamMaterials(id);
+  const excludedMaterialIds = useMemo(
+    () => normalizeExcludedMaterialIds(d?.excludedMaterialIds),
+    [d?.excludedMaterialIds],
+  );
+  const visibleUpstreamTexts = useMemo(
+    () => filterExcludedMaterials(upstream.texts, excludedMaterialIds),
+    [upstream.texts, excludedMaterialIds],
+  );
+  const visibleUpstreamImages = useMemo(
+    () => filterExcludedMaterials(upstream.images, excludedMaterialIds),
+    [upstream.images, excludedMaterialIds],
+  );
+  const visibleUpstreamVideos = useMemo(
+    () => filterExcludedMaterials(upstream.videos, excludedMaterialIds),
+    [upstream.videos, excludedMaterialIds],
+  );
+  const visibleUpstreamAudios = useMemo(
+    () => filterExcludedMaterials(upstream.audios, excludedMaterialIds),
+    [upstream.audios, excludedMaterialIds],
+  );
+  const excludedUpstreamCount = useMemo(
+    () => countExcludedMaterials(excludedMaterialIds, [...upstream.texts, ...upstream.images, ...upstream.videos, ...upstream.audios]),
+    [excludedMaterialIds, upstream.texts, upstream.images, upstream.videos, upstream.audios],
+  );
   const materialOrder: string[] = Array.isArray(d?.materialOrder) ? d.materialOrder : [];
-  const orderedTexts = useOrderedMaterials(upstream.texts, materialOrder);
-  const orderedImages = useOrderedMaterials(upstream.images, materialOrder);
-  const orderedVideos = useOrderedMaterials(upstream.videos, materialOrder);
-  const orderedAudios = useOrderedMaterials(upstream.audios, materialOrder);
+  const orderedTexts = useOrderedMaterials(visibleUpstreamTexts, materialOrder);
+  const orderedImages = useOrderedMaterials(visibleUpstreamImages, materialOrder);
+  const orderedVideos = useOrderedMaterials(visibleUpstreamVideos, materialOrder);
+  const orderedAudios = useOrderedMaterials(visibleUpstreamAudios, materialOrder);
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const handleExcludeUpstreamMaterial = (m: Material) => {
+    if (m.origin !== 'upstream') return;
+    update({
+      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
+      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+    });
+  };
+  const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
 
   // === 本地拖入参考图 (跨节点 Ctrl 拖拽) ===
   const localRefImages: string[] = Array.isArray(d?.localRefImages) ? d.localRefImages : [];
@@ -948,6 +986,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             audios={orderedAudios}
             order={materialOrder}
             onReorder={setMaterialOrder}
+            onExcludeUpstream={handleExcludeUpstreamMaterial}
+            excludedCount={excludedUpstreamCount}
+            onRestoreExcluded={handleRestoreExcludedMaterials}
             selected={!!selected}
             isDark={isDark}
             isPixel={isPixel}

@@ -40,6 +40,12 @@ import { useRHToolsSafe } from '../../providers/RHToolsProvider';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import { fuzzyMatch } from '../../utils/pinyinMatch';
+import {
+  countExcludedMaterials,
+  excludeMaterialId,
+  filterExcludedMaterials,
+  normalizeExcludedMaterialIds,
+} from '../../utils/materialExclusion';
 import ResizableCorners from './ResizableCorners';
 import RHToolEditorModal from './RHToolEditorModal';
 import type { RHTool, RHToolsBackup } from '../../services/api';
@@ -221,15 +227,43 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
 
   // 上游素材聚合（与 RunningHubNode 一致）
   const upstream = useUpstreamMaterials(id);
+  const excludedMaterialIds = useMemo(
+    () => normalizeExcludedMaterialIds(d?.excludedMaterialIds),
+    [d?.excludedMaterialIds],
+  );
+  const visibleUpstreamImages = useMemo(
+    () => filterExcludedMaterials(upstream.images, excludedMaterialIds),
+    [upstream.images, excludedMaterialIds],
+  );
+  const visibleUpstreamVideos = useMemo(
+    () => filterExcludedMaterials(upstream.videos, excludedMaterialIds),
+    [upstream.videos, excludedMaterialIds],
+  );
+  const visibleUpstreamAudios = useMemo(
+    () => filterExcludedMaterials(upstream.audios, excludedMaterialIds),
+    [upstream.audios, excludedMaterialIds],
+  );
+  const excludedUpstreamCount = useMemo(
+    () => countExcludedMaterials(excludedMaterialIds, [...upstream.images, ...upstream.videos, ...upstream.audios]),
+    [excludedMaterialIds, upstream.images, upstream.videos, upstream.audios],
+  );
   const materialOrder: string[] = Array.isArray(d?.materialOrder) ? d.materialOrder : [];
-  const orderedImages = useOrderedMaterials(upstream.images, materialOrder);
-  const orderedVideos = useOrderedMaterials(upstream.videos, materialOrder);
-  const orderedAudios = useOrderedMaterials(upstream.audios, materialOrder);
+  const orderedImages = useOrderedMaterials(visibleUpstreamImages, materialOrder);
+  const orderedVideos = useOrderedMaterials(visibleUpstreamVideos, materialOrder);
+  const orderedAudios = useOrderedMaterials(visibleUpstreamAudios, materialOrder);
   const mentionMaterials = useMemo<Material[]>(
     () => [...orderedImages, ...orderedVideos, ...orderedAudios],
     [orderedImages, orderedVideos, orderedAudios],
   );
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const handleExcludeUpstreamMaterial = (m: Material) => {
+    if (m.origin !== 'upstream') return;
+    update({
+      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
+      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+    });
+  };
+  const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
   const src = `rh-tools:${id}`;
 
   const findUpstreamUrl = (kind: 'image' | 'video' | 'audio', idx = 0): string => {
@@ -792,13 +826,16 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
           onWheelCapture={(e) => e.stopPropagation()}
         >
           {/* 上游素材聚合预览 */}
-          {(orderedImages.length + orderedVideos.length + orderedAudios.length) > 0 && (
+          {(orderedImages.length + orderedVideos.length + orderedAudios.length + excludedUpstreamCount) > 0 && (
             <MaterialPreviewSection
               images={orderedImages}
               videos={orderedVideos}
               audios={orderedAudios}
               order={materialOrder}
               onReorder={setMaterialOrder}
+              onExcludeUpstream={handleExcludeUpstreamMaterial}
+              excludedCount={excludedUpstreamCount}
+              onRestoreExcluded={handleRestoreExcludedMaterials}
               isDark={isDark}
               isPixel={isPixel}
               groups={['image', 'video', 'audio']}

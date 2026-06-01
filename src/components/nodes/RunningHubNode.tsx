@@ -12,6 +12,12 @@ import MentionPromptInput from './MentionPromptInput';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
+import {
+  countExcludedMaterials,
+  excludeMaterialId,
+  filterExcludedMaterials,
+  normalizeExcludedMaterialIds,
+} from '../../utils/materialExclusion';
 
 /**
  * RunningHubNode - 主工作流节点
@@ -170,10 +176,30 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   // 交给 MaterialPreviewSection 统一呈现（含 dnd-kit 拖拽排序、多图并列、双主题适配）。
   // materialOrder 写入本节点 data，负责序列化限定。
   const upstream = useUpstreamMaterials(id);
+  const excludedMaterialIds = useMemo(
+    () => normalizeExcludedMaterialIds(d?.excludedMaterialIds),
+    [d?.excludedMaterialIds],
+  );
+  const visibleUpstreamImages = useMemo(
+    () => filterExcludedMaterials(upstream.images, excludedMaterialIds),
+    [upstream.images, excludedMaterialIds],
+  );
+  const visibleUpstreamVideos = useMemo(
+    () => filterExcludedMaterials(upstream.videos, excludedMaterialIds),
+    [upstream.videos, excludedMaterialIds],
+  );
+  const visibleUpstreamAudios = useMemo(
+    () => filterExcludedMaterials(upstream.audios, excludedMaterialIds),
+    [upstream.audios, excludedMaterialIds],
+  );
+  const excludedUpstreamCount = useMemo(
+    () => countExcludedMaterials(excludedMaterialIds, [...upstream.images, ...upstream.videos, ...upstream.audios]),
+    [excludedMaterialIds, upstream.images, upstream.videos, upstream.audios],
+  );
   const materialOrder: string[] = Array.isArray(d?.materialOrder) ? d.materialOrder : [];
-  const orderedImages = useOrderedMaterials(upstream.images, materialOrder);
-  const orderedVideos = useOrderedMaterials(upstream.videos, materialOrder);
-  const orderedAudios = useOrderedMaterials(upstream.audios, materialOrder);
+  const orderedImages = useOrderedMaterials(visibleUpstreamImages, materialOrder);
+  const orderedVideos = useOrderedMaterials(visibleUpstreamVideos, materialOrder);
+  const orderedAudios = useOrderedMaterials(visibleUpstreamAudios, materialOrder);
   const mentionMaterials = useMemo<Material[]>(
     () => [...orderedImages, ...orderedVideos, ...orderedAudios],
     [orderedImages, orderedVideos, orderedAudios],
@@ -182,6 +208,14 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   // 与 VideoNode/SeedanceNode 保持一致，不同节点类型使用不同前缀 rh / rh-wallet。
   const src = `${type === 'rhWallet' ? 'rh-wallet' : 'rh'}:${id}`;
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const handleExcludeUpstreamMaterial = (m: Material) => {
+    if (m.origin !== 'upstream') return;
+    update({
+      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
+      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+    });
+  };
+  const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
   const { style, theme } = useThemeStore();
   const isPixel = style === 'pixel';
   const isDark = theme === 'dark';
@@ -652,13 +686,16 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       <div className="p-2.5 space-y-2" onMouseDown={(e) => e.stopPropagation()}>
         {/* 上游媒体聚合预览区：与 Image/Video/Audio 节点使用同一个 MaterialPreviewSection，
             支持 image/video/audio 三种素材、多图并列、dnd-kit 拖拽排序，拖拽顺序会联动下方参数表的字段分配。 */}
-        {(orderedImages.length + orderedVideos.length + orderedAudios.length) > 0 && (
+        {(orderedImages.length + orderedVideos.length + orderedAudios.length + excludedUpstreamCount) > 0 && (
           <MaterialPreviewSection
             images={orderedImages}
             videos={orderedVideos}
             audios={orderedAudios}
             order={materialOrder}
             onReorder={setMaterialOrder}
+            onExcludeUpstream={handleExcludeUpstreamMaterial}
+            excludedCount={excludedUpstreamCount}
+            onRestoreExcluded={handleRestoreExcludedMaterials}
             isDark={isDark}
             isPixel={isPixel}
             groups={['image', 'video', 'audio']}

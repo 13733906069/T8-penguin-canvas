@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.8.7",
-  "lastUpdated": "2026-06-01-image-hover-preview-editor-fit",
+  "version": "1.8.8",
+  "lastUpdated": "2026-06-01-upstream-material-exclusion",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,9 +16,9 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.8.7",
-    "semverVersion": "1.8.7",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.8.7：上传素材 / 输出素材图像新增 hover 小眼睛原图预览，图像编辑弹窗非组合模式按真实舞台尺寸完整展示图片。默认主流程仍保持贞贞工坊 / RunningHub / LLM 独立 Key 不变。",
+    "version": "1.8.8",
+    "semverVersion": "1.8.8",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.8.8：生成节点上游素材缩略图新增单项排除 X，不切断连线即可从当前节点排除某个传入素材，并可一键恢复。默认主流程仍保持贞贞工坊 / RunningHub / LLM 独立 Key 不变。",
     "installer": "本次为源码发布，未重新打包 Electron；上一安装包仍为 dist_electron/T8-PenguinCanvas-Setup-1.8.6.exe（NSIS，129.40 MB）。如需离线用户包，仍需按打包清单准备 remove-ai-watermarks sidecar runtime 并执行 npm run dist。",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
@@ -1774,6 +1774,19 @@
         "公开版本同步到 1.8.7：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub；本次只推源码，不打包 Electron。",
         "验证：node --test tests/imageHoverPreview.test.ts 通过；npm run build 通过（仅保留既有 chunk size 与 react-vendor 空 chunk 警告）；浏览器检查当前画布存在 3 个 preview trigger、默认 opacity=0、hover CSS 与 preview popover 样式已注入。"
       ]
+    },
+    "phase120": {
+      "label": "生成节点上游素材单项排除 (v1.8.8)",
+      "status": "complete",
+      "items": [
+        "MaterialPreviewSection 支持 origin=upstream 的缩略图右下角 X，从当前节点排除单个上游素材；local 素材仍保持原本删除语义。",
+        "排除状态按节点写入 data.excludedMaterialIds，不断开 ReactFlow 连线、不修改源节点、不影响其他下游节点；恢复入口显示为素材区标题右侧的 恢复N。",
+        "图像、视频、SD2.0、音频、LLM、RunningHub、RH 工具节点均接入 filterExcludedMaterials，提交链路使用过滤后的 orderedTexts / orderedImages / orderedVideos / orderedAudios。",
+        "排除项不会进入 prompt、参考图、音频/视频输入、@素材解析、RunningHub 字段自动分配或 RH 工具参数；素材集传入时每个子素材可单独排除。",
+        "新增 src/utils/materialExclusion.ts 与 tests/materialExclusion.test.ts，锁定排除 id 去重、过滤、stale id 计数和恢复计数行为。",
+        "公开版本同步到 1.8.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub；本次只推源码，不打包 Electron。",
+        "验证：node --test tests/*.test.ts 通过 73/73；npm run build 通过（仅保留既有 chunk size 与 react-vendor 空 chunk 警告）；浏览器检查当前画布存在 5 个上游素材排除按钮且 console error 为空。"
+      ]
     }
   },
   "categories": {
@@ -1810,27 +1823,27 @@
         {
           "type": "image",
           "label": "图像生成节点(ZhenzhenMagic)",
-          "description": "多 TAB 模型切换:GPT Image 2 / Nano Banana Pro / Nano Banana 2 / Midjourney(MJ 无 FAL),对应主项目 gpt-image-2-web Tab 0/1/2 + runMJ"
+          "description": "多 TAB 模型切换:GPT Image 2 / Nano Banana Pro / Nano Banana 2 / Midjourney(MJ 无 FAL),对应主项目 gpt-image-2-web Tab 0/1/2 + runMJ；上游文本/图像缩略图可在节点内单项排除且不断开连线"
         },
         {
           "type": "video",
           "label": "视频节点",
-          "description": "veo-3.1 / grok-video"
+          "description": "veo-3.1 / grok-video；上游文本/图像/视频/音频缩略图可在节点内单项排除且不断开连线"
         },
         {
           "type": "seedance",
           "label": "SD2.0 节点",
-          "description": "Seedance 2.0 视频分镜"
+          "description": "Seedance 2.0 视频分镜；上游文本/图像/视频/音频缩略图可在节点内单项排除且不断开连线"
         },
         {
           "type": "audio",
           "label": "音频节点",
-          "description": "Suno 全对齐 gpt-image-2-web:三模式(generate/cover/extend) + 7 版本(v3.0/v3.5/v4/v4.5/v4.5+/v5/v5.5) + 本地上传 + 上游 audioUrl 兜底,无 FAL"
+          "description": "Suno 全对齐 gpt-image-2-web:三模式(generate/cover/extend) + 7 版本(v3.0/v3.5/v4/v4.5/v4.5+/v5/v5.5) + 本地上传 + 上游 audioUrl 兜底,无 FAL；上游文本/音频缩略图可在节点内单项排除且不断开连线"
         },
         {
           "type": "llm",
           "label": "LLM/Vision 节点",
-          "description": "LLM/Vision 模型(gemini-3.1-flash-lite 默认/gemini-3.5-flash/gpt-4o/gemini-3.1-pro/gpt-5/gpt-image-2-all) + temp/max_tokens + system 预设 + 多模态图片 + 多轮会话 + SSE 流式 + 独立 LLM Key"
+          "description": "LLM/Vision 模型(gemini-3.1-flash-lite 默认/gemini-3.5-flash/gpt-4o/gemini-3.1-pro/gpt-5/gpt-image-2-all) + temp/max_tokens + system 预设 + 多模态图片 + 多轮会话 + SSE 流式 + 独立 LLM Key；上游文本/图像缩略图可在节点内单项排除且不断开连线"
         }
       ]
     },
@@ -1841,7 +1854,7 @@
         {
           "type": "runninghub",
           "label": "RunningHub 节点",
-          "description": "RH 工作流主节点(webappId 搜索拉 nodeInfoList 自动展开为表单 + LIST/SELECT 自动识别 + KNOWN_FIELD_OPTIONS 词典兜底 + 媒体上游同步 + computeFreshValuesNow 同步快照 + resolveNodeInfoList 三层防御 + autoOutput 多产物分多 OutputNode + 接入 logBus 日志面板)"
+          "description": "RH 工作流主节点(webappId 搜索拉 nodeInfoList 自动展开为表单 + LIST/SELECT 自动识别 + KNOWN_FIELD_OPTIONS 词典兜底 + 媒体上游同步 + computeFreshValuesNow 同步快照 + resolveNodeInfoList 三层防御 + autoOutput 多产物分多 OutputNode + 接入 logBus 日志面板；上游 image/video/audio 可节点内单项排除)"
         },
         {
           "type": "runninghub-wallet",
@@ -1851,7 +1864,7 @@
         {
           "type": "rh-tools",
           "label": "RH超市",
-          "description": "v1.2.10 新增、v1.2.10.4 重命名为「RH 超市」。启动器式包装多个 RunningHub AI 应用 · 在节点内分类浏览 / 拼音搜索 / 一键运行。双视图（启动器 + 应用运行）、多实例共享分类/应用 JSON、与RunningHubNode完全对齐的运行逻辑（resolveNodeInfoList 三层防御 / IMAGE预览白名单 / instanceType select / 上游同步 / autoOutput 分流）。默认 cyan 调·像素风走糖果调色板(px-surface/px-muted/px-ink/px-yellow)。"
+          "description": "v1.2.10 新增、v1.2.10.4 重命名为「RH 超市」。启动器式包装多个 RunningHub AI 应用 · 在节点内分类浏览 / 拼音搜索 / 一键运行。双视图（启动器 + 应用运行）、多实例共享分类/应用 JSON、与RunningHubNode完全对齐的运行逻辑（resolveNodeInfoList 三层防御 / IMAGE预览白名单 / instanceType select / 上游同步 / autoOutput 分流 / 上游素材单项排除）。默认 cyan 调·像素风走糖果调色板(px-surface/px-muted/px-ink/px-yellow)。"
         },
         {
           "type": "rh-config",

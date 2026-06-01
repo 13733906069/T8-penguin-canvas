@@ -44,6 +44,12 @@ import {
   advancedProvidersForNode,
   resolveAdvancedProviderSelection,
 } from '../../utils/advancedProviders';
+import {
+  countExcludedMaterials,
+  excludeMaterialId,
+  filterExcludedMaterials,
+  normalizeExcludedMaterialIds,
+} from '../../utils/materialExclusion';
 
 /**
  * LLM / Vision 节点 —— 完全对齐 gpt-image-2-web Chat (index.html L1600 / L8128~L8400)
@@ -198,7 +204,23 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   // 跟 ImageNode / SeedanceNode 同一套机制(useNodeConnections + useNodesData),
   // 仅负责画面预览;实际发送仍走已有 collectUpstream 退路, 隐式零破坏。
   const upstreamMats = useUpstreamMaterials(id);
-  const upstreamImages = upstreamMats.images;
+  const excludedMaterialIds = useMemo(
+    () => normalizeExcludedMaterialIds(d?.excludedMaterialIds),
+    [d?.excludedMaterialIds],
+  );
+  const visibleUpstreamImages = useMemo(
+    () => filterExcludedMaterials(upstreamMats.images, excludedMaterialIds),
+    [upstreamMats.images, excludedMaterialIds],
+  );
+  const visibleUpstreamTexts = useMemo(
+    () => filterExcludedMaterials(upstreamMats.texts, excludedMaterialIds),
+    [upstreamMats.texts, excludedMaterialIds],
+  );
+  const excludedUpstreamCount = useMemo(
+    () => countExcludedMaterials(excludedMaterialIds, [...upstreamMats.images, ...upstreamMats.texts]),
+    [excludedMaterialIds, upstreamMats.images, upstreamMats.texts],
+  );
+  const upstreamImages = visibleUpstreamImages;
 
   // === 主题适配 (dark / pixel) ===
   const { theme, style } = useThemeStore();
@@ -219,17 +241,25 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
     [pickedFiles, id],
   );
   const allImagesUnordered = useMemo(
-    () => [...localImageMaterials, ...upstreamMats.images],
-    [localImageMaterials, upstreamMats.images],
+    () => [...localImageMaterials, ...visibleUpstreamImages],
+    [localImageMaterials, visibleUpstreamImages],
   );
   const materialOrder: string[] = Array.isArray(d?.materialOrder) ? d.materialOrder : [];
   const orderedImages = useOrderedMaterials(allImagesUnordered, materialOrder);
-  const orderedTexts = useOrderedMaterials(upstreamMats.texts, materialOrder);
+  const orderedTexts = useOrderedMaterials(visibleUpstreamTexts, materialOrder);
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
   const handleRemoveLocalMaterial = (m: Material) => {
     if (m.origin !== 'local') return;
     setPickedFiles((s) => s.filter((f) => f.dataUrl !== m.url));
   };
+  const handleExcludeUpstreamMaterial = (m: Material) => {
+    if (m.origin !== 'upstream') return;
+    update({
+      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
+      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+    });
+  };
+  const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
 
   // 上游: 收集 text + image (使用按用户拖拽顺序排好的 ordered 列表，与预览区呈现一致)
   const collectUpstream = (): { text: string; images: string[] } => {
@@ -793,6 +823,9 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           order={materialOrder}
           onReorder={setMaterialOrder}
           onRemoveLocal={handleRemoveLocalMaterial}
+          onExcludeUpstream={handleExcludeUpstreamMaterial}
+          excludedCount={excludedUpstreamCount}
+          onRestoreExcluded={handleRestoreExcludedMaterials}
           selected={!!selected}
           isDark={isDark}
           isPixel={isPixel}
