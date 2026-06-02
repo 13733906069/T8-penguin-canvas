@@ -36,8 +36,8 @@ const EXEC_TYPES = new Set<string>([
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
     // v1.2.10.1: RH 工具节点 (循环器中作为 EXEC 使用)
-    'rh-tools',
-  'resize', 'upscale', 'grid-crop', 'remove-bg', 'combine',
+    'rh-tools', 'rh-toolbox',
+  'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine',
   'frame-extractor', 'frame-pair',
   'upload',
 ]);

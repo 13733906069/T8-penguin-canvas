@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Save, Settings2, TestTube2, X, FolderOpen, ServerCog } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog } from 'lucide-react';
 import { useApiKeysStore, FIXED_ZHENZHEN_BASE, RH_BASE } from '../stores/apiKeys';
 import { useThemeStore } from '../stores/theme';
 import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings } from '../types/canvas';
 import { getRawSettings, testAdvancedProvider } from '../services/api';
 import {
   advancedProviderSummary as summarizeAdvancedProviderForm,
+  normalizeModelscopeLoraStrength,
+  normalizeModelscopeLoras,
   parseAdvancedProviderModelText,
   stringifyAdvancedProviderModels,
 } from '../utils/advancedProviders';
@@ -127,6 +129,41 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     modelHint: '模型名按 CLI 支持的命令参数填写，例如 seedance2.0fast_vip。每行一个。',
   },
 };
+
+const MODELSCOPE_TOKEN_URLS = {
+  cn: 'https://www.modelscope.cn/my/access/token',
+  intl: 'https://www.modelscope.ai/my/access/token',
+} as const;
+
+const JIMENG_CLI_INSTALL_COMMAND = 'curl -s https://jimeng.jianying.com/cli | bash';
+
+interface AdvancedProviderFormBlockProps {
+  title: string;
+  note?: string;
+  className: string;
+  labelClassName: string;
+  hintClassName: string;
+  children: ReactNode;
+}
+
+function AdvancedProviderFormBlock({
+  title,
+  note,
+  className,
+  labelClassName,
+  hintClassName,
+  children,
+}: AdvancedProviderFormBlockProps) {
+  return (
+    <section className={className}>
+      <div className="space-y-1">
+        <div className={`text-xs font-black ${labelClassName}`}>{title}</div>
+        {note && <p className={`text-[11px] leading-relaxed ${hintClassName}`}>{note}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 const emptyMap = (): Record<KeyField, string> => ({
   zhenzhenApiKey: '', rhApiKey: '', llmApiKey: '',
@@ -424,18 +461,14 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   };
 
   const inputCls = isPixel
-    ? 'flex-1 px-3 py-2 rounded-[10px] text-sm outline-none px-input'
-    : `flex-1 px-3 py-2 rounded-md text-sm outline-none border ${
-        isDark
-          ? 'bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-white/30'
-          : 'bg-black/5 border-black/10 text-zinc-900 placeholder:text-zinc-400 focus:border-black/30'
-      }`;
+    ? 't8-api-settings-input flex-1 px-3 py-2 rounded-[10px] text-sm outline-none px-input'
+    : 't8-api-settings-input flex-1 px-3 py-2 rounded-md text-sm outline-none border';
 
-  const labelCls = isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-white/70' : 'text-zinc-700';
-  const hintCls = isPixel ? 'text-[var(--px-ink-soft)]' : isDark ? 'text-white/40' : 'text-zinc-500';
+  const labelCls = 't8-api-settings-label';
+  const hintCls = 't8-api-settings-hint';
   const eyeBtnCls = isPixel
-    ? 'px-btn px-btn--icon px-btn--ghost'
-    : `p-2 rounded-md ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`;
+    ? 't8-api-settings-icon-btn px-btn px-btn--icon px-btn--ghost'
+    : 't8-api-settings-icon-btn p-2 rounded-md';
 
   // 防御性脱敏：始终只显示尾4位（与之前 `****9zVR` 一致），
   // 即使后端意外返回明文也不会暴露完整 Key
@@ -450,19 +483,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   // 获取 APIKey 外部链接按钮样式（双主题）
   const linkBtnCls = isPixel
-    ? 'px-btn px-btn--mint flex items-center gap-1 text-[11px] px-2 py-1'
-    : `flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition border ${
-        isDark
-          ? 'border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-200'
-          : 'border-emerald-500/40 bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
-      }`;
+    ? 't8-api-settings-action-btn px-btn px-btn--mint flex items-center gap-1 text-[11px] px-2 py-1'
+    : 't8-api-settings-action-btn flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition border';
   const linkBtnAltCls = isPixel
-    ? 'px-btn flex items-center gap-1 text-[11px] px-2 py-1'
-    : `flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition border ${
-        isDark
-          ? 'border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-200'
-          : 'border-cyan-500/40 bg-cyan-50 hover:bg-cyan-100 text-cyan-700'
-      }`;
+    ? 't8-api-settings-action-btn px-btn flex items-center gap-1 text-[11px] px-2 py-1'
+    : 't8-api-settings-action-btn flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition border';
 
   const openExternal = (url: string) => {
     try {
@@ -525,7 +550,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   const updateAdvancedProviderNested = (
     id: string,
-    key: 'volcengineConfig' | 'comfyuiConfig' | 'jimengConfig',
+    key: 'modelscopeConfig' | 'volcengineConfig' | 'comfyuiConfig' | 'jimengConfig',
     patch: Record<string, any>,
   ) => {
     setAdvancedProvidersInput((prev) => prev.map((provider) => (
@@ -561,26 +586,21 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const isComfy = provider.protocol === 'comfyui';
     const isJimeng = provider.protocol === 'jimeng-cli';
     const isVolc = provider.protocol === 'volcengine';
+    const isModelScope = provider.protocol === 'modelscope';
     const sectionCls = isPixel
-      ? 'border border-[var(--px-ink)] bg-white p-3 space-y-4 min-w-0'
-      : `border rounded-xl p-3 sm:p-4 space-y-4 min-w-0 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-black/10 bg-black/[0.02]'}`;
+      ? 't8-api-settings-provider-panel border p-3 space-y-4 min-w-0'
+      : 't8-api-settings-provider-panel border rounded-xl p-3 sm:p-4 space-y-4 min-w-0';
     const formBlockCls = isPixel
-      ? 'border border-[var(--px-ink)]/40 bg-[var(--px-paper)]/70 p-3 space-y-3'
-      : `rounded-lg border p-3 space-y-3 ${isDark ? 'border-white/10 bg-black/10' : 'border-black/10 bg-white/70'}`;
+      ? 't8-api-settings-section border p-3 space-y-3'
+      : 't8-api-settings-section rounded-lg border p-3 space-y-3';
     const fieldInputCls = `${inputCls.replace('flex-1 ', '')} w-full min-w-0`;
     const textareaCls = `${fieldInputCls} min-h-[76px] resize-y font-mono text-xs leading-relaxed`;
     const guideBoxCls = isPixel
-      ? 'border border-[var(--px-ink)]/40 bg-white/80 p-3 text-[11px] leading-relaxed text-[var(--px-ink)]'
-      : `rounded-lg border p-3 text-[11px] leading-relaxed ${
-          isDark
-            ? 'border-amber-300/20 bg-amber-300/10 text-amber-50/85'
-            : 'border-amber-300/50 bg-amber-50 text-amber-900'
-        }`;
+      ? 't8-api-settings-guide border p-3 text-[11px] leading-relaxed'
+      : 't8-api-settings-guide rounded-lg border p-3 text-[11px] leading-relaxed';
     const smallPillCls = isPixel
-      ? 'inline-flex items-center px-1.5 py-0.5 border border-[var(--px-ink)] bg-white text-[10px] font-bold text-[var(--px-ink)]'
-      : `inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] font-semibold ${
-          isDark ? 'border-white/10 bg-white/5 text-white/70' : 'border-black/10 bg-black/5 text-zinc-600'
-        }`;
+      ? 't8-api-settings-pill inline-flex items-center px-1.5 py-0.5 border text-[10px] font-bold'
+      : 't8-api-settings-pill inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] font-semibold';
     const comfyWorkflow = (provider.comfyuiConfig?.workflows?.[0] || { id: 'workflow-1', name: '默认工作流' }) as NonNullable<NonNullable<AdvancedProviderConfig['comfyuiConfig']>['workflows']>[number];
     const comfyDraft = advancedComfyDrafts[provider.id] || {};
     const setComfyDraft = (patch: { workflowJson?: string; fields?: string }) => {
@@ -611,16 +631,58 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: false, message: '参数映射 JSON 需要是数组' } }));
       }
     };
-    const FormBlock = ({ title, note, children }: { title: string; note?: string; children: ReactNode }) => (
-      <section className={formBlockCls}>
-        <div className="space-y-1">
-          <div className={`text-xs font-black ${labelCls}`}>{title}</div>
-          {note && <p className={`text-[11px] leading-relaxed ${hintCls}`}>{note}</p>}
-        </div>
-        {children}
-      </section>
-    );
-
+    const modelscopeLoras = Array.isArray(provider.modelscopeConfig?.loras) ? provider.modelscopeConfig.loras : [];
+    const setModelscopeLoras = (loras: any[]) => {
+      updateAdvancedProviderNested(provider.id, 'modelscopeConfig', {
+        defaultsVersion: provider.modelscopeConfig?.defaultsVersion,
+        loras,
+      });
+    };
+    const modelscopeTargetOptions = (selected?: string) => {
+      const out: string[] = [];
+      for (const value of [
+        selected,
+        ...(Array.isArray(provider.imageModels) ? provider.imageModels : []),
+        'Tongyi-MAI/Z-Image-Turbo',
+        'Qwen/Qwen-Image-2512',
+        'Qwen/Qwen-Image-Edit-2511',
+        'black-forest-labs/FLUX.2-klein-9B',
+      ]) {
+        const item = String(value || '').trim();
+        if (item && !out.includes(item)) out.push(item);
+      }
+      return out;
+    };
+    const addModelscopeLora = () => {
+      setModelscopeLoras([
+        ...modelscopeLoras,
+        {
+          id: '',
+          name: '',
+          targetModel: modelscopeTargetOptions()[0] || 'Tongyi-MAI/Z-Image-Turbo',
+          strength: 0.8,
+          enabled: true,
+          note: '',
+        },
+      ]);
+    };
+    const updateModelscopeLora = (index: number, patch: Record<string, any>) => {
+      setModelscopeLoras(modelscopeLoras.map((lora, i) => (
+        i === index
+          ? {
+            ...lora,
+            ...patch,
+            ...(Object.prototype.hasOwnProperty.call(patch, 'strength')
+              ? { strength: normalizeModelscopeLoraStrength(patch.strength, 0.8) }
+              : {}),
+          }
+          : lora
+      )));
+    };
+    const removeModelscopeLora = (index: number) => {
+      setModelscopeLoras(modelscopeLoras.filter((_, i) => i !== index));
+    };
+    const enabledModelscopeLoraCount = normalizeModelscopeLoras(modelscopeLoras).filter((lora) => lora.enabled !== false).length;
     return (
       <div className={sectionCls}>
         <div className="flex items-start gap-3 flex-wrap">
@@ -648,10 +710,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             disabled={!!advancedTestStatus[provider.id]?.loading}
             className={
               isPixel
-                ? 'px-btn text-[11px] px-2 py-1 shrink-0'
-                : `px-2 py-1 text-[11px] rounded border shrink-0 inline-flex items-center gap-1 ${
-                    isDark ? 'border-white/10 hover:bg-white/10' : 'border-black/10 hover:bg-black/5'
-                  }`
+                ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0'
+                : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0 inline-flex items-center gap-1'
             }
           >
             <TestTube2 size={12} />
@@ -686,7 +746,10 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </div>
         </div>
 
-        <FormBlock
+        <AdvancedProviderFormBlock
+          className={formBlockCls}
+          labelClassName={labelCls}
+          hintClassName={hintCls}
           title="1. 基础信息"
           note="显示名称只影响下拉菜单里的名字；关闭“在节点中显示”后，这个平台不会出现在图像 / 视频 / LLM 节点的高级来源里。"
         >
@@ -712,10 +775,16 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               </label>
             )}
           </div>
-        </FormBlock>
+        </AdvancedProviderFormBlock>
 
         {!isComfy && !isJimeng && (
-          <FormBlock title="2. 连接密钥" note={guide?.connectionHint}>
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="2. 连接密钥"
+            note={guide?.connectionHint}
+          >
             <label className="space-y-1 block">
               <span className={`text-[11px] ${labelCls}`}>{guide?.keyLabel || 'API Key / Token'}</span>
               <input
@@ -726,11 +795,34 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 placeholder={provider.hasApiKey || provider.apiKey ? '留空或保留 **** 表示不覆盖后端密钥' : '请输入 API Key'}
               />
             </label>
-          </FormBlock>
+            {provider.protocol === 'modelscope' && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openExternal(MODELSCOPE_TOKEN_URLS.cn)}
+                  className={linkBtnCls}
+                  title="打开 ModelScope 国内站 Token 页面"
+                >
+                  <ExternalLink size={11} /> 获取 Token · 国内
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openExternal(MODELSCOPE_TOKEN_URLS.intl)}
+                  className={linkBtnAltCls}
+                  title="打开 ModelScope 国际站 Token 页面"
+                >
+                  <ExternalLink size={11} /> 获取 Token · 国外
+                </button>
+              </div>
+            )}
+          </AdvancedProviderFormBlock>
         )}
 
         {isVolc && (
-          <FormBlock
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
             title="3. 火山高级项（可选）"
             note="普通 Ark / Seedream / Seedance 调用通常只需要上面的 API Key。只有需要素材上传或特定项目隔离时，再补充这些字段。"
           >
@@ -774,11 +866,17 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 />
               </label>
             </div>
-          </FormBlock>
+          </AdvancedProviderFormBlock>
         )}
 
         {isComfy && (
-          <FormBlock title="2. ComfyUI 工作流" note={guide?.connectionHint}>
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="2. ComfyUI 工作流"
+            note={guide?.connectionHint}
+          >
             <label className="space-y-1 block">
               <span className={`text-[11px] ${labelCls}`}>实例地址列表（一行一个）</span>
               <textarea
@@ -830,11 +928,34 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               />
               <p className={`text-[11px] ${hintCls}`}>用于把节点 prompt、参考图等写入指定 ComfyUI 节点字段；不填时后端会尝试按常见字段自动写入。</p>
             </label>
-          </FormBlock>
+          </AdvancedProviderFormBlock>
         )}
 
         {isJimeng && (
-          <FormBlock title="2. 本地 CLI" note={guide?.connectionHint}>
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="2. 本地 CLI"
+            note={guide?.connectionHint}
+          >
+            <div className={guideBoxCls}>
+              <div className="flex items-start gap-2">
+                <Info size={14} className="mt-0.5 shrink-0" />
+                <div className="min-w-0 space-y-2">
+                  <div className={`font-bold ${labelCls}`}>如何安装即梦 CLI？</div>
+                  <p className={hintCls}>
+                    在 PowerShell 7、Git Bash 或 WSL 终端执行安装命令；安装完成后运行 <code className="font-mono">dreamina login</code> 登录，再回到这里点击“测试连接”。
+                  </p>
+                  <code className="block w-full overflow-x-auto rounded border px-2 py-1.5 font-mono text-[11px] leading-relaxed">
+                    {JIMENG_CLI_INSTALL_COMMAND}
+                  </code>
+                  <p className={hintCls}>
+                    Windows 常见路径是 <code className="font-mono">C:\Users\&lt;用户名&gt;\bin\dreamina.exe</code>；如果命令已加入 PATH，可直接填写 <code className="font-mono">dreamina</code>。装在 WSL 里时，勾选下面的 WSL 选项并填写发行版名称。
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <label className="space-y-1 lg:col-span-2">
                 <span className={`text-[11px] ${labelCls}`}>dreamina 可执行路径</span>
@@ -863,11 +984,17 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 />
               </label>
             </div>
-          </FormBlock>
+          </AdvancedProviderFormBlock>
         )}
 
         {!isComfy && (
-          <FormBlock title="3. 节点里可选的模型" note={guide?.modelHint}>
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="3. 节点里可选的模型"
+            note={guide?.modelHint}
+          >
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
               <label className="space-y-1 min-w-0">
                 <span className={`text-[11px] ${labelCls}`}>图像模型（一行一个）</span>
@@ -897,7 +1024,142 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 />
               </label>
             </div>
-          </FormBlock>
+          </AdvancedProviderFormBlock>
+        )}
+
+        {isModelScope && (
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="4. ModelScope LoRA（可选）"
+            note={`为 ModelScope 图像模型绑定 LoRA。图像节点会按当前外部模型自动筛选；当前启用 ${enabledModelscopeLoraCount}/${modelscopeLoras.length}。`}
+          >
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => openExternal('https://www.modelscope.cn/aigc/models')}
+                className={linkBtnCls}
+                title="打开 ModelScope 国内模型库"
+              >
+                <ExternalLink size={11} /> 中文模型库
+              </button>
+              <button
+                type="button"
+                onClick={() => openExternal('https://www.modelscope.ai/civision/models')}
+                className={linkBtnAltCls}
+                title="打开 ModelScope 国际模型库"
+              >
+                <ExternalLink size={11} /> 英文模型库
+              </button>
+              <button
+                type="button"
+                onClick={addModelscopeLora}
+                className={
+                  isPixel
+                    ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 inline-flex items-center gap-1'
+                    : 't8-api-settings-secondary-btn rounded border px-2 py-1 text-[11px] inline-flex items-center gap-1'
+                }
+              >
+                <Plus size={12} /> 添加 LoRA
+              </button>
+            </div>
+
+            {!modelscopeLoras.length ? (
+              <div className={`border border-dashed p-3 text-center text-[11px] ${hintCls} ${isPixel ? '' : 'rounded-lg'}`}>
+                暂无 LoRA。点击“添加 LoRA”后填写 LoRA 模型 ID，并绑定到一个 ModelScope 图像模型。
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {modelscopeLoras.map((lora, index) => {
+                  const target = String((lora as any).targetModel || (lora as any).target_model || (lora as any).model || '').trim();
+                  const strength = normalizeModelscopeLoraStrength((lora as any).strength ?? (lora as any).default_strength, 0.8);
+                  return (
+                    <div
+                      key={index}
+                      className={isPixel ? 't8-api-settings-section border p-2 space-y-2' : 't8-api-settings-section rounded-lg border p-2 space-y-2'}
+                    >
+                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_92px_36px] gap-2 items-end">
+                        <label className="space-y-1 min-w-0">
+                          <span className={`text-[11px] ${labelCls}`}>LoRA ID</span>
+                          <input
+                            value={(lora as any).id || ''}
+                            onChange={(e) => updateModelscopeLora(index, { id: e.target.value })}
+                            className={fieldInputCls}
+                            placeholder="例如 Daniel8152/film"
+                          />
+                        </label>
+                        <label className="space-y-1 min-w-0">
+                          <span className={`text-[11px] ${labelCls}`}>绑定图像模型</span>
+                          <select
+                            value={target || modelscopeTargetOptions()[0] || ''}
+                            onChange={(e) => updateModelscopeLora(index, { targetModel: e.target.value })}
+                            className={fieldInputCls}
+                          >
+                            {modelscopeTargetOptions(target).map((modelName) => (
+                              <option key={modelName} value={modelName}>{modelName}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="space-y-1 min-w-0">
+                          <span className={`text-[11px] ${labelCls}`}>强度</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={2}
+                            step={0.05}
+                            value={strength}
+                            onChange={(e) => updateModelscopeLora(index, { strength: e.target.value })}
+                            className={fieldInputCls}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeModelscopeLora(index)}
+                          className={
+                            isPixel
+                              ? 't8-mini-icon-button h-9 w-9 inline-flex items-center justify-center'
+                              : 't8-mini-icon-button h-9 w-9 rounded border inline-flex items-center justify-center'
+                          }
+                          title="删除 LoRA"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+                        <label className="space-y-1 min-w-0">
+                          <span className={`text-[11px] ${labelCls}`}>显示名</span>
+                          <input
+                            value={(lora as any).name || ''}
+                            onChange={(e) => updateModelscopeLora(index, { name: e.target.value })}
+                            className={fieldInputCls}
+                            placeholder="可选，用于节点下拉显示"
+                          />
+                        </label>
+                        <label className="space-y-1 min-w-0">
+                          <span className={`text-[11px] ${labelCls}`}>备注</span>
+                          <input
+                            value={(lora as any).note || ''}
+                            onChange={(e) => updateModelscopeLora(index, { note: e.target.value })}
+                            className={fieldInputCls}
+                            placeholder="可选，例如触发词或用途"
+                          />
+                        </label>
+                      </div>
+                      <label className={`inline-flex items-center gap-2 text-[11px] font-bold ${labelCls}`}>
+                        <input
+                          type="checkbox"
+                          checked={(lora as any).enabled !== false}
+                          onChange={(e) => updateModelscopeLora(index, { enabled: e.target.checked })}
+                        />
+                        在图像节点中可用
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </AdvancedProviderFormBlock>
         )}
       </div>
     );
@@ -916,12 +1178,12 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           {spec.label}
           <span className={`text-[11px] font-normal ${hintCls}`}>{spec.desc}</span>
           {hasSaved && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            <span className="t8-api-settings-badge text-[10px] font-bold px-1.5 py-0.5 rounded border" data-tone="success">
               ✓ 已保存 {maskedDisplay}
             </span>
           )}
           {opts.fallbackHint && !hasSaved && (
-            <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/10">
+            <span className="t8-api-settings-badge text-[10px] font-normal px-1.5 py-0.5 rounded border" data-tone="muted">
               未设置 · 使用通用 Key
             </span>
           )}
@@ -969,28 +1231,22 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       <div
         className={
           isPixel
-            ? `w-full ${advancedOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 px-card overflow-hidden flex flex-col max-h-[90vh]`
-            : `w-full ${advancedOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
-                isDark ? 'bg-zinc-900 border border-white/10' : 'bg-white border border-black/10'
-              }`
+            ? `t8-api-settings-modal w-full ${advancedOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 px-card overflow-hidden flex flex-col max-h-[90vh]`
+            : `t8-api-settings-modal w-full ${advancedOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border`
         }
       >
         {/* 头部 */}
         <div
-          className={`flex items-center gap-3 px-5 py-4 border-b shrink-0 ${
+          className={`t8-api-settings-header flex items-center gap-3 px-5 py-4 border-b shrink-0 ${
             isPixel
-              ? 'border-[var(--px-ink)] bg-[var(--px-yellow)]'
-              : isDark
-                ? 'border-white/10'
-                : 'border-black/10'
+              ? 'border-[var(--px-ink)]'
+              : ''
           }`}
         >
-          <KeyRound size={18} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-white/80' : 'text-zinc-700'} />
+          <KeyRound size={18} className="t8-api-settings-icon" />
           <div className="flex-1">
             <h2
-              className={`text-base font-semibold ${
-                isPixel ? 'px-title text-[var(--px-ink)]' : isDark ? 'text-white' : 'text-zinc-900'
-              }`}
+              className={`t8-api-settings-title text-base font-semibold ${isPixel ? 'px-title' : ''}`}
             >
               API Key 设置 (通用 + 分类独立)
             </h2>
@@ -1002,8 +1258,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             onClick={onClose}
             className={
               isPixel
-                ? 'px-btn px-btn--icon px-btn--ghost'
-                : `p-1.5 rounded-md ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`
+                ? 't8-api-settings-icon-btn px-btn px-btn--icon px-btn--ghost'
+                : 't8-api-settings-icon-btn p-1.5 rounded-md'
             }
           >
             <X size={18} />
@@ -1011,14 +1267,14 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         </div>
 
         {/* 表单 */}
-        <div className="p-5 space-y-5 overflow-y-auto">
+        <div className="t8-api-settings-body p-5 space-y-5 overflow-y-auto">
           {/* 三套通用 Key */}
           {renderKey(COMMON_KEYS[0], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE}` })}
           {renderKey(COMMON_KEYS[1], { baseUrlNote: `Base URL: ${RH_BASE}` })}
           {renderKey(COMMON_KEYS[2], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与贞贞同地址, Key 独立)` })}
 
           {/* 分类独立 Key（默认折叠，点击展开 —— 新手友好） */}
-          <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <div className="t8-api-settings-divider pt-3 border-t">
             {(() => {
               const configuredCount = CLASSIFIED_KEYS.filter((spec) => {
                 const v = (settings as any)?.[spec.field];
@@ -1030,32 +1286,18 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   type="button"
                   onClick={() => setClassifiedOpen((v) => !v)}
                   aria-expanded={classifiedOpen}
+                  data-open={classifiedOpen}
                   className={
                     isPixel
-                      ? `w-full flex items-center gap-2 px-3 py-2 px-btn ${classifiedOpen ? 'px-btn--mint' : ''}`
-                      : `w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition ${
-                          isDark
-                            ? 'border-white/10 hover:bg-white/5 text-white/85'
-                            : 'border-black/10 hover:bg-black/5 text-zinc-800'
-                        }`
+                      ? 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 px-btn'
+                      : 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition'
                   }
                 >
-                  <Settings2 size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-white/70' : 'text-zinc-600'} />
-                  <span className={`text-xs font-bold ${isPixel ? 'text-[var(--px-ink)]' : ''}`}>分类独立 API Key【可选】</span>
+                  <Settings2 size={14} className="t8-api-settings-icon" />
+                  <span className="text-xs font-bold">分类独立 API Key【可选】</span>
                   <span
-                    className={
-                      isPixel
-                        ? 'ml-1 px-1.5 py-0.5 text-[10px] border border-[var(--px-ink)] bg-white text-[var(--px-ink)]'
-                        : `ml-1 px-1.5 py-0.5 text-[10px] rounded ${
-                            configuredCount > 0
-                              ? isDark
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                              : isDark
-                                ? 'bg-white/10 text-white/60 border border-white/10'
-                                : 'bg-black/5 text-zinc-500 border border-black/10'
-                          }`
-                    }
+                    className="t8-api-settings-badge ml-1 px-1.5 py-0.5 text-[10px] rounded border"
+                    data-tone={configuredCount > 0 ? 'success' : 'muted'}
                   >
                     已配置 {configuredCount}/{totalCount}
                   </span>
@@ -1084,39 +1326,25 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </div>
 
           {/* v1.8.x: 扩展 API 平台，高级可选 */}
-          <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <div className="t8-api-settings-divider pt-3 border-t">
             <button
               type="button"
               onClick={() => setAdvancedOpen((v) => !v)}
               aria-expanded={advancedOpen}
+              data-open={advancedOpen}
               className={
                 isPixel
-                  ? `w-full flex items-center gap-2 px-3 py-2 px-btn ${advancedOpen ? 'px-btn--mint' : ''}`
-                  : `w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition ${
-                      isDark
-                        ? 'border-white/10 hover:bg-white/5 text-white/85'
-                        : 'border-black/10 hover:bg-black/5 text-zinc-800'
-                    }`
+                  ? 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 px-btn'
+                  : 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition'
               }
             >
-              <ServerCog size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-white/70' : 'text-zinc-600'} />
-              <span className={`text-xs font-bold shrink-0 ${isPixel ? 'text-[var(--px-ink)]' : ''}`}>扩展 API 平台【高级/可选】</span>
+              <ServerCog size={14} className="t8-api-settings-icon" />
+              <span className="text-xs font-bold shrink-0">扩展 API 平台【高级/可选】</span>
               <span className={`hidden sm:inline text-[11px] ${hintCls}`}>给高级用户接入第三方平台，默认不影响主流程</span>
               <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
                 <span
-                  className={
-                    isPixel
-                      ? 'px-1.5 py-0.5 text-[10px] border border-[var(--px-ink)] bg-white text-[var(--px-ink)]'
-                      : `px-1.5 py-0.5 text-[10px] rounded border ${
-                          advancedSummary.enabledCount > 0
-                            ? isDark
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                              : 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                            : isDark
-                              ? 'bg-white/10 text-white/60 border-white/10'
-                              : 'bg-black/5 text-zinc-500 border-black/10'
-                        }`
-                  }
+                  className="t8-api-settings-badge px-1.5 py-0.5 text-[10px] rounded border"
+                  data-tone={advancedSummary.enabledCount > 0 ? 'success' : 'muted'}
                 >
                   已启用 {advancedSummary.enabledCount}/{advancedProvidersInput.length || 5}
                 </span>
@@ -1148,18 +1376,12 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                           key={provider.id}
                           type="button"
                           onClick={() => setActiveAdvancedProviderId(provider.id)}
+                          data-active={activeAdvancedProvider?.id === provider.id}
+                          data-enabled={!!provider.enabled}
                           className={
                             isPixel
-                              ? `w-full !block text-left px-2 py-2 px-btn ${activeAdvancedProvider?.id === provider.id ? 'px-btn--mint' : ''}`
-                              : `w-full block text-left px-2 py-2 rounded-md border text-xs transition ${
-                                  activeAdvancedProvider?.id === provider.id
-                                    ? isDark
-                                      ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'
-                                      : 'border-emerald-400 bg-emerald-50 text-emerald-800'
-                                    : isDark
-                                      ? 'border-white/10 hover:bg-white/5 text-white/75'
-                                      : 'border-black/10 hover:bg-black/5 text-zinc-700'
-                                }`
+                              ? 't8-api-settings-provider-card w-full !block text-left px-2 py-2 px-btn'
+                              : 't8-api-settings-provider-card w-full block text-left px-2 py-2 rounded-md border text-xs transition'
                           }
                         >
                           <div className="flex items-center gap-2 min-w-0 w-full">
@@ -1185,9 +1407,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </div>
 
           {/* v1.2.10.2: 文件自动保存路径 */}
-          <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <div className="t8-api-settings-divider pt-3 border-t">
             <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
-              <FolderOpen size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-cyan-300' : 'text-cyan-600'} />
+              <FolderOpen size={14} className="t8-api-settings-icon" />
               文件自动保存路径
               <span className={`text-[11px] font-normal ${hintCls}`}>· 所有可执行节点生成的图像/视频/音频均会自动复制一份到此路径</span>
             </label>
@@ -1210,9 +1432,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </div>
 
           {/* v1.3.1: 画布自动保存路径 */}
-          <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <div className="t8-api-settings-divider pt-3 border-t">
             <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
-              <FolderOpen size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-emerald-300' : 'text-emerald-600'} />
+              <FolderOpen size={14} className="t8-api-settings-icon" />
               画布自动保存路径
               <span className={`text-[11px] font-normal ${hintCls}`}>· 当前画布变更后自动导出 JSON，方便更换版本后导入</span>
             </label>
@@ -1235,9 +1457,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </div>
 
           {/* v1.3.4: 资源库路径 */}
-          <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <div className="t8-api-settings-divider pt-3 border-t">
             <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
-              <FolderOpen size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-fuchsia-300' : 'text-fuchsia-600'} />
+              <FolderOpen size={14} className="t8-api-settings-icon" />
               资源库路径
               <span className={`text-[11px] font-normal ${hintCls}`}>· 资源文件与分类索引都保存在此路径，更换版本后可继续读取</span>
             </label>
@@ -1260,9 +1482,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </div>
 
           {/* v1.3.6: 主题模板路径 */}
-          <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <div className="t8-api-settings-divider pt-3 border-t">
             <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
-              <FolderOpen size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-sky-300' : 'text-sky-600'} />
+              <FolderOpen size={14} className="t8-api-settings-icon" />
               主题模板路径
               <span className={`text-[11px] font-normal ${hintCls}`}>· 导入或编辑后的主题 JSON 保存在此路径</span>
             </label>
@@ -1285,9 +1507,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </div>
 
           {/* 本地 Eagle API */}
-          <div className={`pt-3 border-t ${isPixel ? 'border-[var(--px-ink)]/30' : isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <div className="t8-api-settings-divider pt-3 border-t">
             <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
-              <ExternalLink size={14} className={isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-lime-300' : 'text-lime-700'} />
+              <ExternalLink size={14} className="t8-api-settings-icon" />
               Eagle 本地接口
               <span className={`text-[11px] font-normal ${hintCls}`}>· 发送素材到本机 Eagle 时使用</span>
             </label>
@@ -1335,12 +1557,10 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
         {/* 底部按钮 */}
         <div
-          className={`flex items-center justify-end gap-2 px-5 py-3 border-t shrink-0 ${
+          className={`t8-api-settings-footer flex items-center justify-end gap-2 px-5 py-3 border-t shrink-0 ${
             isPixel
-              ? 'border-[var(--px-ink)] bg-[var(--px-muted)]'
-              : isDark
-                ? 'border-white/10 bg-white/[0.02]'
-                : 'border-black/10 bg-black/[0.02]'
+              ? 'border-[var(--px-ink)]'
+              : ''
           }`}
         >
           <input
@@ -1355,12 +1575,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             onClick={() => backupFileInputRef.current?.click()}
             className={
               isPixel
-                ? 'px-btn flex items-center gap-2'
-                : `px-3 py-2 text-sm rounded-md border flex items-center gap-2 ${
-                    isDark
-                      ? 'border-white/10 hover:bg-white/10 text-white/80'
-                      : 'border-black/10 hover:bg-black/5 text-zinc-700'
-                  }`
+                ? 't8-api-settings-secondary-btn px-btn flex items-center gap-2'
+                : 't8-api-settings-secondary-btn px-3 py-2 text-sm rounded-md border flex items-center gap-2'
             }
             title="导入设置备份，回填后需点击保存生效"
           >
@@ -1372,12 +1588,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             onClick={handleExportSettings}
             className={
               isPixel
-                ? 'px-btn flex items-center gap-2'
-                : `px-3 py-2 text-sm rounded-md border flex items-center gap-2 ${
-                    isDark
-                      ? 'border-amber-400/25 hover:bg-amber-400/10 text-amber-100'
-                      : 'border-amber-300 hover:bg-amber-50 text-amber-800'
-                  }`
+                ? 't8-api-settings-secondary-btn px-btn flex items-center gap-2'
+                : 't8-api-settings-secondary-btn px-3 py-2 text-sm rounded-md border flex items-center gap-2'
             }
             title="导出包含明文 API Key 的私密备份"
           >
@@ -1388,10 +1600,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             onClick={onClose}
             className={
               isPixel
-                ? 'px-btn'
-                : `px-4 py-2 text-sm rounded-md ${
-                    isDark ? 'hover:bg-white/10 text-white/80' : 'hover:bg-black/5 text-zinc-700'
-                  }`
+                ? 't8-api-settings-secondary-btn px-btn'
+                : 't8-api-settings-secondary-btn px-4 py-2 text-sm rounded-md border'
             }
           >
             取消
@@ -1401,8 +1611,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             disabled={loading}
             className={
               isPixel
-                ? 'px-btn px-btn--mint disabled:opacity-50 flex items-center gap-2'
-                : 'px-4 py-2 text-sm rounded-md bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-2 disabled:opacity-50'
+                ? 't8-api-settings-primary-btn px-btn px-btn--mint disabled:opacity-50 flex items-center gap-2'
+                : 't8-api-settings-primary-btn px-4 py-2 text-sm rounded-md flex items-center gap-2 disabled:opacity-50'
             }
           >
             {loading ? (

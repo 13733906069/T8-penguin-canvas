@@ -16,6 +16,8 @@ export type NodeType =
   | 'runninghub-wallet'
   | 'rh-config'
   | 'rh-tools'
+  | 'rh-toolbox'
+  | 'rh-toolbox-maker'
   // Special (5)
   | 'multi-angle-3d'
   | 'panorama-720'
@@ -36,6 +38,7 @@ export type NodeType =
   | 'remove-bg'
   | 'upscale'
   | 'grid-crop'
+  | 'grid-editor'
   // Auxiliary (5)
   | 'edit'
   | 'idea'
@@ -100,6 +103,17 @@ export interface AdvancedProviderConfig {
   videoModels?: string[];
   chatModels?: string[];
   defaults?: Record<string, any>;
+  modelscopeConfig?: {
+    defaultsVersion?: number;
+    loras?: Array<{
+      id: string;
+      name?: string;
+      targetModel: string;
+      strength?: number;
+      enabled?: boolean;
+      note?: string;
+    }>;
+  };
   volcengineConfig?: {
     project?: string;
     region?: string;

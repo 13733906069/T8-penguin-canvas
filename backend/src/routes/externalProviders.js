@@ -15,7 +15,10 @@ const {
 const router = express.Router();
 
 function safeProviderForResponse(provider) {
-  return maskAdvancedProviders([provider])[0] || null;
+  const masked = maskAdvancedProviders([provider]);
+  const id = String(provider?.id || '').trim();
+  const protocol = String(provider?.protocol || '').trim();
+  return masked.find((item) => item.id === id && item.protocol === protocol) || masked[0] || null;
 }
 
 function resolveProvider(body, currentProviders) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type DragEvent as ReactDragEvent, type RefObject } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type DragEvent as ReactDragEvent, type RefObject } from 'react';
 import {
   ReactFlow,
   Background,
@@ -99,9 +99,11 @@ import AudioNode from './nodes/AudioNode';
 import RunningHubNode from './nodes/RunningHubNode';
 import RhConfigNode from './nodes/RhConfigNode';
 import RHToolsNode from './nodes/RHToolsNode';
+import RHToolboxNode from './nodes/RHToolboxNode';
 import ResizeNode from './nodes/ResizeNode';
 import UpscaleNode from './nodes/UpscaleNode';
 import GridCropNode from './nodes/GridCropNode';
+import GridEditorNode from './nodes/GridEditorNode';
 import CombineNode from './nodes/CombineNode';
 import RemoveBgNode from './nodes/RemoveBgNode';
 import ImageCompareNode from './nodes/ImageCompareNode';
@@ -141,6 +143,16 @@ import {
   type PortType,
 } from '../config/portTypes';
 
+const RHToolboxMakerNode = import.meta.env?.DEV
+  ? lazy(() => import('./nodes/RHToolboxMakerNode'))
+  : PlaceholderNode;
+
+const RHToolboxMakerDevNode = (props: any) => import.meta.env?.DEV ? (
+  <Suspense fallback={<PlaceholderNode {...props} />}>
+    <RHToolboxMakerNode {...props} />
+  </Suspense>
+) : <PlaceholderNode {...props} />;
+
 // Phase 4 阶段:全部 24 个节点均已实现业务逻辑
 const SPECIFIC_NODES: Record<string, any> = {
   // Core (8)
@@ -156,6 +168,8 @@ const SPECIFIC_NODES: Record<string, any> = {
   'rh-config': RhConfigNode,
   // RH 工具节点：内置启动器 + 应用运行面板（v1.2.10+）
   'rh-tools': RHToolsNode,
+  'rh-toolbox': RHToolboxNode,
+  ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerDevNode } : {}),
   // Special (5)
   'multi-angle-3d': PresetImageNode,
   'panorama-720': PresetImageNode,
@@ -177,6 +191,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'remove-bg': RemoveBgNode,
   upscale: UpscaleNode,
   'grid-crop': GridCropNode,
+  'grid-editor': GridEditorNode,
   // Auxiliary (5)
   edit: ImageNode, // 复用 ImageNode,默认偏向 edit 能力
   idea: IdeaNode,
@@ -415,6 +430,66 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     videoUrl: '',
     audioUrl: '',
   },
+  'rh-toolbox': {
+    rhToolboxCategoryId: 'all',
+    rhToolboxActiveToolId: '',
+    rhToolboxSearchQuery: '',
+    rhToolboxUserParams: {},
+    materialOrder: [],
+    excludedMaterialIds: [],
+    instanceType: '',
+    status: 'idle',
+    taskId: '',
+    urls: [],
+    imageUrl: '',
+    imageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    audioUrl: '',
+    audioUrls: [],
+    outputText: '',
+    error: '',
+  },
+  ...(import.meta.env?.DEV ? {
+    'rh-toolbox-maker': {
+      rhToolboxMakerTitle: '智能抠图',
+      rhToolboxMakerId: 'image-cutout-v1',
+      rhToolboxMakerDescription: '维护者预置 RH 工具模板',
+      rhToolboxMakerCategoryId: 'image-tools',
+      rhToolboxMakerWebappId: '',
+      rhToolboxMakerCapabilities: 'image.cutout\nimage.edit',
+      rhToolboxMakerEnabled: true,
+      rhToolboxMakerShowInNode: true,
+      rhToolboxMakerAccent: '#22c55e',
+      rhToolboxMakerPollIntervalMs: 5000,
+      rhToolboxMakerMaxPolls: 480,
+      rhToolboxMakerInputs: [
+        {
+          rowId: 'input-1',
+          key: 'source-image',
+          label: '原图',
+          kind: 'image',
+          rhNodeId: '7',
+          fieldName: 'image',
+          required: true,
+          uploadAsset: true,
+        },
+      ],
+      rhToolboxMakerOutputs: [
+        {
+          rowId: 'output-1',
+          key: 'output-image',
+          label: '输出图',
+          kind: 'image',
+          role: 'append-output',
+        },
+      ],
+      rhToolboxMakerUserParams: [],
+      rhToolboxMakerFixedParams: [],
+      text: '',
+      outputText: '',
+    },
+  } : {}),
   // 循环器: 默认串联 + image kind
   loop: { mode: 'serial', kind: 'image', outputs: [], progress: { done: 0, total: 0, ok: 0, fail: 0 } },
   // 从合集获取: 默认 image + 第 1 个
@@ -422,6 +497,19 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   'image-compare': { mode: 'slider', align: 'contain', split: 50, opacity: 50, threshold: 24 },
   'drawing-board': { boardRatio: '16:9', boardWidth: 960, boardHeight: 540, boardElements: [], boardColor: '#111827', boardStrokeSize: 5 },
   'grid-crop': { rows: 3, cols: 3, gap: 0 },
+  'grid-editor': {
+    gridEditorRows: 3,
+    gridEditorCols: 3,
+    gridEditorWidth: 1200,
+    gridEditorHeight: 1200,
+    gridEditorGap: 0,
+    gridEditorBackground: '#111827',
+    gridEditorFit: 'adaptive',
+    gridEditorShowIndexes: false,
+    gridEditorOrder: [],
+    gridEditorLocalItems: [],
+    gridEditorHiddenIds: [],
+  },
   'remove-ai-watermark': {
     aiWatermarkMode: 'smart',
     aiWatermarkProcessAll: false,
@@ -442,8 +530,8 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
       steps: 50,
       humanize: 0,
       maxResolution: 0,
-      protectText: true,
-      protectFaces: true,
+      protectText: false,
+      protectFaces: false,
       keepStandardMetadata: true,
       noVisible: false,
     },
@@ -457,8 +545,8 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
-  'rh-tools',
-  'resize', 'upscale', 'grid-crop', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'rh-tools', 'rh-toolbox',
+  'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
   'frame-extractor', 'frame-pair',
   'upload',
   // v1.2.8 工具节点 (循环器 / 从合集获取)

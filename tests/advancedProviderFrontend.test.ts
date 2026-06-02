@@ -7,6 +7,8 @@ import {
   advancedProviderModelOptions,
   resolveAdvancedProviderSelection,
   externalImageSizeFor,
+  modelscopeLorasForModel,
+  normalizeModelscopeLoraStrength,
   parseAdvancedProviderModelText,
   stringifyAdvancedProviderModels,
 } from '../src/utils/advancedProviders.ts';
@@ -98,7 +100,22 @@ test('advancedProviderModelOptions uses explicit lists before safe provider defa
   );
   assert.deepEqual(
     advancedProviderModelOptions({ id: 'modelscope', protocol: 'modelscope' } as any, 'llm'),
-    ['Qwen/Qwen3-Coder-480B-A35B-Instruct'],
+    [
+      'Qwen/Qwen3-235B-A22B',
+      'Qwen/Qwen3-VL-235B-A22B-Instruct',
+      'MiniMax/MiniMax-M2.7:MiniMax',
+    ],
+  );
+  assert.deepEqual(
+    advancedProviderModelOptions({ id: 'volcengine', protocol: 'volcengine' } as any, 'video'),
+    [
+      'doubao-seedance-2-0-260128',
+      'doubao-seedance-2-0-fast-260128',
+      'doubao-seedance-1-5-pro-251215',
+      'doubao-seedance-1-0-pro-250528',
+      'doubao-seedance-1-0-lite-t2v-250428',
+      'doubao-seedance-1-0-lite-i2v-250428',
+    ],
   );
 });
 
@@ -107,4 +124,25 @@ test('externalImageSizeFor maps T8 ratio and size labels to stable WxH values', 
   assert.equal(externalImageSizeFor('16:9', '1K'), '1344x768');
   assert.equal(externalImageSizeFor('9:16', '2K'), '1536x2688');
   assert.equal(externalImageSizeFor('bad', 'unknown'), '1024x1024');
+});
+
+test('modelscopeLorasForModel filters enabled LoRA entries for selected image model', () => {
+  const provider = {
+    id: 'modelscope',
+    protocol: 'modelscope',
+    modelscopeConfig: {
+      loras: [
+        { id: 'a/lora', name: 'A', targetModel: 'model-a', strength: 0.75, enabled: true },
+        { id: 'b/lora', name: 'B', targetModel: 'model-b', strength: 0.8, enabled: true },
+        { id: 'off/lora', name: 'Off', targetModel: 'model-a', strength: 0.8, enabled: false },
+      ],
+    },
+  } as any;
+
+  const loras = modelscopeLorasForModel(provider, 'model-a');
+
+  assert.deepEqual(loras.map((lora) => lora.id), ['a/lora']);
+  assert.equal(loras[0].strength, 0.75);
+  assert.equal(normalizeModelscopeLoraStrength(8), 2);
+  assert.equal(normalizeModelscopeLoraStrength(-1), 0);
 });
