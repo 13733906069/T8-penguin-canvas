@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.9.5",
-  "lastUpdated": "2026-06-03-public-github-safety",
+  "version": "1.9.6",
+  "lastUpdated": "2026-06-03-node-alignment-electron",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,10 +16,10 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.9.5",
-    "semverVersion": "1.9.5",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.9.5：扩展 API 平台继续作为高级可选入口，ModelScope 图像生成新增 LoRA 管理与节点内多选，默认 LoRA 列表从 Infinite-Canvas 同步；ModelScope LLM 继续走 /v1/chat/completions、Bearer Key 规范化和长任务超时；本地 ComfyUI 接入新增 API Workflow 自动识别、可视化字段映射、LoadImage 上游图片自动上传、ComfyUI 分类、ComfyUI超市与ComfyUI应用制作工具，并热修 fields 映射里非 fixed 来源残留旧 value 覆盖运行时 Prompt / 上游图片 / 宽高的问题；去AI水印桥接同步上游 remove-ai-watermarks 0.8.7，隐形水印保护开关改为 opt-in，强度留空由上游按来源自适应；新增 RH工具箱只读运行节点和开发态 RH工具箱制作器，制作器仅在 Vite dev 环境出现，生产/Electron 包必须由后置检查拦截；新增第九套官方主题「足球小将风格」，使用原创绿茵球场、蓝白 10 号球衣、比分牌、小地图和足球传球连线动效，并完成 Captain Tsubasa / Japan 3:2 Brazil 标题牌居中与新球衣 logo 资产替换；素材右键新增云端上传目标入口，首版支持腾讯云 COS 与阿里云 OSS 真实上传，百度网盘和夸克网盘保留配置占位；除 LLM 外，图像、视频、SD2.0/Seedance、音频/Suno 及扩展图像/视频平台、批量运行、循环器等待统一不低于 3600 秒。默认主流程仍保持贞贞工坊 / RunningHub / LLM 独立 Key 不变。",
-    "installer": "本次为源码发布，未重新打包 Electron；上一实测安装包为 dist_electron/T8-PenguinCanvas-Setup-1.9.3.exe。如需离线用户包，必须把 tools/remove-ai-watermarks-runtime sidecar runtime 同步到 remove-ai-watermarks 0.8.7+ 后再执行 npm run dist。",
+    "version": "1.9.6",
+    "semverVersion": "1.9.6",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.9.6：画布对齐菜单补齐防堆叠规则，左 / 水平中 / 右对齐在同排或重叠严重时会按原顺序纵向排开，上 / 垂直中 / 下对齐在同列或重叠严重时会横向排开；水平 / 垂直等距在选区跨度不足时改为扩展排布，不再把大节点挤在一起；混选 groupBox 与普通节点时只整理普通节点，单独选中 groupBox 仍保留移动组框并联动成员能力。本版同时按规范打包 Electron，用户包继续包含本地 remove-ai-watermarks 0.8.7 runtime 与 ffmpeg sidecar。v1.9.5 继续保留：扩展 API 平台高级入口、ModelScope LoRA、ModelScope LLM /v1/chat/completions、本地 ComfyUI API Workflow 字段映射热修、去AI水印 0.8.7、RH工具箱、足球小将主题、云端上传目标，以及除 LLM 外主要生成节点 3600 秒轮询。GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
+    "installer": "本次按规范打包 Electron，目标产物为 dist_electron/T8-PenguinCanvas-Setup-1.9.6.exe；正式用户包必须包含 tools/remove-ai-watermarks-runtime sidecar runtime、tools/ffmpeg-runtime/ffmpeg.exe，并通过 _post_build.cjs 校验。",
     "publicReleasePolicy": {
       "github": "GitHub 公开源码只保留通用画布、生成节点、扩展平台、资源库、主题、ComfyUI/RH 工具箱、云端上传等能力；本地私有计费/支付/充值能力不得进入公开仓库。",
       "neverStage": [
@@ -2021,6 +2021,18 @@
         "GitHub 公开源码安全收口：公开版本移除顶部充值入口、RechargeModal 前端组件、/api/recharge 与 /pay 后端挂载、后端充值路由源码及前端 recharge API；本地私有能力只能作为 .gitignore 覆盖层或私有补丁存在。",
         "features.json.packaging.publicReleasePolicy 与本地 skill.md 已记录推送规则：默认不 stage / commit / push roadmap.md、skill.md 或任何私有计费/支付/充值实现，推送前必须检查 staged 文件列表和 staged diff。",
         "验证通过：node --test tests/*.test.ts（169/169）与 npm run build；build 仅保留既有 react-vendor empty chunk 与大 chunk 提示。"
+      ]
+    },
+    "phase136": {
+      "label": "画布对齐防堆叠与 Electron 打包 (v1.9.6)",
+      "status": "complete",
+      "items": [
+        "修复对齐菜单基础按钮把多个节点叠在一起的问题：左 / 水平中 / 右对齐后如果选区节点原本同排或高度重叠严重，会按原顺序沿垂直方向排开；上 / 垂直中 / 下对齐同理沿水平方向排开。",
+        "水平等距 / 垂直等距在选区跨度不足、常规间距为负数时改为从第一个节点开始扩展排布，避免大节点被中心点算法硬挤重叠。",
+        "混合选区里同时选中 groupBox 与普通节点时，对齐只整理普通节点，避免组框的大尺寸把选区边界拉偏；单独选中 groupBox 时仍保留旧能力，移动组框并联动成员节点。",
+        "Canvas 调用 applyNodeAlignment 时显式传入 alignGap=32，src/utils/nodeAlign.ts 保持纯函数实现并新增 NodeAlignOptions.alignGap，方便后续在 UI 中做可调间距。",
+        "roadmap.md 已在本地记录对齐功能检查与后续增强点，但按 GitHub 公开安全策略不随本次推送；skill.md 仅本地更新，继续禁止 stage / commit / push。",
+        "本次按规范打包 Electron：package.json / package-lock.json / vite.config.ts/js / electron/main.cjs / backend/src/config.js APP_VERSION / features.json / README.md 同步到 1.9.6；用户包要求继续带 remove-ai-watermarks runtime 与 ffmpeg sidecar。验证通过 node --test tests/nodeAlign.test.ts、全量 node --test tests/*.test.ts（173/173）与 npm run build。"
       ]
     }
   },

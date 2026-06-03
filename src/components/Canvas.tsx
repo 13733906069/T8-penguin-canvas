@@ -2634,6 +2634,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const result = applyNodeAlignment(nodesRef.current, targetIds, action, {
       grid: SNAP_GRID,
       gridGap: 48,
+      alignGap: 32,
     });
     if (!result.changed) {
       logBus.info('选区已经足够整齐，未移动节点', '对齐');

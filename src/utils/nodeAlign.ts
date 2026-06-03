@@ -15,6 +15,7 @@ export type NodeAlignAction =
 export interface NodeAlignOptions {
   grid?: [number, number];
   gridGap?: number;
+  alignGap?: number;
 }
 
 export interface NodeAlignResult {
@@ -32,6 +33,7 @@ interface Rect {
 
 const DEFAULT_GRID: [number, number] = [20, 20];
 const DEFAULT_GRID_GAP = 48;
+const DEFAULT_ALIGN_GAP = 32;
 const FALLBACK_SIZE = { w: 320, h: 240 };
 
 function rectOf(node: Node): Rect {
@@ -82,10 +84,76 @@ function samePosition(a: { x: number; y: number }, b: { x: number; y: number }):
   return Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
 }
 
+function shouldPackPerpendicular(
+  selected: Node[],
+  rectById: Map<string, Rect>,
+  axis: 'x' | 'y',
+): boolean {
+  if (selected.length < 2) return false;
+  const isX = axis === 'x';
+  const sorted = [...selected].sort((a, b) => {
+    const ar = rectById.get(a.id)!;
+    const br = rectById.get(b.id)!;
+    const av = isX ? ar.x : ar.y;
+    const bv = isX ? br.x : br.y;
+    if (Math.abs(av - bv) > 0.01) return av - bv;
+    return (isX ? ar.y - br.y : ar.x - br.x);
+  });
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prev = rectById.get(sorted[i - 1].id)!;
+    const cur = rectById.get(sorted[i].id)!;
+    const prevStart = isX ? prev.x : prev.y;
+    const prevEnd = prevStart + (isX ? prev.w : prev.h);
+    const curStart = isX ? cur.x : cur.y;
+    const curSize = isX ? cur.w : cur.h;
+    const prevSize = isX ? prev.w : prev.h;
+    const overlap = prevEnd - curStart;
+    if (overlap <= 0) continue;
+    const overlapRatio = overlap / Math.max(1, Math.min(prevSize, curSize));
+    const startDistance = Math.abs(curStart - prevStart);
+    if (overlapRatio >= 0.55 || startDistance <= 24) return true;
+  }
+  return false;
+}
+
+function packPerpendicular(
+  selected: Node[],
+  rectById: Map<string, Rect>,
+  desired: Map<string, { x: number; y: number }>,
+  axis: 'x' | 'y',
+  gap: number,
+): void {
+  const isX = axis === 'x';
+  const sorted = [...selected].sort((a, b) => {
+    const ar = rectById.get(a.id)!;
+    const br = rectById.get(b.id)!;
+    const av = isX ? ar.x : ar.y;
+    const bv = isX ? br.x : br.y;
+    if (Math.abs(av - bv) > 0.01) return av - bv;
+    return (isX ? ar.y - br.y : ar.x - br.x);
+  });
+  const firstRect = rectById.get(sorted[0].id)!;
+  let cursor = isX ? firstRect.x : firstRect.y;
+  const safeGap = Math.max(8, gap);
+  for (const node of sorted) {
+    const rect = rectById.get(node.id)!;
+    const pos = desired.get(node.id) || { ...(node.position || { x: 0, y: 0 }) };
+    if (isX) {
+      pos.x = cursor;
+      cursor += rect.w + safeGap;
+    } else {
+      pos.y = cursor;
+      cursor += rect.h + safeGap;
+    }
+    desired.set(node.id, pos);
+  }
+}
+
 function distributeOnAxis(
   selected: Node[],
   rectById: Map<string, Rect>,
   axis: 'x' | 'y',
+  gapWhenCrowded: number,
 ): Map<string, { x: number; y: number }> {
   const next = new Map<string, { x: number; y: number }>();
   if (selected.length < 3) return next;
@@ -122,16 +190,18 @@ function distributeOnAxis(
     return next;
   }
 
-  const firstCenter = isX ? first.x + first.w / 2 : first.y + first.h / 2;
-  const lastCenter = isX ? last.x + last.w / 2 : last.y + last.h / 2;
-  const step = (lastCenter - firstCenter) / (sorted.length - 1);
+  let cursor = start;
   for (let i = 0; i < sorted.length; i += 1) {
     const node = sorted[i];
     const rect = rectById.get(node.id)!;
-    const center = firstCenter + step * i;
     const pos = { ...(node.position || { x: 0, y: 0 }) };
-    if (isX) pos.x = center - rect.w / 2;
-    else pos.y = center - rect.h / 2;
+    if (isX) {
+      pos.x = cursor;
+      cursor += rect.w + gapWhenCrowded;
+    } else {
+      pos.y = cursor;
+      cursor += rect.h + gapWhenCrowded;
+    }
     next.set(node.id, pos);
   }
   return next;
@@ -196,7 +266,11 @@ export function applyNodeAlignment(
 ): NodeAlignResult {
   const selectedSet = selectedNodeSet(selectedIds);
   if (selectedSet.size === 0) return { nodes, changed: false, movedIds: [] };
-  const selected = nodes.filter((node) => selectedSet.has(node.id));
+  const rawSelected = nodes.filter((node) => selectedSet.has(node.id));
+  const hasRegularNode = rawSelected.some((node) => node.type !== 'groupBox');
+  const selected = hasRegularNode
+    ? rawSelected.filter((node) => node.type !== 'groupBox')
+    : rawSelected;
   if (selected.length === 0) return { nodes, changed: false, movedIds: [] };
 
   const rectById = new Map<string, Rect>();
@@ -206,14 +280,23 @@ export function applyNodeAlignment(
 
   let desired = new Map<string, { x: number; y: number }>();
   const grid = options.grid || DEFAULT_GRID;
+  const alignGap = Math.max(8, options.alignGap ?? DEFAULT_ALIGN_GAP);
 
   if (action === 'distribute-x') {
-    desired = distributeOnAxis(selected, rectById, 'x');
+    desired = distributeOnAxis(selected, rectById, 'x', alignGap);
   } else if (action === 'distribute-y') {
-    desired = distributeOnAxis(selected, rectById, 'y');
+    desired = distributeOnAxis(selected, rectById, 'y', alignGap);
   } else if (action === 'arrange-grid') {
     desired = arrangeGrid(selected, rectById, Math.max(0, options.gridGap ?? DEFAULT_GRID_GAP));
   } else {
+    const packsVertically =
+      action === 'align-left' ||
+      action === 'align-center-x' ||
+      action === 'align-right';
+    const packsHorizontally =
+      action === 'align-top' ||
+      action === 'align-center-y' ||
+      action === 'align-bottom';
     for (const node of selected) {
       const rect = rectById.get(node.id)!;
       const pos = { ...(node.position || { x: 0, y: 0 }) };
@@ -228,6 +311,12 @@ export function applyNodeAlignment(
         pos.y = roundToStep(pos.y, grid[1]);
       }
       desired.set(node.id, pos);
+    }
+    if (packsVertically && shouldPackPerpendicular(selected, rectById, 'y')) {
+      packPerpendicular(selected, rectById, desired, 'y', alignGap);
+    }
+    if (packsHorizontally && shouldPackPerpendicular(selected, rectById, 'x')) {
+      packPerpendicular(selected, rectById, desired, 'x', alignGap);
     }
   }
 
