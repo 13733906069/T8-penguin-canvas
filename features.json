@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.9.1",
-  "lastUpdated": "2026-06-01-custom-shortcuts",
+  "version": "1.9.5",
+  "lastUpdated": "2026-06-03-comfyui-field-mapping-hotfix",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,18 +16,19 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.9.1",
-    "semverVersion": "1.9.1",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.9.1：顶部工具栏快捷键面板升级为可自定义设置，支持录制组合键、清空单项、单项/全部恢复默认、冲突提示和浏览器保留键拦截；撤销/重做/复制粘贴/打组/画布定位/资源库/连线导航等动作统一走快捷键 store 并本地持久化。默认主流程仍保持贞贞工坊 / RunningHub / LLM 独立 Key 不变。",
-    "installer": "本次为源码发布，未重新打包 Electron；上一安装包仍为 dist_electron/T8-PenguinCanvas-Setup-1.8.6.exe（NSIS，129.40 MB）。如需离线用户包，仍需按打包清单准备 remove-ai-watermarks sidecar runtime 并执行 npm run dist。",
+    "version": "1.9.5",
+    "semverVersion": "1.9.5",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.9.5：扩展 API 平台继续作为高级可选入口，ModelScope 图像生成新增 LoRA 管理与节点内多选，默认 LoRA 列表从 Infinite-Canvas 同步；ModelScope LLM 继续走 /v1/chat/completions、Bearer Key 规范化和长任务超时；本地 ComfyUI 接入新增 API Workflow 自动识别、可视化字段映射、LoadImage 上游图片自动上传、ComfyUI 分类、ComfyUI超市与ComfyUI应用制作工具，并热修 fields 映射里非 fixed 来源残留旧 value 覆盖运行时 Prompt / 上游图片 / 宽高的问题；去AI水印桥接同步上游 remove-ai-watermarks 0.8.7，隐形水印保护开关改为 opt-in，强度留空由上游按来源自适应；新增 RH工具箱只读运行节点和开发态 RH工具箱制作器，制作器仅在 Vite dev 环境出现，生产/Electron 包必须由后置检查拦截；新增第九套官方主题「足球小将风格」，使用原创绿茵球场、蓝白 10 号球衣、比分牌、小地图和足球传球连线动效，并完成 Captain Tsubasa / Japan 3:2 Brazil 标题牌居中与新球衣 logo 资产替换；素材右键新增云端上传目标入口，首版支持腾讯云 COS 与阿里云 OSS 真实上传，百度网盘和夸克网盘保留配置占位；除 LLM 外，图像、视频、SD2.0/Seedance、音频/Suno 及扩展图像/视频平台、批量运行、循环器等待统一不低于 3600 秒。默认主流程仍保持贞贞工坊 / RunningHub / LLM 独立 Key 不变。",
+    "installer": "本次为源码发布，未重新打包 Electron；上一实测安装包为 dist_electron/T8-PenguinCanvas-Setup-1.9.3.exe。如需离线用户包，必须把 tools/remove-ai-watermarks-runtime sidecar runtime 同步到 remove-ai-watermarks 0.8.7+ 后再执行 npm run dist。",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
       "backend/src/ 任何文件修改后必须重新 npm run encrypt 再打包",
       "main.cjs 的窗口标题 / log 窗口 / IPC version 三处版本号，以及 backend/src/config.js APP_VERSION 必须与 package.json 同步",
-      "_post_build.cjs 验证 24 个 .t8c 必存在: server/config + routes/{canvas,settings,proxy,externalProviders,files,imageOps,recharge,resources,themes,eagle,aiWatermark} + providers/{registry,mediaResolver,adapters,openaiCompatible,modelscope,volcengine,comfyui,jimengCli} + tools/aiWatermark/{runner,media} + utils/duckPayload",
+      "_post_build.cjs 验证后端 .t8c 必存在: server/config + routes/{canvas,settings,proxy,externalProviders,files,imageOps,recharge,resources,themes,eagle,aiWatermark,cloudUploads} + providers/{registry,mediaResolver,adapters,openaiCompatible,modelscope,volcengine,comfyui,jimengCli} + cloudUploads/{settings,uploader} + tools/aiWatermark/{runner,media} + utils/duckPayload",
       "_post_build.cjs 验证 resources/frontend/index.html + assets/ 必存在",
-      "_post_build.cjs 必须让 src/assets/theme-music/*.mp3 经 Vite 输出到 resources/frontend/assets，主题音乐默认静音且随前端资源一起打包",
+      "_post_build.cjs 必须让 src/assets/theme-music/*.mp3 / *.mid 经 Vite 输出到 resources/frontend/assets，主题音乐默认静音且随前端资源一起打包",
       "_post_build.cjs 必须检查 resources/tools/remove-ai-watermarks sidecar runtime slot；普通源码构建缺少 runtime 时只警告，正式用户包设置 T8_REQUIRE_AI_WATERMARK_RUNTIME=1 后缺少 remove-ai-watermarks.exe / Scripts/remove-ai-watermarks.exe / python.exe 等入口必须失败",
+      "_post_build.cjs 必须检查 RH工具箱制作器不得进入用户包；resources/frontend 内若出现 RHToolboxMakerNode、RH工具箱制作器 或 rh-toolbox-maker，打包后置检查必须失败",
       "去AI水印 full runtime 不提交 Git；如需离线用户包，先把 Python/Torch/remove-ai-watermarks[gpu,detect,trustmark,lama] sidecar 放入 tools/remove-ai-watermarks-runtime，再执行 npm run dist",
       "_post_build.cjs 自动清除任何意外混入的 resources/{app,backend}/src 明文目录",
       "_post_build.cjs 必须拦截源码中的非空 RECHARGE_DEFAULT_ENC，以及 resources 中的 data/recharge.private.json、非空 AGENT_HMAC_KEY / DULUPAY_KEY、RECHARGE_DEFAULT_ENC 可逆密文；用户分发包不得携带充值 agent HMAC",
@@ -46,7 +47,7 @@
     }
   },
   "themes": {
-    "description": "主题模板体系：内置科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA风格 / 幽游白书风格 / 灌篮高手风格八套模板 × 浅色/深色模式，由 zustand theme store 持久化，data-theme-style + data-theme-mode + data-theme-visual 注入 html 根；新增节点应使用 ThemeToken CSS 变量与通用 t8-* 样式，避免逐节点硬编码主题。",
+    "description": "主题模板体系：内置科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格九套模板 × 浅色/深色模式，由 zustand theme store 持久化，data-theme-style + data-theme-mode + data-theme-visual 注入 html 根；新增节点应使用 ThemeToken CSS 变量与通用 t8-* 样式，避免逐节点硬编码主题。",
     "templateSystem": {
       "schema": "t8-theme-template",
       "version": 2,
@@ -79,7 +80,7 @@
         "画布背景水印必须放在 .t8-canvas-shell::before/::after 背景层，z-index:0 且 pointer-events:none；ReactFlow 节点、边、浮层和 GroupBox 内容必须盖住水印，不能让装饰穿透到素材预览或画板内容上方",
         "强风格官方主题可为 light/dark 分别提供水印资产；若深色水印包含黑底终端、警告面板或厚重贴片，浅色模式必须改用透明底线稿 / 印章 / HUD 版本，避免浅色画布出现突兀深色块",
         "框选/节点右键菜单、空白右键快速添加菜单、拖线候选菜单和选中节点右上角 RUN/关闭浮动条都属于全局主题控件，必须使用 t8-context-menu / t8-node-action-bar 语义类和 visuals.style 作为视觉判断来源，禁止仅按 legacyStyle=像素/科技分支导致 OP、火影、EVA 等主题残留白底或绿色按钮",
-        "全局菜单新增动作时必须检查 light/dark 与八套官方主题的可读性；小图标和菜单图标仍需固定尺寸，避免 OP/像素风胶囊按钮把资源库、图像对比、批量下载等入口撑大",
+        "全局菜单新增动作时必须检查 light/dark 与九套官方主题的可读性；小图标和菜单图标仍需固定尺寸，避免 OP/像素风胶囊按钮把资源库、图像对比、批量下载等入口撑大",
         "节点 NodeID 徽标属于 ReactFlow 节点外层通用浮层，必须使用 .t8-node-serial-badge 全局样式；位置必须由 useNodeSerialBadgeAnchor() 测量真实可见节点卡片右上角并写入 --t8-node-serial-anchor-left/top，主题只能覆盖 --t8-node-serial-offset-x/y，禁止按标题图标宽度硬编码 left/top 或直接依赖 ReactFlow 外层宽度，避免不同节点、不同主题、长标题和 ResizeObserver 测量差异导致角标遮挡或漂离节点。"
       ],
       "music": {
@@ -102,7 +103,8 @@
           "eva-style": "eva-decisive-battle.mp3",
           "yyh-style": "yyh-unbalanced-kiss-piano.mp3",
           "yyh-hidden": "yyh-hidden-tonight.mp3",
-          "slamdunk-style": "slamdunk-kimi-ga-suki.mp3"
+          "slamdunk-style": "slamdunk-kimi-ga-suki.mp3",
+          "soccer-hero-style": "soccer-tsubasa-burning-hero.mid"
         },
         "rule": "主题音乐默认静音，通常只在用户主动点击播放按钮后播放；RH 鸭鸭隐藏模式会自动切换 rh-hidden-saya.mp3，幽游白书肖像大师隐藏模式会自动切换 yyh-hidden-tonight.mp3，二者都会解除静音。模板编辑器支持上传替换，导出模板可携带 data:audio/*。"
       }
@@ -225,6 +227,19 @@
           "headerMark": "BUZZER BEATER"
         },
         "music": "slamdunk-kimi-ga-suki.mp3；默认静音，用户可在主题模板中上传替换授权音频"
+      },
+      "soccerHero": {
+        "label": "足球小将风格",
+        "description": "足球热血绿茵视觉模板：原创整场球场、蓝白 10 号球衣、居中比分牌节点、传球轨迹、足球精灵、全场 MiniMap 与足球 SHIFT 剪线；不使用官方角色图、漫画截图或队徽原图。",
+        "default": false,
+        "visuals": {
+          "style": "soccer-hero",
+          "iconPack": "soccer",
+          "canvasPattern": "pitch",
+          "nodeFrame": "match-card",
+          "headerMark": "GOLDEN GOAL"
+        },
+        "music": "soccer-tsubasa-burning-hero.mid；MIDI 由 ThemeMusicToggle WebAudio 解析播放，golden-goal 仅作为兜底 preset；默认静音"
       }
     },
     "defaultStyle": "pixel",
@@ -242,6 +257,8 @@
   "repository": "https://github.com/T8mars/T8-penguin-canvas",
   "aiWatermarkRuntime": {
     "upstream": "https://github.com/wiltodelta/remove-ai-watermarks",
+    "upstreamVersion": "0.8.7",
+    "upstreamCommit": "b25276c",
     "upstreamLicense": "MIT",
     "nodeType": "remove-ai-watermark",
     "category": "auxiliary",
@@ -273,10 +290,12 @@
       "不要复制上游算法源码到 T8；通过 CLI/Python 包能力探测消费上游。",
       "上游新增 mark 时优先依赖 watermark_registry.mark_keys() 动态暴露，前端只补充显示文案或兜底。",
       "上游新增 mode/options 时扩展 runner 参数映射、节点 UI 和 tests/aiWatermarkRunner.test.ts，不破坏旧画布数据字段。",
+      "0.8.7 起 invisible 的文字/人脸保护改为 opt-in：T8 只在用户开启时发送 --protect-text / --protect-faces，禁止再发送旧 --no-protect-* 参数。",
+      "0.8.7 起未填写 strength 时由上游按 C2PA/SynthID 来源自适应 OpenAI/Google/未知强度，T8 UI 默认留空，不再诱导用户固定 0.30。",
       "每次同步上游后必须重新跑 status/capability、代表性 process smoke、node --test tests/*.test.ts、npm run build 和 Electron 打包后置检查。"
     ]
   },
-  "totalNodes": 41,
+  "totalNodes": 46,
   "phases": {
     "phase0": {
       "label": "基础设施",
@@ -1757,6 +1776,7 @@
         "状态接口动态返回 upstream version、markKeys 与 optionalFeatures(invisible/lama/detect/trustmark)，前端 mark 列表必须以动态结果为准并以 auto/gemini/doubao/jimeng 兜底。",
         "完整能力依赖 remove-ai-watermarks[gpu,detect,trustmark,lama]、CUDA Torch、OpenCV 兼容版本和 LaMA/invisible 可选模型；缺依赖时后端必须优雅显示未安装或能力不可用，不允许炸后端。",
         "隐形水印参数在 T8 层钳制安全边界：steps 至少 4，非 0 maxResolution 至少 256，strength 至少保证一个 diffusion timestep，避免上游 diffusers 空 latent 崩溃。",
+        "已同步上游 0.8.7：visible/identify 动态覆盖 Gemini、豆包、即梦可见标记；invisible 默认走上游来源自适应强度，文字/人脸保护为实验 opt-in，仅开启时发送 --protect-text / --protect-faces。",
         "Electron 用户包若要开箱可用，必须准备 tools/remove-ai-watermarks-runtime sidecar runtime，electron-builder 会复制到 resources/tools/remove-ai-watermarks；正式发版可设置 T8_REQUIRE_AI_WATERMARK_RUNTIME=1 强制缺失即失败。",
         "上游仓库更新后只同步 registry、命令参数、mark/mode/options 与能力探测适配；新增能力必须补 tests/aiWatermarkRunner.test.ts 并更新 README/features/skill 的 MIT attribution 与打包说明。"
       ]
@@ -1826,6 +1846,152 @@
         "公开版本同步到 1.9.1：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub；本次只推源码，不打包 Electron。",
         "验证：node --test tests/keyboardShortcuts.test.ts、node --test tests/*.test.ts 与 npm run build 通过；浏览器检查快捷键设置面板可打开，包含录制/清空/默认/全部恢复默认入口且 console error/warn 为空。"
       ]
+    },
+    "phase124": {
+      "label": "宫格编辑节点第一版 (v1.9.2)",
+      "status": "complete",
+      "items": [
+        "新增可见工具节点 grid-editor / 宫格编辑，左侧接 image、右侧输出 image，用于多图分镜宫格拼版；与已有 grid-crop 宫格剪裁形成拼接/拆分互补。",
+        "支持横向 cols 与纵向 rows，预设 2×2、3×3、3×4、4×3、1×4、4×1；支持 1:1、4:3、16:9、9:16 和自定义宽高，输出 PNG。",
+        "节点会自动收集上游图像，也允许在格子 + 或上传按钮中追加本地图像；格子内图片可拖拽排序、单格删除，删除上游图只影响当前节点，不断开连线。",
+        "支持 gap、背景色、adaptive/cover/contain/fill 适配和序号叠加；默认自适应完整显示图像，节点预览按真实输出比例滚动展示，素材超过格子数量时显示溢出提示，并可自动扩容行数。",
+        "新增后端 POST /api/image/grid-compose，使用 sharp 按 rows/cols/width/height/gap/background/fit/showIndexes/cells[] 生成拼接图并保存到 /files/output。",
+        "拆分按钮第一版会把当前已填格子的图片顺序写入 imageUrls / urls，继续复用现有输出素材、资源库和节点发送链路。",
+        "公开版本同步到 1.9.2：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；本次只推源码，不打包 Electron。"
+      ]
+    },
+    "phase125": {
+      "label": "宫格编辑尺寸输入与扩展 API 设置热修 (v1.9.2)",
+      "status": "complete",
+      "items": [
+        "宫格编辑宽/高数字框改为编辑中 draft 状态，用户清空或输入中间态时不再立刻被 normalizeGridEditorConfig 钳制回 64；失焦或回车后再提交并按 64-4096 范围归一。",
+        "宫格编辑比例下拉新增稳定的 GRID_EDITOR_CUSTOM_RATIO_VALUE='custom'，gridEditorRatioSelectValue(width,height,mode) 作为显示值唯一来源；选择自定义只写 ratioMode，不再被当前宽高字符串覆盖。",
+        "自定义宽高提交会自动标记 gridEditorRatioMode='custom'；选择 1:1 / 4:3 / 16:9 / 9:16 预设时才同步改写 width/height，避免比例选择和尺寸输入互相抢状态。",
+        "扩展 API 平台表单的 AdvancedProviderFormBlock 提升为顶层组件，禁止在 renderAdvancedProviderForm 内定义 const FormBlock，避免 React 每次输入都重挂载字段导致焦点丢失和中文 IME 中断。",
+        "ModelScope 连接密钥区新增“获取 Token · 国内”和“获取 Token · 国外”两个外链入口，分别打开 https://www.modelscope.cn/my/access/token 与 https://www.modelscope.ai/my/access/token。",
+        "新增/更新 tests/gridEditor.test.ts 与 tests/apiSettingsTheme.test.ts，验证自定义比例、尺寸 draft、扩展平台字段不重挂载和 ModelScope Token 链接；发布前需跑 node --test tests/gridEditor.test.ts tests/apiSettingsTheme.test.ts、node --test tests/*.test.ts 与 npm run build。"
+      ]
+    },
+    "phase126": {
+      "label": "扩展平台与即梦 CLI 生成链路热修 (v1.9.3)",
+      "status": "complete",
+      "items": [
+        "ModelScope LLM 调用改为稳定的 OpenAI 兼容路径：baseUrl 自动补 /v1，API Key 提交前剥离重复 Bearer，默认模型为 Qwen/Qwen3-235B-A22B，长任务超时提升到 30 分钟。",
+        "ModelScope 与火山引擎按 Infinite-Canvas 侧已拉取模型补齐默认模型列表；旧配置里 imageModels/videoModels/chatModels 为空时会自动合并默认项，启用平台后节点下拉不再空白。",
+        "即梦 CLI 图像和视频生成会在初始返回 submit_id / querying 且没有媒体时继续执行 dreamina query_result --submit_id=<id> --download_dir=<output>，支持解析 result_json 字符串或对象里的 images/videos/path/url。",
+        "即梦 CLI 输出若已经下载到 config.OUTPUT_DIR 会直接映射为 /files/output/<filename>；查询结果缺字段时会按 submit_id 扫描 output 目录兜底，避免后台已生成但画布提示未返回图片/视频。",
+        "SD2.0 节点选择即梦 CLI 扩展来源时隐藏贞贞 API 专属 Model、音频生成、返回末帧、水印、Web Search、Max Poll、Interval 等字段，只保留通用时长/比例/分辨率/参考素材/Prompt，并通过 multimodal2video 传递图片、视频、音频参考。",
+        "API 设置页的即梦 CLI 表单新增安装说明：curl -s https://jimeng.jianying.com/cli | bash、dreamina login、Windows 常见路径、PATH 填写和 WSL 发行版填写方式。",
+        "去AI水印运行时探测与日志增强一起纳入当前源码版本：优先 Python module 轻量探测 remove-ai-watermarks，缓存能力结果；运行时在终端实时打印 runId 分组 stdout/stderr/step 日志，Electron sidecar README 记录 Python 优先探测规则。",
+        "公开版本同步到 1.9.3：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub；本次只推源码，不打包 Electron。",
+        "验证要求：node --test tests/modelscopeProvider.test.ts tests/jimengCliProvider.test.ts tests/advancedProviders.test.ts tests/apiSettingsTheme.test.ts tests/aiWatermarkRunner.test.ts、node --test tests/*.test.ts 与 npm run build。"
+      ]
+    },
+    "phase127": {
+      "label": "ModelScope 图像 LoRA 与去AI水印 0.8.7 同步 (v1.9.4)",
+      "status": "complete",
+      "items": [
+        "ModelScope 扩展平台新增 LoRA 列表配置，设置页可增删改显示名、模型 ID、默认权重与适用说明；空旧配置会自动合并内置默认 LoRA。",
+        "图像节点选择 ModelScope 扩展来源时新增 LoRA 多选与权重输入，提交时通过 providerParams.loras 传给后端，不影响贞贞主流程与其他扩展平台。",
+        "后端 modelscope adapter 在图像生成请求中接收 input.loras / providerParams.loras / legacy 字段，清洗后写入 payload.loras，保持旧画布无 LoRA 时行为不变。",
+        "默认 LoRA 列表从 Infinite-Canvas 同步：Daniel8152/film、Daniel8152/Qwen-Image-2512-Film、Daniel8152/Klein-enhance；默认项同时维护在 backend/src/providers/registry.js 与 src/utils/advancedProviders.ts。",
+        "去AI水印外部 clone 已同步到 wiltodelta/remove-ai-watermarks v0.8.7 / b25276c；runner 版本探测优先读取实际导入模块的 __version__，避免全局旧 pip metadata 误报。",
+        "去AI水印 invisible 参数适配 0.8.7：保护文字/人脸为实验 opt-in，只有用户开启时才发送 --protect-text / --protect-faces；强度留空时不发送 --strength，让上游按 C2PA/SynthID 来源自适应。",
+        "tools/remove-ai-watermarks-runtime/README.md 同步要求 sidecar runtime 目标为 0.8.7+；正式 Electron 用户包若要求去水印开箱可用，必须重建 runtime 后再打包。",
+        "公开版本同步到 1.9.4：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub；本次只推源码，不打包 Electron。",
+        "验证要求：node --test tests/*.test.ts、npm run build，并至少覆盖 tests/modelscopeProvider.test.ts、tests/advancedProviders.test.ts、tests/advancedProviderFrontend.test.ts、tests/apiSettingsTheme.test.ts 与 tests/aiWatermarkRunner.test.ts。"
+      ]
+    },
+    "phase128": {
+      "label": "RH工具箱与开发态制作器节点 (v1.9.4)",
+      "status": "complete",
+      "items": [
+        "新增可见 RH 节点 rh-toolbox / RH工具箱：用户只能运行维护者精选应用，不能在客户端新增或编辑工具；工具、分类、输入映射、用户参数、固定参数、输出协议全部由 src/data/rhToolboxManifest.ts manifest 驱动。",
+        "新增统一运行服务 src/services/rhToolbox.ts 与协议工具 src/utils/rhToolbox.ts：按 inputSchema 从上游 text/image/video/audio 取值，媒体可自动 uploadRhAsset，提交 submitRh 后轮询 queryRh，输出归一为 text/image/video/audio/url/taskId，便于后续图像编辑、视频放大、文本扩写、音频克隆等快捷功能复用。",
+        "RH工具箱节点接入上游素材拖拽排序和单项排除，使用 MaterialPreviewSection 过滤 excludedMaterialIds，不断开连线、不影响其他下游节点；多媒体输出继续走 OutputNode、资源库、自动保存、节点发送和 Loop 可识别协议。",
+        "新增开发态专用节点 rh-toolbox-maker / RH工具箱制作器：仅 import.meta.env.DEV 下注册到 Canvas、nodeRegistry、portTypes 和默认 data；可填写 WebApp ID、拉取 RH nodeInfoList、将字段一键加入上游输入/用户参数/固定参数/输出映射，并生成标准工具 JSON。",
+        "制作器保存的开发草稿只进入 localStorage，通过 src/utils/rhToolboxDeveloper.ts 动态合并到 RH工具箱节点；普通运行服务和生产 manifest 不依赖开发草稿模块，避免用户包携带维护者制作入口。",
+        "Electron 后置检查 electron/_post_build.cjs 新增 checkNoRhToolboxMaker，禁止 resources/frontend 中出现 RHToolboxMakerNode、RH工具箱制作器 或 rh-toolbox-maker；生产 dist 已用 rg 扫描确认无残留。",
+        "测试新增 tests/rhToolbox.test.ts，覆盖节点注册、manifest 规范、nodeInfoList 构造、统一 runner、制作器开发态注册与生产隔离；验证通过 node --test tests/rhToolbox.test.ts、node --test tests/*.test.ts 与 npm run build。"
+      ]
+    },
+    "phase129": {
+      "label": "ComfyUI 本地工作流简化接入 (v1.9.4)",
+      "status": "complete",
+      "items": [
+        "roadmap.md 新增「ComfyUI 本地 API 简化接入路线」，明确 ComfyUI 仍是扩展 API 平台高级来源，默认不影响贞贞工坊、RunningHub 与 LLM 独立 Key 主流程。",
+        "新增 src/utils/comfyuiWorkflow.ts，导入 API Workflow 后自动识别 CLIPTextEncode、LoadImage、EmptyLatentImage、KSampler、SaveImage/PreviewImage 等常见节点，并生成正向/负向 Prompt、上游图片、宽高、Seed、Steps、CFG、Sampler、Scheduler、Denoise 的推荐映射。",
+        "API 设置页的 ComfyUI 区从纯 fields JSON 改为可视化参数映射：显示识别结果、输出数量、警告信息、来源下拉、固定值输入和删除入口；高级用户仍可展开直接编辑 fields JSON，兼容旧配置。",
+        "后端 comfyui adapter 支持 fields source=image1/image2/image3，会把图像节点上游素材解析为本地文件或 URL，上传到 ComfyUI /upload/image 后写入 LoadImage.image，再提交 /prompt 并轮询 /history。",
+        "图像节点选择 ComfyUI 高级来源时会提示当前工作流需要的上游图片数量和已准备数量，缺图时给出明确提示，减少运行后才失败的挫败感。",
+        "验证通过 node --test tests/advancedProviders.test.ts tests/apiSettingsTheme.test.ts tests/advancedProviderFrontend.test.ts tests/comfyuiProvider.test.ts、全量 node --test tests/*.test.ts 与 npm run build。"
+      ]
+    },
+    "phase130": {
+      "label": "足球小将官方主题 (v1.9.4)",
+      "status": "complete",
+      "items": [
+        "新增第九套官方主题「足球小将风格」，内部协议使用 visuals.style=soccer-hero、iconPack=soccer、canvasPattern=pitch、nodeFrame=match-card、music.preset=golden-goal，避免把官方 IP 或素材硬编码到业务组件。",
+        "新增并收口原创足球主题资产：src/assets/soccer-jersey-tsubasa-v2.png 用于顶栏蓝白 10 号球衣 logo，src/assets/soccer-ball-v2.png / soccer-ball-v2-cursor.png 用于连线足球精灵、SHIFT 剪线和断线按钮，src/assets/soccer-pitch-map.svg 用于整场球场背景与全场 MiniMap。",
+        "新增 src/styles/theme-soccer.css，覆盖顶栏品牌、侧边栏、整场球场背景、节点比赛卡外框、NodeID 徽标、端口、连线、MiniMap、ReactFlow Controls、主题音乐按钮、右键菜单、拖线候选、NodeActionBar、GroupBox、select/option 与 light/dark legacy internal controls。",
+        "DeletableEdge 新增足球主题专用 soccer-ball animateMotion 精灵，每条连线同时只显示一个足球，和灌篮主题篮球精灵互不串资源。",
+        "主题模板管理器、后端主题白名单、ThemeMusicToggle、App 顶栏、Sidebar 图标包和 Canvas MiniMap 均同步 soccer-hero；足球主题标题使用 Captain Tsubasa，比分牌使用 Japan 3:2 Brazil，球场 SVG 顶部两块标题牌整体以中线视觉居中且文字使用 text-anchor=middle 防止偏移或溢出；默认音乐使用 src/assets/theme-music/soccer-tsubasa-burning-hero.mid，ThemeMusicToggle 可解析 MIDI 并循环播放，golden-goal 仅作为兜底 preset。",
+        "验证要求：node --test tests/apiSettingsTheme.test.ts、node --test tests/*.test.ts 与 npm run build。"
+      ]
+    },
+    "phase131": {
+      "label": "云端上传目标与素材右键上传 (v1.9.4)",
+      "status": "complete",
+      "items": [
+        "roadmap.md 新增「云端上传目标路线」，明确该能力作为资源库之外的外部归档 / 分享入口，默认不影响生成、资源库、节点发送和自动保存主流程。",
+        "API 设置页新增默认折叠的「云端上传目标【可选】」区，支持腾讯云 COS、阿里云 OSS、百度网盘和夸克网盘四个目标的显示名、启用开关、默认目标、路径前缀、配置检查和密钥脱敏保存；表单继续使用 t8-api-settings 语义类保证各官方主题可读。",
+        "后端 settings 路由新增 cloudUploadTargets / cloudUploadSummary，保存时遇到空值或 **** 脱敏值会保留旧密钥，GET 返回 SecretId/SecretKey/AccessKey/Token/Cookie 的脱敏状态。",
+        "新增 backend/src/routes/cloudUploads.js、backend/src/cloudUploads/settings.js、backend/src/cloudUploads/uploader.js：提供 GET /api/cloud-uploads/status、POST /api/cloud-uploads/test、POST /api/cloud-uploads/upload。",
+        "腾讯云 COS 与阿里云 OSS 第一版支持真实上传，按 t8-canvas/{kind}/{yyyy-mm}/filename.ext 生成对象 key，可选公共域名返回直链；百度网盘和夸克网盘先保留清晰配置位和友好错误，等待稳定 OAuth/CLI 授权方案后接入真实上传。",
+        "素材右键菜单新增「上传到云端」分区，复用 data-drag-source 协议，UploadNode / OutputNode / 资源库卡片等图像、视频、音频素材可以直接上传；上传成功后自动尝试复制云端 URL 或对象路径。",
+        "electron/_post_build.cjs 纳入 routes/cloudUploads.t8c 与 cloudUploads/settings.t8c、cloudUploads/uploader.t8c 校验，避免 Electron 包漏带新后端模块。",
+        "新增 tests/cloudUploads.test.ts，覆盖默认目标迁移、密钥保留、脱敏、摘要、对象 key 生成和网盘占位错误；验证通过 node --test tests/cloudUploads.test.ts、全量 node --test tests/*.test.ts 与 npm run build。"
+      ]
+    },
+    "phase132": {
+      "label": "主生成节点轮询等待统一 3600 秒 (v1.9.4)",
+      "status": "complete",
+      "items": [
+        "音频 Suno 节点从 3s×60=180s 调整为 3s×1200=3600s，长歌词、翻唱、续写任务不会再 3 分钟提前报轮询超时。",
+        "图像节点标准 GPT2 / nano-banana 路径保持 2s×1800=3600s；FAL 图像从 600×3s=1800s 调整为 1200×3s=3600s；MJ 默认 maxPoll 改为 1200，旧节点保存的较小 maxPoll 会在运行时按 pollInt 自动补足到 3600s。",
+        "视频节点普通异步轮询从 480×5s=2400s 调整为 720×5s=3600s；FAL 视频继续使用 600×6s=3600s 并改为同一常量表达。",
+        "SD2.0 / Seedance 节点保留用户可调 Max Poll / Interval，但实际运行会按当前 interval 自动补足到至少 3600s，避免历史配置或短 interval 造成提前超时。",
+        "扩展 API 平台的图像/视频入口统一给 3600s 兜底：ModelScope 图像异步 deadline 从 120s 抬到 3600s，本地 ComfyUI /history 轮询按间隔补足 3600s，火山图像与视频轮询抬到 3600s，即梦 CLI pollSeconds 默认与归一化均为 3600s。",
+        "批量运行与循环器等待节点完成的安全超时从 5 分钟改为 60 分钟，避免节点自身还在轮询时被上层执行链提前判定失败；LLM 节点自身超时策略未纳入本次改动。"
+      ]
+    },
+    "phase133": {
+      "label": "ComfyUI 超市与应用制作工具节点 (v1.9.4)",
+      "status": "complete",
+      "items": [
+        "roadmap.md 新增「ComfyUI 超市与应用制作工具路线」，明确该能力是扩展 API 平台下方的画布级入口：高级来源继续保留，ComfyUI超市负责一键运行，ComfyUI应用制作工具负责把 API Workflow 制作为标准应用。",
+        "新增可见分类 comfyui / ComfyUI，包含 comfyui-store「ComfyUI超市」和 comfyui-app-maker「ComfyUI应用制作工具」两个节点；制作工具不是开发态隐藏节点，普通用户也可导入 workflow 制作自己的本地应用。",
+        "新增 src/utils/comfyuiApps.ts、src/data/comfyuiAppManifest.ts 与 src/services/comfyuiApps.ts，定义 t8-comfyui-app-manifest 协议、分类/应用/参数/输出规范、本地存储、导入导出、应用运行和 provider 动态注入。",
+        "ComfyUI应用制作工具支持上传或粘贴 API Workflow JSON，自动识别正向/负向 Prompt、图片/视频/音频输入、宽高、batch、seed、steps、cfg、sampler、scheduler、denoise、model/clip/vae/lora 等字段，可保存到 ComfyUI超市、复制 JSON 或导出应用包。",
+        "ComfyUI超市支持分类、搜索、导入应用 JSON、选择已启用的 ComfyUI provider、读取上游 text/image/video/audio 素材、编辑用户参数、运行后输出 image/video/audio/text，并复用 OutputNode、资源库、节点发送和 Loop 可识别协议。",
+        "后端 comfyui adapter 增强真实运行 patch：providerParams.seed 可生效；旧 heuristic fallback 只在没有明确映射时兜底，避免 Anima 类工作流把 sampler negative 连接的 CLIPTextEncode 冲成正向 Prompt。",
+        "图像节点选择 ComfyUI 扩展来源时不再显示 GPT 比例/尺寸参数块，而是显示工作流字段面板，并按 workflow width/height/batch/seed/model 等映射生成 ComfyUI 参数，修复“原始 ComfyUI 工作流参数显示成 GPT 参数”的问题。",
+        "实测 C:\\（动漫抽卡神器）Anima+V1.0正式版自动提示词文生图V4 (2).json：自动识别 14 个字段，真实提交本机 ComfyUI 26 秒返回图片；复测确认 #91 正向 Prompt、#87 负向 Prompt、512x512 与 seed 均正确注入。",
+        "验证通过 node --test tests/comfyuiProvider.test.ts、node --test tests/advancedProviders.test.ts tests/advancedProviderFrontend.test.ts、npm run build；后续发布前仍建议跑全量 node --test tests/*.test.ts。"
+      ]
+    },
+    "phase134": {
+      "label": "ComfyUI 字段映射旧值覆盖热修 (v1.9.5)",
+      "status": "complete",
+      "items": [
+        "修复本地 ComfyUI 图像生成时，fields 映射里残留 value 会覆盖 source=prompt / image1 / width / height 等运行时输入的问题；现在只有 source=fixed 才允许 value 写入 workflow，其它来源一律从当前节点 Prompt、上游素材和 providerParams 读取。",
+        "src/utils/comfyuiWorkflow.ts 的 compactComfyFields 会清理非 fixed 来源的旧 value；旧手写 fields 若只有 value 没有 source，则继续按 fixed 兼容，避免破坏历史高级配置。",
+        "backend/src/providers/registry.js 归一化 ComfyUI workflow fields 时同步清理非 fixed value；backend/src/providers/comfyui.js 执行 patch 时也做后端兜底，旧设置即使已经保存了脏字段也能正确运行。",
+        "API 设置页手动编辑 fields JSON 和可视化来源下拉都会通过 compactComfyFields 保存，避免用户再次把 prompt/image/width/height 映射变成固定旧值。",
+        "新增 tests/comfyuiProvider.test.ts 回归用例，覆盖 prompt、上游图片上传、宽高和 fixed 固定值并存时的优先级；tests/advancedProviders.test.ts 覆盖后端归一化行为。",
+        "公开版本同步到 1.9.5：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub；本次只推源码，不打包 Electron。",
+        "验证通过 node --test tests/comfyuiProvider.test.ts、node --test tests/advancedProviders.test.ts、node --test tests/advancedProviderFrontend.test.ts tests/apiSettingsTheme.test.ts tests/comfyuiProvider.test.ts tests/advancedProviders.test.ts、全量 node --test tests/*.test.ts 与 npm run build。"
+      ]
     }
   },
   "categories": {
@@ -1888,7 +2054,7 @@
     },
     "rh": {
       "label": "RH 节点",
-      "count": 4,
+      "count": 5,
       "nodes": [
         {
           "type": "runninghub",
@@ -1906,10 +2072,31 @@
           "description": "v1.2.10 新增、v1.2.10.4 重命名为「RH 超市」。启动器式包装多个 RunningHub AI 应用 · 在节点内分类浏览 / 拼音搜索 / 一键运行。双视图（启动器 + 应用运行）、多实例共享分类/应用 JSON、与RunningHubNode完全对齐的运行逻辑（resolveNodeInfoList 三层防御 / IMAGE预览白名单 / instanceType select / 上游同步 / autoOutput 分流 / 上游素材单项排除）。默认 cyan 调·像素风走糖果调色板(px-surface/px-muted/px-ink/px-yellow)。"
         },
         {
+          "type": "rh-toolbox",
+          "label": "RH工具箱",
+          "description": "v1.9.4 新增。维护者精选 RunningHub 工具箱，只读分类运行，用户不能在客户端新增/编辑工具；工具由 manifest 驱动，按 capability 支持图像抠图/编辑/放大、视频编辑/放大、文本扩写、音频克隆等后续能力，并通过统一 runner 输出 text/image/video/audio。开发期可用 RH工具箱制作器生成 manifest 草稿，用户包不包含制作器。"
+        },
+        {
           "type": "rh-config",
           "label": "RH 配置",
           "description": "RunningHub 工作流参数注入(v1.1.x 起 hidden:true 仅从 Sidebar 隐藏,nodeTypes 注册保留以兼容老画布)",
           "hidden": true
+        }
+      ]
+    },
+    "comfyui": {
+      "label": "ComfyUI",
+      "count": 2,
+      "nodes": [
+        {
+          "type": "comfyui-store",
+          "label": "ComfyUI超市",
+          "description": "本地 ComfyUI 应用库：导入制作好的 API Workflow 应用，按分类/搜索选择，连接上游 text/image/video/audio 素材后一键运行；输出归一为 image/video/audio/text，可继续接 OutputNode、资源库、节点发送和 Loop。"
+        },
+        {
+          "type": "comfyui-app-maker",
+          "label": "ComfyUI应用制作工具",
+          "description": "上传或粘贴 ComfyUI API Workflow JSON，自动识别需要暴露的参数与上游输入，允许手动调整名称、分类、说明和字段，保存到 ComfyUI超市或复制/导出标准 t8-comfyui-app-manifest 应用 JSON。"
         }
       ]
     },
@@ -1946,7 +2133,7 @@
     },
     "utility": {
       "label": "工具节点",
-      "count": 13,
+      "count": 14,
       "nodes": [
         {
           "type": "drawing-board",
@@ -2016,6 +2203,11 @@
           "type": "grid-crop",
           "label": "宫格剪裁",
           "description": "网格切图，支持 gap 去缝、常用预设、指定序号导出、输出顺序、上游合集批量拆分和节点内切线预览；批量拆分兼容上传素材多图与资源库素材集图像"
+        },
+        {
+          "type": "grid-editor",
+          "label": "宫格编辑",
+          "description": "多图分镜宫格拼版节点：自动接收上游图像，也可本地上传；支持行列预设、自定义输出尺寸、间距、背景、adaptive/cover/contain/fill、序号叠加、拖拽排序、单格删除、超量自动扩容、拆分输出和运行生成一张拼接 PNG"
         }
       ]
     },
@@ -2046,7 +2238,7 @@
         {
           "type": "remove-ai-watermark",
           "label": "去AI水印",
-          "description": "接入 wiltodelta/remove-ai-watermarks，可处理已知可见 AI 水印、框选擦除(cv2/LaMA)、隐形水印、AI 元数据清理与来源鉴别；支持本地 Python 包或 Electron sidecar runtime，视频/音频首阶段支持元数据检查和清理"
+          "description": "接入 wiltodelta/remove-ai-watermarks 0.8.7，可处理 Gemini / 豆包 / 即梦等已知可见 AI 水印、框选擦除(cv2/LaMA)、来源自适应隐形水印、AI 元数据清理与来源鉴别；支持本地 Python 包或 Electron sidecar runtime，视频/音频首阶段支持元数据检查和清理"
         },
         {
           "type": "video-output",
@@ -2467,13 +2659,17 @@
     },
     "advancedProviders": {
       "label": "扩展 API 平台【高级/可选】",
-      "status": "guided-settings-layout-enabled",
-      "since": "v1.8.0-roadmap / v1.8.1-backend-foundation / v1.8.2-settings-ui / v1.8.4-generation / v1.8.5-guided-settings",
+      "status": "guided-settings-layout-ime-safe-token-links-lora-comfyui-auto-mapping",
+      "since": "v1.8.0-roadmap / v1.8.1-backend-foundation / v1.8.2-settings-ui / v1.8.4-generation / v1.8.5-guided-settings / v1.9.2-ime-token-links / v1.9.3-modelscope-jimeng-cli / v1.9.4-modelscope-lora / v1.9.4-comfyui-guided-workflow",
       "placement": "API 设置页中位于「分类独立 API Key【可选】」之后、文件自动保存路径之前，默认折叠；未配置时不影响主流程。展开后左侧是平台卡片，右侧按说明、基础信息、连接配置、模型列表和高级项分区。",
       "principles": [
         "默认不改变贞贞工坊 / RunningHub / LLM 独立 Key 与分类 Key fallback 链路。",
         "只有用户主动展开、配置并在节点里选择扩展平台时才启用。",
         "设置页必须解释每个平台的用途、适用节点和填写方式，避免把 Base URL、Token、模型列表、AK/SK、ComfyUI JSON 等内部字段直接平铺给用户。",
+        "扩展平台表单不得在 render 函数内部定义 React 子组件；输入框和 textarea 必须在输入过程中保持同一组件实例，避免中文 IME 和连续输入被重渲染打断。",
+        "ModelScope Token 获取入口必须同时提供国内站和国际站链接，分别指向 https://www.modelscope.cn/my/access/token 与 https://www.modelscope.ai/my/access/token。",
+        "ModelScope 图像 LoRA 只作为扩展平台高级能力出现；默认列表可自动合并，节点内通过 providerParams.loras 保存选择和权重，禁止影响贞贞工坊主流程。",
+        "ComfyUI 工作流导入必须优先走自动识别和可视化映射；raw fields JSON 只作为高级兜底，避免普通用户必须理解内部 nodeId/input 字段。",
         "设置保存和节点调用解耦，节点仅保存 providerSource/providerId/providerModel/providerParams。",
         "所有扩展平台输出必须归一化到现有 OutputNode、资源库、自动保存、节点发送和 Loop 可识别的协议。",
         "Key、火山 AK/SK、CLI 路径和本地服务地址必须后端保存、脱敏展示并避免写入日志。"
@@ -2490,16 +2686,17 @@
         "backend/src/providers/mediaResolver.js（已实现 T8 本地/资源库/远程/dataURL/本地路径的统一解析）",
         "backend/src/providers/adapters.js（按 protocol 分发测试、图像、视频与 LLM 调用）",
         "backend/src/providers/openaiCompatible.js（/models 测试，/chat/completions、/images/generations、/videos/generations 真实调用与结果归一化）",
-        "backend/src/providers/modelscope.js（异步图像任务提交、/tasks/{task_id} 轮询与图片输出归一化；聊天复用 OpenAI 兼容格式）",
+        "backend/src/providers/modelscope.js（异步图像任务提交、LoRA payload.loras、/tasks/{task_id} 轮询与图片输出归一化；聊天复用 OpenAI 兼容格式）",
         "backend/src/providers/volcengine.js（Ark/Seedream 图像与 Seedance 视频提交、任务轮询和输出归一化）",
-        "backend/src/providers/comfyui.js（限制 localhost/127.0.0.1，测试 /queue，运行 /prompt，轮询 /history 并输出 image/video/audio/text）",
+        "backend/src/providers/comfyui.js（限制 localhost/127.0.0.1，测试 /queue，运行 /prompt，LoadImage 上游图片上传 /upload/image，轮询 /history 并输出 image/video/audio/text）",
         "backend/src/providers/jimengCli.js（检测 dreamina/即梦 CLI，支持 text2image/image2image/text2video/单图 multimodal2video/多图 multiframe2video、poll 与输出转存）",
         "backend/src/routes/externalProviders.js（POST /api/proxy/external/test-provider、/image、/video、/llm，响应只返回脱敏 provider，媒体输出转存 /files/output）"
       ],
       "frontend": [
-        "src/components/ApiSettings.tsx（扩展平台折叠区、平台说明卡、分区表单、测试连接、ComfyUI 工作流 JSON/参数映射、设置导入导出）",
-        "src/components/nodes/{ImageNode,VideoNode,SeedanceNode,LLMNode}.tsx（启用 provider 后显示高级来源，默认仍走主流程）",
-        "src/utils/advancedProviders.ts（模型列表文本解析、摘要统计、masked key 状态判断、节点可用 provider 与外部图像尺寸映射）",
+        "src/components/ApiSettings.tsx（扩展平台折叠区、平台说明卡、分区表单、ModelScope LoRA 列表、测试连接、ComfyUI 工作流 JSON 自动识别/可视化参数映射、设置导入导出）",
+        "src/utils/comfyuiWorkflow.ts（ComfyUI API Workflow 自动分析、推荐映射和 fields compact 规范）",
+        "src/components/nodes/{ImageNode,VideoNode,SeedanceNode,LLMNode}.tsx（启用 provider 后显示高级来源；ImageNode 在 ModelScope 下可选择 LoRA，默认仍走主流程）",
+        "src/utils/advancedProviders.ts（模型列表与 LoRA 列表文本解析、摘要统计、masked key 状态判断、节点可用 provider 与外部图像尺寸映射）",
         "src/services/generation.ts（generateExternalImage / generateExternalVideo / generateExternalLlm）",
         "src/services/api.ts::testAdvancedProvider（调用 /api/proxy/external/test-provider）",
         "src/types/canvas.ts（AdvancedProviderConfig / CanvasNodeData providerSource 字段）"
@@ -2509,10 +2706,41 @@
         "Phase B: Adapter 骨架、统一 media resolver 与 provider test endpoint。",
         "Phase C: OpenAI 兼容与 ModelScope，图像/LLM/基础视频链路已在 v1.8.4 落地。",
         "Phase D: 火山引擎与即梦 Seedance CLI 已在 v1.8.4 落地。",
-        "Phase E: 本地 ComfyUI 工作流高级来源已在 v1.8.4 落地，独立 ComfyUI 节点留作后续可选扩展。",
+        "Phase E: 本地 ComfyUI 工作流高级来源已在 v1.8.4 落地；v1.9.4 新增自动识别字段、可视化映射和 LoadImage 上游图片上传，独立 ComfyUI 节点留作后续可选扩展。",
         "Phase F: 错误文案、输出协议和命令回归已在 v1.8.4 完成基础收口。"
       ],
       "reference": "roadmap.md::扩展 API 平台融合路线（参考 Infinite-Canvas）"
+    },
+    "cloudUploadTargets": {
+      "label": "云端上传目标【可选】",
+      "status": "right-click-upload-first-version",
+      "since": "v1.9.4-cloud-upload-targets",
+      "placement": "API 设置页中位于「扩展 API 平台【高级/可选】」之后、文件自动保存路径之前，默认折叠；未启用时素材右键菜单不显示云端目标。",
+      "principles": [
+        "复用素材 data-drag-source 协议，图像 / 视频 / 音频素材右键即可上传，不修改节点数据。",
+        "密钥只在后端保存，GET /api/settings 与 GET /api/cloud-uploads/status 只返回脱敏状态。",
+        "输入空值或 **** 脱敏值时保留旧密钥，输入新值才覆盖。",
+        "腾讯云 COS 与阿里云 OSS 首版真实上传；百度网盘与夸克网盘先保留配置位和友好错误，等待稳定 OAuth/CLI 方案。",
+        "新增平台必须优先扩展 backend/src/cloudUploads/settings.js 与 uploader.js，不在节点组件里写平台分支。"
+      ],
+      "providers": [
+        "tencent-cos",
+        "aliyun-oss",
+        "baidu-netdisk",
+        "quark-netdisk"
+      ],
+      "backend": [
+        "backend/src/cloudUploads/settings.js（默认目标、配置清洗、密钥保留、脱敏、摘要）",
+        "backend/src/cloudUploads/uploader.js（素材解析、对象 key 生成、COS/OSS 签名 PUT 上传）",
+        "backend/src/routes/cloudUploads.js（status/test/upload 路由）"
+      ],
+      "frontend": [
+        "src/components/ApiSettings.tsx（云端上传目标折叠设置区）",
+        "src/components/MaterialContextMenu.tsx（素材右键上传到云端）",
+        "src/services/api.ts（getCloudUploadStatus/testCloudUploadTarget/uploadCloudAsset）",
+        "src/types/canvas.ts（CloudUploadTargetConfig / CloudUploadSummary）"
+      ],
+      "reference": "roadmap.md::云端上传目标路线（开发中）"
     },
     "fileSavePath": {
       "label": "文件自动保存路径",
@@ -2547,8 +2775,9 @@
       "settings": [
         "GET /api/settings — 三套 Key 设置(脱敏)",
         "GET /api/settings — v1.8.1 起返回脱敏 advancedProviders 与 advancedProviderSummary，用于扩展 API 平台折叠态摘要",
+        "GET /api/settings — v1.9.4 起返回脱敏 cloudUploadTargets 与 cloudUploadSummary，用于云端上传目标设置和右键菜单摘要",
         "GET /api/settings/raw — 内部明文(代理调用使用；设置总导出会用作私密备份源；advancedProviders 原始密钥只在此内部接口可见)",
-        "POST /api/settings — 更新设置（fileSavePath/canvasAutoSavePath/resourceLibraryPath/themeTemplatePath 变动后后端自动 ensureDir；advancedProviders 会过滤非法 provider 并保留 masked/空值对应的旧密钥；设置总导入回填后仍通过此接口保存）",
+        "POST /api/settings — 更新设置（fileSavePath/canvasAutoSavePath/resourceLibraryPath/themeTemplatePath 变动后后端自动 ensureDir；advancedProviders 与 cloudUploadTargets 会过滤非法配置并保留 masked/空值对应的旧密钥；设置总导入回填后仍通过此接口保存）",
         "GET/POST/PUT/DELETE /api/settings/rh-tool-categories[/:id] — RH 超市分类 CRUD（v1.2.10）",
         "POST /api/settings/rh-tool-categories/reorder — RH 超市分类排序（v1.2.10）",
         "GET/POST/PUT/DELETE /api/settings/rh-tool-apps[/:id] — RH 超市应用 CRUD（v1.2.10）",
@@ -2566,6 +2795,7 @@
         "POST /api/image/resize — sharp 尺寸调整",
         "POST /api/image/upscale — lanczos3 放大",
         "POST /api/image/grid-crop — 九宫格切图，支持 rows / cols / gap、rectsPx 自定义矩形、orderMode 输出顺序与 exportIndexes 指定序号",
+        "POST /api/image/grid-compose — 多图宫格拼接，支持 rows / cols / width / height / gap / background / fit / showIndexes / cells[]，输出 PNG 到 /files/output",
         "POST /api/image/combine — 横/纵向拼接",
         "POST /api/image/compare — 双图对比结果生成(slider/side-by-side/blink/overlay/heatmap/focus)",
         "POST /api/image/remove-bg — 抠图(占位)"
@@ -2587,6 +2817,11 @@
       "aiWatermark": [
         "GET /api/ai-watermark/status — 检测 remove-ai-watermarks CLI/Python 包或 Electron sidecar runtime、版本、已知 visible mark 与 optionalFeatures(invisible/lama/detect/trustmark)",
         "POST /api/ai-watermark/process — 去AI水印辅助节点处理入口，支持 smart/visible/erase(cv2/LaMA)/invisible/metadata-check/metadata-remove/identify，输出统一转存 /files/output 或返回文本报告"
+      ],
+      "cloudUploads": [
+        "GET /api/cloud-uploads/status — 返回云端上传目标的脱敏配置与摘要，用于 API 设置页和素材右键菜单",
+        "POST /api/cloud-uploads/test — 检查单个云端上传目标配置，真实上传前不写入测试文件",
+        "POST /api/cloud-uploads/upload — 将图像/视频/音频素材上传到启用的云端目标；首版支持腾讯云 COS 与阿里云 OSS，输出 URL/path/objectKey"
       ],
       "proxy": [
         "POST /api/proxy/image — 图像生成(贞贞工坊,自动转存)",
@@ -2636,9 +2871,12 @@
     "runninghub",
     "runninghub-wallet",
     "rh-tools",
+    "rh-toolbox",
+    "comfyui-store",
     "resize",
     "upscale",
     "grid-crop",
+    "grid-editor",
     "remove-bg",
     "combine",
     "image-compare",
@@ -2667,7 +2905,23 @@
       "storyboard-grid",
       "video-output",
       "browser",
-      "rh-config"
+      "rh-config",
+      "comfyui-app-maker"
+    ]
+  },
+  "developerOnlyNodeTypes": {
+    "description": "仅开发环境注册的维护者工具节点，不计入 totalNodes，不出现在生产 dist/Electron 用户包；打包后置检查必须禁止这些节点泄漏。",
+    "nodes": [
+      {
+        "type": "rh-toolbox-maker",
+        "label": "RH工具箱制作器",
+        "purpose": "维护者在画布里制作 RH工具箱 manifest：拉取 RunningHub nodeInfoList、配置输入/参数/固定字段/输出协议、复制或下载 JSON、保存开发草稿。",
+        "guards": [
+          "Canvas.tsx / nodeRegistry.ts / portTypes.ts 仅在 import.meta.env.DEV 下注册",
+          "src/utils/rhToolboxDeveloper.ts 仅保存开发草稿到 localStorage，生产运行服务不依赖该模块",
+          "electron/_post_build.cjs::checkNoRhToolboxMaker 拦截 RHToolboxMakerNode / RH工具箱制作器 / rh-toolbox-maker"
+        ]
+      }
     ]
   },
   "shortcuts": {

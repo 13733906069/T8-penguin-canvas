@@ -1,4 +1,12 @@
+const fs = require('fs');
+const path = require('path');
+const {
+  mimeFromPath,
+  resolveMediaRef,
+} = require('./mediaResolver');
+
 const DEFAULT_TIMEOUT_MS = 5000;
+const GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 const SUCCESS_STATUSES = new Set(['SUCCESS', 'SUCCEEDED', 'COMPLETED', 'DONE', 'OK']);
 const FAILURE_STATUSES = new Set(['FAILED', 'FAILURE', 'ERROR', 'CANCELED', 'CANCELLED']);
@@ -70,53 +78,219 @@ function findWorkflow(provider, input = {}) {
   return workflows[0];
 }
 
-function sourceValue(source, input, size) {
+function extensionForMime(mime) {
+  const text = String(mime || '').toLowerCase();
+  if (text.includes('jpeg') || text.includes('jpg')) return '.jpg';
+  if (text.includes('webp')) return '.webp';
+  if (text.includes('gif')) return '.gif';
+  if (text.includes('bmp')) return '.bmp';
+  if (text.includes('avif')) return '.avif';
+  return '.png';
+}
+
+function imageRefForSource(source, input) {
+  const key = String(source || '').trim().toLowerCase();
+  const match = key.match(/^image(?:_|-)?(\d+)$/);
+  if (!match) return '';
+  const index = Math.max(0, Number(match[1]) - 1);
+  const images = Array.isArray(input.images) ? input.images : [];
+  return String(images[index] || '').trim();
+}
+
+function mediaRefForSource(source, input, kind) {
+  const key = String(source || '').trim().toLowerCase();
+  const match = key.match(new RegExp(`^${kind}(?:_|-)?(\\d+)$`));
+  if (!match) return '';
+  const index = Math.max(0, Number(match[1]) - 1);
+  const values = Array.isArray(input[`${kind}s`]) ? input[`${kind}s`] : [];
+  return String(values[index] || '').trim();
+}
+
+async function uploadImageToComfy(baseUrl, imageRef, options = {}) {
+  if (!imageRef) return '';
+  let buffer = null;
+  let filename = '';
+  let mime = 'image/png';
+  const mediaBaseUrl = options.mediaBaseUrl || options.t8BaseUrl;
+
+  try {
+    const local = await resolveMediaRef(imageRef, { target: 'local-path', baseUrl: mediaBaseUrl });
+    buffer = fs.readFileSync(local.path);
+    filename = path.basename(local.path);
+    mime = local.mime || mimeFromPath(local.path, mime);
+  } catch {
+    const resolved = await resolveMediaRef(imageRef, { target: 'url', baseUrl: mediaBaseUrl });
+    const res = await fetchWithTimeout(resolved.url, {
+      method: 'GET',
+      timeoutMs: options.timeoutMs || 30000,
+      fetchImpl: options.fetchImpl,
+    });
+    if (!res.ok) throw new Error(`ComfyUI 参考图下载失败：HTTP ${res.status}`);
+    const arrayBuffer = await res.arrayBuffer();
+    buffer = Buffer.from(arrayBuffer);
+    mime = res.headers?.get?.('content-type') || mime;
+    filename = `t8-comfy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${extensionForMime(mime)}`;
+  }
+
+  const form = new FormData();
+  form.append('image', new Blob([buffer], { type: mime }), filename);
+  form.append('type', 'input');
+  form.append('overwrite', 'true');
+
+  const uploadRes = await fetchWithTimeout(`${baseUrl}/upload/image`, {
+    method: 'POST',
+    body: form,
+    timeoutMs: options.timeoutMs || 30000,
+    fetchImpl: options.fetchImpl,
+  });
+  const raw = await responseJson(uploadRes);
+  if (!uploadRes.ok) throw new Error(`ComfyUI 上传参考图失败：HTTP ${uploadRes.status}`);
+  return String(raw?.name || raw?.filename || raw?.image || filename).trim();
+}
+
+async function sourceValue(source, input, size, context = {}) {
   const key = String(source || '').trim();
+  const imageRef = imageRefForSource(key, input);
+  if (imageRef) return uploadImageToComfy(context.comfyBaseUrl || context.baseUrl, imageRef, context);
+  const videoRef = mediaRefForSource(key, input, 'video');
+  if (videoRef) return videoRef;
+  const audioRef = mediaRefForSource(key, input, 'audio');
+  if (audioRef) return audioRef;
   if (key === 'prompt' || key === 'positive') return String(input.prompt || '');
   if (key === 'negative') return String(input.negativePrompt || input.negative || '');
   if (key === 'width') return size.width;
   if (key === 'height') return size.height;
-  if (key === 'seed') return Number.isFinite(Number(input.seed)) ? Number(input.seed) : Math.floor(Math.random() * 2147483647);
+  if (key === 'batch_size') {
+    if (input.providerParams && Object.prototype.hasOwnProperty.call(input.providerParams, key)) return Number(input.providerParams[key]);
+    return Object.prototype.hasOwnProperty.call(input, key) ? Number(input[key]) : undefined;
+  }
+  if (key === 'seed') {
+    if (input.providerParams && Object.prototype.hasOwnProperty.call(input.providerParams, key)) {
+      const providerSeed = Number(input.providerParams[key]);
+      if (Number.isFinite(providerSeed)) return providerSeed;
+    }
+    return Number.isFinite(Number(input.seed)) ? Number(input.seed) : Math.floor(Math.random() * 2147483647);
+  }
+  if (['steps', 'cfg', 'sampler_name', 'scheduler', 'denoise', 'model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'strength_model', 'strength_clip'].includes(key)) {
+    if (input.providerParams && Object.prototype.hasOwnProperty.call(input.providerParams, key)) return input.providerParams[key];
+    return Object.prototype.hasOwnProperty.call(input, key) ? input[key] : undefined;
+  }
   if (key && Object.prototype.hasOwnProperty.call(input, key)) return input[key];
   return input.providerParams && Object.prototype.hasOwnProperty.call(input.providerParams, key) ? input.providerParams[key] : undefined;
 }
 
-function patchByFields(prompt, fields, input, size) {
+function inferWorkflowFields(prompt) {
+  const fields = [];
+  let promptSeen = false;
+  let imageIndex = 0;
+  const seen = new Set();
+  const clipTextRoles = new Map();
+  for (const [, node] of Object.entries(prompt || {})) {
+    if (!node || typeof node !== 'object' || !node.inputs || typeof node.inputs !== 'object') continue;
+    const positive = Array.isArray(node.inputs.positive) ? String(node.inputs.positive[0] || '').trim() : '';
+    const negative = Array.isArray(node.inputs.negative) ? String(node.inputs.negative[0] || '').trim() : '';
+    if (positive) clipTextRoles.set(positive, 'prompt');
+    if (negative) clipTextRoles.set(negative, 'negative');
+  }
+  const push = (nodeId, fieldName, source) => {
+    const key = `${nodeId}::${fieldName}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    fields.push({ nodeId, fieldName, source });
+  };
+  for (const [nodeId, node] of Object.entries(prompt || {})) {
+    if (!node || typeof node !== 'object' || !node.inputs || typeof node.inputs !== 'object') continue;
+    const classType = String(node.class_type || '').toLowerCase();
+    const title = `${node._meta?.title || ''} ${node.title || ''}`.toLowerCase();
+    const inputs = node.inputs;
+    if (classType.includes('cliptextencode') && Object.prototype.hasOwnProperty.call(inputs, 'text')) {
+      const role = clipTextRoles.get(String(nodeId));
+      const isNegative = role ? role === 'negative' : (/negative|neg|反向|负向|不要|排除/.test(title) || promptSeen);
+      push(nodeId, 'text', isNegative ? 'negative' : 'prompt');
+      if (!isNegative) promptSeen = true;
+    }
+    if ((classType.includes('loadimage') || classType.includes('imageinput')) && Object.prototype.hasOwnProperty.call(inputs, 'image')) {
+      imageIndex += 1;
+      push(nodeId, 'image', `image${Math.min(imageIndex, 3)}`);
+    }
+    if ((classType.includes('loadvideo') || classType.includes('videoinput') || classType.includes('vhs')) && Object.prototype.hasOwnProperty.call(inputs, 'video')) {
+      push(nodeId, 'video', 'video1');
+    }
+    if ((classType.includes('loadaudio') || classType.includes('audioinput')) && Object.prototype.hasOwnProperty.call(inputs, 'audio')) {
+      push(nodeId, 'audio', 'audio1');
+    }
+    if (classType.includes('emptylatent') || classType.includes('latentimage')) {
+      if (Object.prototype.hasOwnProperty.call(inputs, 'width')) push(nodeId, 'width', 'width');
+      if (Object.prototype.hasOwnProperty.call(inputs, 'height')) push(nodeId, 'height', 'height');
+      if (Object.prototype.hasOwnProperty.call(inputs, 'batch_size')) push(nodeId, 'batch_size', 'batch_size');
+    }
+    if (classType.includes('ksampler') || classType.includes('sampler')) {
+      if (Object.prototype.hasOwnProperty.call(inputs, 'seed')) push(nodeId, 'seed', 'seed');
+      if (Object.prototype.hasOwnProperty.call(inputs, 'noise_seed')) push(nodeId, 'noise_seed', 'seed');
+      for (const key of ['steps', 'cfg', 'sampler_name', 'scheduler', 'denoise']) {
+        if (Object.prototype.hasOwnProperty.call(inputs, key)) push(nodeId, key, key);
+      }
+    }
+    for (const key of ['model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'strength_model', 'strength_clip']) {
+      if (Object.prototype.hasOwnProperty.call(inputs, key)) push(nodeId, key, key);
+    }
+  }
+  return fields;
+}
+
+async function patchByFields(prompt, fields, input, size, context = {}) {
   if (!Array.isArray(fields)) return;
   for (const field of fields) {
     if (!field || typeof field !== 'object') continue;
     const nodeId = String(field.nodeId || field.node || '').trim();
     const fieldName = String(field.fieldName || field.input || field.name || '').trim();
     if (!nodeId || !fieldName || !prompt[nodeId]?.inputs) continue;
-    const value = field.value !== undefined ? field.value : sourceValue(field.source || fieldName, input, size);
+    const source = String(field.source || '').trim();
+    const hasFixedValue = Object.prototype.hasOwnProperty.call(field, 'value') && field.value !== undefined;
+    const useFixedValue = source === 'fixed' || (!source && hasFixedValue);
+    const value = useFixedValue ? field.value : await sourceValue(source || fieldName, input, size, context);
     if (value !== undefined) prompt[nodeId].inputs[fieldName] = value;
   }
 }
 
-function patchByHeuristics(prompt, input, size) {
+function patchByHeuristics(prompt, input, size, skips = {}) {
   let promptPatched = false;
+  const providerParams = input.providerParams && typeof input.providerParams === 'object' ? input.providerParams : {};
+  const seedCandidate = Object.prototype.hasOwnProperty.call(providerParams, 'seed') ? providerParams.seed : input.seed;
+  const seedValue = Number(seedCandidate);
   for (const node of Object.values(prompt)) {
     if (!node || typeof node !== 'object' || !node.inputs || typeof node.inputs !== 'object') continue;
     const classType = String(node.class_type || '').toLowerCase();
-    if (!promptPatched && classType.includes('cliptextencode') && typeof node.inputs.text !== 'undefined') {
+    if (!skips.text && !promptPatched && classType.includes('cliptextencode') && typeof node.inputs.text !== 'undefined') {
       node.inputs.text = String(input.prompt || '');
       promptPatched = true;
     }
     for (const key of Object.keys(node.inputs)) {
       const low = key.toLowerCase();
-      if (low === 'width') node.inputs[key] = size.width;
-      if (low === 'height') node.inputs[key] = size.height;
-      if ((low === 'seed' || low === 'noise_seed') && input.seed != null) node.inputs[key] = Number(input.seed);
+      if (!skips.width && low === 'width') node.inputs[key] = size.width;
+      if (!skips.height && low === 'height') node.inputs[key] = size.height;
+      if (!skips.seed && (low === 'seed' || low === 'noise_seed') && Number.isFinite(seedValue)) node.inputs[key] = seedValue;
     }
   }
 }
 
-function patchWorkflow(workflow, input = {}) {
+async function patchWorkflow(workflow, input = {}, context = {}) {
   const prompt = cloneWorkflow(workflow?.workflowJson || workflow?.workflow || workflow?.raw || workflow);
   if (!prompt) return null;
   const size = parseSize(input.size || `${input.width || 1024}x${input.height || 1024}`);
-  patchByFields(prompt, workflow?.fields, input, size);
-  patchByHeuristics(prompt, input, size);
+  const fields = Array.isArray(workflow?.fields) && workflow.fields.length ? workflow.fields : inferWorkflowFields(prompt);
+  await patchByFields(prompt, fields, input, size, context);
+  const mapped = (fieldName, sources = []) => fields.some((field) => {
+    const name = String(field?.fieldName || field?.input || field?.name || '').trim();
+    const source = String(field?.source || '').trim();
+    return name === fieldName || sources.includes(source);
+  });
+  patchByHeuristics(prompt, input, size, {
+    text: mapped('text', ['prompt', 'positive', 'negative']),
+    width: mapped('width', ['width']),
+    height: mapped('height', ['height']),
+    seed: mapped('seed', ['seed']) || mapped('noise_seed', ['seed']),
+  });
   return prompt;
 }
 
@@ -169,8 +343,10 @@ function extractStatus(raw) {
 }
 
 async function pollHistory(baseUrl, promptId, options = {}) {
-  const maxPoll = Number(options.maxPoll || 600);
   const interval = Number(options.pollIntervalMs || 1000);
+  const requestedMaxPoll = Math.max(1, Number(options.maxPoll || 600));
+  const minMaxPoll = Math.ceil(GENERATION_TIMEOUT_MS / Math.max(1, interval));
+  const maxPoll = Math.max(requestedMaxPoll, minMaxPoll);
   let lastRaw = null;
   for (let i = 0; i < maxPoll; i += 1) {
     if (i > 0 && interval > 0) await new Promise((resolve) => setTimeout(resolve, interval));
@@ -212,7 +388,11 @@ async function generateImage(provider, input = {}, options = {}) {
   if (!workflow) {
     return { ok: false, code: 'missing_workflow', providerId: provider.id, protocol: 'comfyui', error: '请先在扩展平台设置中保存 ComfyUI 工作流。' };
   }
-  const prompt = patchWorkflow(workflow, input);
+  const prompt = await patchWorkflow(workflow, input, {
+    ...options,
+    comfyBaseUrl: baseUrl,
+    mediaBaseUrl: options.baseUrl,
+  });
   if (!prompt) {
     return { ok: false, code: 'invalid_workflow', providerId: provider.id, protocol: 'comfyui', error: 'ComfyUI 工作流 JSON 无效。' };
   }

@@ -47,6 +47,8 @@ import {
   advancedProviderModelOptions,
   advancedProvidersForNode,
   externalImageSizeFor,
+  modelscopeLorasForModel,
+  normalizeModelscopeLoraStrength,
   resolveAdvancedProviderSelection,
 } from '../../utils/advancedProviders';
 import {
@@ -55,6 +57,7 @@ import {
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
+import { COMFY_APP_SOURCE_LABELS } from '../../utils/comfyuiApps';
 
 /**
  * ImageNode - 图像生成(ZhenzhenMagic)
@@ -62,6 +65,10 @@ import {
  * 参数:模型 TAB / 比例 / 尺寸 / 多张参考图 / 本地 prompt
  * 上游 text 节点 → prompt(优先);上游 image 节点 → 参考图(并入 references)
  */
+const IMAGE_POLL_TIMEOUT_SECONDS = 3600;
+const minPollCountForTimeout = (intervalMs: number) =>
+  Math.ceil((IMAGE_POLL_TIMEOUT_SECONDS * 1000) / Math.max(1, intervalMs));
+
 const ImageNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const hasAutoOutput = useHasAutoOutput(id);
@@ -98,6 +105,81 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
     ? advancedProviderModelOptions(providerSelection.provider, 'image')
     : [];
   const externalProviderModel = providerSelection.providerModel || externalModelOptions[0] || '';
+  const providerParams = (d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {};
+  const isModelScopeExternal = isExternalSelected && providerSelection.provider?.protocol === 'modelscope';
+  const isComfyExternal = isExternalSelected && providerSelection.provider?.protocol === 'comfyui';
+  const comfyWorkflow = isComfyExternal
+    ? providerSelection.provider?.comfyuiConfig?.workflows?.find((workflow) => workflow.id === externalProviderModel || workflow.name === externalProviderModel)
+    : undefined;
+  const comfyRequiredImageCount = isComfyExternal
+    ? (comfyWorkflow?.fields || []).filter((field: any) => /^image\d+$/i.test(String(field?.source || ''))).length
+    : 0;
+  const comfyParamFields = useMemo(() => {
+    if (!isComfyExternal || !comfyWorkflow) return [];
+    const allowed = new Set([
+      'width',
+      'height',
+      'batch_size',
+      'seed',
+      'steps',
+      'cfg',
+      'sampler_name',
+      'scheduler',
+      'denoise',
+      'model_name',
+      'ckpt_name',
+      'clip_name',
+      'vae_name',
+      'lora_name',
+      'strength_model',
+      'strength_clip',
+    ]);
+    const seen = new Set<string>();
+    return (comfyWorkflow.fields || []).filter((field: any) => {
+      const source = String(field?.source || field?.fieldName || '').trim();
+      if (!allowed.has(source) || seen.has(source)) return false;
+      seen.add(source);
+      return true;
+    });
+  }, [isComfyExternal, comfyWorkflow]);
+  const modelscopeLoras = useMemo(
+    () => modelscopeLorasForModel(providerSelection.provider, externalProviderModel),
+    [providerSelection.provider, externalProviderModel],
+  );
+  const selectedModelscopeLora = useMemo(() => {
+    const savedId = String(providerParams?.modelscopeLoraId || '').trim();
+    return modelscopeLoras.find((lora) => lora.id === savedId) || modelscopeLoras[0] || null;
+  }, [modelscopeLoras, providerParams?.modelscopeLoraId]);
+  const modelscopeLoraEnabled = providerParams?.modelscopeLoraEnabled === true;
+  const modelscopeLoraStrength = normalizeModelscopeLoraStrength(
+    providerParams?.modelscopeLoraStrength ?? selectedModelscopeLora?.strength,
+    selectedModelscopeLora?.strength ?? 0.8,
+  );
+  const patchProviderParams = (patch: Record<string, any>) => {
+    update({ providerParams: { ...providerParams, ...patch } });
+  };
+  const comfyFieldDefault = (field: any) => {
+    if (!comfyWorkflow?.workflowJson || !field?.nodeId || !field?.fieldName) return '';
+    const value = (comfyWorkflow.workflowJson as any)?.[field.nodeId]?.inputs?.[field.fieldName];
+    if (Array.isArray(value) || (value && typeof value === 'object')) return '';
+    return value ?? '';
+  };
+  const comfyValueForSource = (source: string) => {
+    const field = comfyParamFields.find((item: any) => String(item?.source || item?.fieldName || '') === source);
+    return providerParams[source] ?? (field ? comfyFieldDefault(field) : '');
+  };
+  const comfyNumberForSource = (source: string, fallback = 0) => {
+    const n = Number(comfyValueForSource(source));
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const clearModelscopeLoraParams = () => ({
+    providerParams: {
+      ...providerParams,
+      modelscopeLoraEnabled: false,
+      modelscopeLoraId: '',
+      modelscopeLoraStrength: undefined,
+    },
+  });
 
   const aspectRatio = d?.aspectRatio || modelDef.defaultAspectRatio;
   const sizeLevel = d?.sizeLevel || modelDef.defaultSize;
@@ -140,7 +222,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   const mjSv: string = d?.mjSv || '1';
   const mjNo: string = d?.mjNo || '';
   const mjSeed: number = d?.mjSeed ?? 0;
-  const mjMaxPoll: number = d?.mjMaxPoll ?? 300;
+  const mjMaxPoll: number = d?.mjMaxPoll ?? 1200;
   const mjPollInt: number = d?.mjPollInt ?? 3;
   const mjSrefImages: string[] = Array.isArray(d?.mjSrefImages) ? d.mjSrefImages : [];
   const mjOrefImages: string[] = Array.isArray(d?.mjOrefImages) ? d.mjOrefImages : [];
@@ -317,9 +399,28 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       if (isExternalSelected && providerSelection.provider) {
         const providerModel = externalProviderModel;
         if (!providerModel) throw new Error('扩展平台未配置可用图像模型');
-        const size = externalImageSizeFor(aspectRatio, sizeLevel);
+        let size = externalImageSizeFor(aspectRatio, sizeLevel);
+        if (isComfyExternal && comfyWorkflow) {
+          const width = comfyNumberForSource('width', 1024);
+          const height = comfyNumberForSource('height', 1024);
+          if (width > 0 && height > 0) size = `${Math.round(width)}x${Math.round(height)}`;
+        }
+        const externalProviderParams = { ...(d?.providerParams || {}) };
+        let loraLog = '';
+        if (isModelScopeExternal && modelscopeLoraEnabled) {
+          const lora = selectedModelscopeLora;
+          const loraId = String(lora?.id || externalProviderParams.modelscopeLoraId || '').trim();
+          if (!loraId) throw new Error('当前 ModelScope 模型没有可用 LoRA，请先在 API 设置中绑定。');
+          const strength = normalizeModelscopeLoraStrength(externalProviderParams.modelscopeLoraStrength ?? lora?.strength, lora?.strength ?? 0.8);
+          externalProviderParams.loras = { [loraId]: strength };
+          externalProviderParams.modelscopeLoraId = loraId;
+          externalProviderParams.modelscopeLoraStrength = strength;
+          loraLog = ` · LoRA=${lora?.name || loraId}@${strength.toFixed(2)}`;
+        } else {
+          delete externalProviderParams.loras;
+        }
         logBus.info(
-          `扩展平台提交: ${providerSelection.provider.label || providerSelection.provider.id} · ${providerModel} · size=${size} · 参考图=${allRefs.length}`,
+          `扩展平台提交: ${providerSelection.provider.label || providerSelection.provider.id} · ${providerModel}${loraLog} · size=${size} · 参考图=${allRefs.length}`,
           src,
         );
         const res = await generateExternalImage({
@@ -330,7 +431,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           size,
           images: allRefs,
           n: Math.max(1, Math.min(4, Number(d?.providerParams?.n || 1))),
-          providerParams: d?.providerParams || {},
+          providerParams: externalProviderParams,
         });
         const urls = res.imageUrls || [];
         if (!urls.length) throw new Error('扩展平台完成但未返回图片');
@@ -403,8 +504,12 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         const taskId = submit.taskId;
         logBus.info(`MJ 任务已提交 taskId=${taskId} fullPrompt="${fullPrompt.slice(0, 120)}${fullPrompt.length > 120 ? '…' : ''}"`, src);
         update({ progress: '15%', taskId });
-        const maxPoll = Math.max(10, Math.min(2000, mjMaxPoll || 300));
         const interval = Math.max(1, Math.min(30, mjPollInt || 3)) * 1000;
+        const maxPoll = Math.max(
+          10,
+          minPollCountForTimeout(interval),
+          Math.min(3600, mjMaxPoll || 1200),
+        );
         for (let i = 0; i < maxPoll; i++) {
           await new Promise((r) => setTimeout(r, interval));
           const q = await queryMjTask(taskId, mjSpeed);
@@ -492,7 +597,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           return;
         }
 
-        // 异步轮询(主项目默认 maxPoll=1200, pollInt=3s; 这里按 2h 上限会太长,采用 600×3s=30min)
+        // 异步轮询: 1200×3s = 3600s，避免 FAL 图像长队列 30min 提前超时。
         const { requestId, responseUrl, endpoint } = submit;
         if (!requestId || !responseUrl) throw new Error('FAL 提交后未获得 request_id/response_url');
         logBus.info(`FAL异步任务已提交 requestId=${requestId}`, src);
@@ -502,8 +607,8 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           falResponseUrl: responseUrl,
           falEndpoint: endpoint,
         });
-        const maxPoll = 600;
         const interval = 3000;
+        const maxPoll = minPollCountForTimeout(interval);
         for (let i = 0; i < maxPoll; i++) {
           await new Promise((r) => setTimeout(r, interval));
           const q = await queryImageFal({ responseUrl, endpoint, requestId });
@@ -697,7 +802,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                     onChange={(e) => {
                       const nextId = e.target.value;
                       if (nextId === 'zhenzhen') {
-                        update({ providerSource: 'zhenzhen', providerId: '', providerModel: '' });
+                        update({ providerSource: 'zhenzhen', providerId: '', providerModel: '', ...clearModelscopeLoraParams() });
                         return;
                       }
                       const provider = imageAdvancedProviders.find((item) => item.id === nextId);
@@ -707,6 +812,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                         providerSource: provider.protocol,
                         providerId: provider.id,
                         providerModel: nextModels[0] || '',
+                        ...clearModelscopeLoraParams(),
                       });
                     }}
                     style={{ background: '#18181b', color: '#ffffff' }}
@@ -725,7 +831,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                     <label className="text-[10px] text-white/50 block mb-1">外部模型</label>
                     <select
                       value={externalProviderModel}
-                      onChange={(e) => update({ providerModel: e.target.value })}
+                      onChange={(e) => update({ providerModel: e.target.value, ...clearModelscopeLoraParams() })}
                       style={{ background: '#18181b', color: '#ffffff' }}
                       className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
                     >
@@ -733,6 +839,125 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                         <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
                       ))}
                     </select>
+                  </div>
+                )}
+                {isModelScopeExternal && (
+                  <div className="rounded border border-white/10 bg-white/[0.03] p-2 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-1.5 text-[10px] font-semibold text-white/70">
+                        <input
+                          type="checkbox"
+                          checked={modelscopeLoraEnabled}
+                          disabled={!modelscopeLoras.length}
+                          onChange={(e) => {
+                            const nextEnabled = e.target.checked;
+                            patchProviderParams({
+                              modelscopeLoraEnabled: nextEnabled,
+                              modelscopeLoraId: nextEnabled ? (selectedModelscopeLora?.id || '') : '',
+                              modelscopeLoraStrength: nextEnabled
+                                ? normalizeModelscopeLoraStrength(modelscopeLoraStrength, selectedModelscopeLora?.strength ?? 0.8)
+                                : undefined,
+                            });
+                          }}
+                        />
+                        <span>LoRA</span>
+                      </label>
+                      <span className="text-[10px] text-white/40">
+                        {modelscopeLoras.length ? `${modelscopeLoras.length} 个可用` : '当前模型无绑定'}
+                      </span>
+                    </div>
+                    {modelscopeLoras.length > 0 && modelscopeLoraEnabled && (
+                      <>
+                        <select
+                          value={selectedModelscopeLora?.id || ''}
+                          onChange={(e) => {
+                            const next = modelscopeLoras.find((lora) => lora.id === e.target.value) || modelscopeLoras[0];
+                            patchProviderParams({
+                              modelscopeLoraId: next?.id || '',
+                              modelscopeLoraStrength: next?.strength ?? 0.8,
+                            });
+                          }}
+                          style={{ background: '#18181b', color: '#ffffff' }}
+                          className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
+                        >
+                          {modelscopeLoras.map((lora) => (
+                            <option key={lora.id} value={lora.id} style={{ background: '#18181b', color: '#ffffff' }}>
+                              {lora.name || lora.id}
+                            </option>
+                          ))}
+                        </select>
+                        <label className="block space-y-1">
+                          <div className="flex items-center justify-between text-[10px] text-white/50">
+                            <span>强度</span>
+                            <span>{modelscopeLoraStrength.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={2}
+                            step={0.05}
+                            value={modelscopeLoraStrength}
+                            onChange={(e) => patchProviderParams({ modelscopeLoraStrength: normalizeModelscopeLoraStrength(e.target.value, 0.8) })}
+                            className="w-full accent-amber-400"
+                          />
+                        </label>
+                      </>
+                    )}
+                    {!modelscopeLoras.length && (
+                      <div className="text-[10px] leading-relaxed text-white/45">
+                        到 API 设置的 ModelScope LoRA 区，为当前外部模型绑定 LoRA 后即可在这里选择。
+                      </div>
+                    )}
+                  </div>
+                )}
+                {isComfyExternal && (
+                  <div className="rounded border border-cyan-300/25 bg-cyan-400/[0.06] p-2 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-semibold text-white/80">ComfyUI 工作流参数</div>
+                      <span className="text-[10px] text-cyan-200/80">{comfyParamFields.length} 项</span>
+                    </div>
+                    <div className="text-[10px] leading-relaxed text-white/45">
+                      {comfyRequiredImageCount > 0
+                        ? `此工作流需要 ${comfyRequiredImageCount} 张上游/本地参考图；当前已准备 ${orderedImages.length} 张。`
+                        : '此工作流未声明必需图片，通常会按 Prompt、尺寸和 Seed 自动注入。'}
+                    </div>
+                    {comfyRequiredImageCount > orderedImages.length && (
+                      <div className="text-[10px] text-amber-200">
+                        请连接上传素材或在参考图区域添加图片，否则 ComfyUI 的 LoadImage 字段会缺失。
+                      </div>
+                    )}
+                    {comfyParamFields.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {comfyParamFields.map((field: any) => {
+                          const source = String(field?.source || field?.fieldName || '').trim();
+                          const label = COMFY_APP_SOURCE_LABELS[source] || source;
+                          const value = providerParams[source] ?? comfyFieldDefault(field);
+                          const isNumber = ['width', 'height', 'batch_size', 'seed', 'steps', 'cfg', 'denoise', 'strength_model', 'strength_clip'].includes(source);
+                          return (
+                            <label key={`${field.nodeId}-${field.fieldName}-${source}`} className="space-y-1">
+                              <span className="block text-[10px] text-white/55">{label}</span>
+                              <input
+                                type={isNumber ? 'number' : 'text'}
+                                value={String(value ?? '')}
+                                step={source === 'cfg' || source === 'denoise' || source.startsWith('strength_') ? 0.1 : 1}
+                                min={source === 'width' || source === 'height' ? 64 : source === 'batch_size' ? 1 : undefined}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  patchProviderParams({ [source]: isNumber && raw !== '' ? Number(raw) : raw });
+                                }}
+                                placeholder={String(comfyFieldDefault(field) ?? '')}
+                                style={{ background: '#18181b', color: '#ffffff' }}
+                                className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-cyan-300/60"
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-amber-200">
+                        当前工作流没有保存字段映射，请到 API 设置中点“自动映射”，或使用 ComfyUI应用制作工具重新导入 workflow。
+                      </div>
+                    )}
                   </div>
                 )}
                 {savedExternalMissing && (
@@ -793,7 +1018,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         )}
 
         {/* 比例 + 尺寸 并排(非 FAL 且非 MJ 模型);Grok Image 只需要比例 */}
-        {(!isFal && !isMj || isExternalSelected) && (
+        {(!isFal && !isMj && !isComfyExternal) && (
           <div className={`grid gap-2 ${isGrokImage || !modelDef.sizes.length ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <div>
               <label className="text-[10px] text-white/50 block mb-1">比例</label>
@@ -1182,9 +1407,9 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
               <div>
                 <label className="text-[10px] text-white/50 block mb-1" title="轮询最大次数">maxPoll</label>
                 <input
-                  type="number" min={10} max={2000}
+                  type="number" min={10} max={3600}
                   value={mjMaxPoll}
-                  onChange={(e) => update({ mjMaxPoll: Math.max(10, Math.min(2000, parseInt(e.target.value) || 300)) })}
+                  onChange={(e) => update({ mjMaxPoll: Math.max(10, Math.min(3600, parseInt(e.target.value) || 1200)) })}
                   style={{ background: '#18181b', color: '#ffffff' }}
                   className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
                 />

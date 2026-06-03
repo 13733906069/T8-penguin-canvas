@@ -2,6 +2,7 @@
  * 生成服务 - 封装代理调用
  * 所有请求走 /api/proxy/* (后端会注入对应 Key 并转存结果)
  */
+import type { AdvancedProviderConfig } from '../types/canvas';
 
 export interface GenerateImageRequest {
   model: string;          // 节点 id (gpt-image-2 / nano-banana-2 / nano-banana-pro / grok-image)
@@ -40,6 +41,7 @@ export async function generateImage(req: GenerateImageRequest): Promise<Generate
 
 export interface GenerateExternalImageRequest {
   providerId: string;
+  provider?: AdvancedProviderConfig;
   providerModel?: string;
   model?: string;
   prompt: string;
@@ -48,12 +50,20 @@ export interface GenerateExternalImageRequest {
   height?: number;
   n?: number;
   images?: string[];
+  videos?: string[];
+  audios?: string[];
+  negativePrompt?: string;
+  negative?: string;
+  seed?: number;
   providerParams?: Record<string, any>;
 }
 
 export interface GenerateExternalImageResult {
   imageUrls: string[];
   remoteImageUrls?: string[];
+  videoUrls?: string[];
+  audioUrls?: string[];
+  text?: string;
   taskId?: string;
   raw?: any;
   provider?: any;
@@ -73,6 +83,9 @@ export async function generateExternalImage(req: GenerateExternalImageRequest): 
   return {
     imageUrls: Array.isArray(payload.imageUrls) ? payload.imageUrls : [],
     remoteImageUrls: Array.isArray(payload.remoteImageUrls) ? payload.remoteImageUrls : undefined,
+    videoUrls: Array.isArray(payload.videoUrls) ? payload.videoUrls : undefined,
+    audioUrls: Array.isArray(payload.audioUrls) ? payload.audioUrls : undefined,
+    text: typeof payload.text === 'string' ? payload.text : undefined,
     taskId: payload.taskId,
     raw: payload.raw,
     provider: payload.provider,

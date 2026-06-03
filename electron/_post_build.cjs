@@ -190,6 +190,33 @@ function checkAiWatermarkRuntime() {
   console.log('     Set T8_REQUIRE_AI_WATERMARK_RUNTIME=1 for user-release builds that must be offline/self-contained.');
 }
 
+function checkNoRhToolboxMaker() {
+  const forbiddenDirs = [
+    path.join(RES, 'tools', 'rh-toolbox-maker'),
+    path.join(RES, 'rh-toolbox-maker'),
+    path.join(RES, 'app', 'rh-toolbox-maker'),
+    path.join(RES, 'app.asar.unpacked', 'rh-toolbox-maker'),
+  ];
+  for (const p of forbiddenDirs) {
+    if (fs.existsSync(p)) {
+      failSecurity('RH toolbox maker must not be shipped to end users:', p);
+    }
+  }
+
+  const forbiddenText = [
+    /RHToolboxMakerNode/,
+    /RH工具箱制作器/,
+    /rh-toolbox-maker/,
+  ];
+  for (const p of walkFiles(path.join(RES, 'frontend')).filter(isSmallTextFile)) {
+    const text = fs.readFileSync(p, 'utf-8');
+    if (forbiddenText.some((re) => re.test(text))) {
+      failSecurity('RH toolbox maker frontend code leaked into packaged assets:', p);
+    }
+  }
+  console.log('  ✅ RH toolbox maker is not present in packaged resources');
+}
+
 function main() {
   console.log('==========================================');
   console.log('[post-build] 验证打包产物');
@@ -214,6 +241,9 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'routes', 'themes.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'eagle.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'aiWatermark.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'cloudUploads.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'settings.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'uploader.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'registry.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'mediaResolver.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'adapters.t8c'));
@@ -239,6 +269,7 @@ function main() {
   checkFrontendAsset('yyh-unbalanced-kiss-piano-', '.mp3');
   checkFrontendAsset('yyh-hidden-tonight-', '.mp3');
   checkFrontendAsset('slamdunk-kimi-ga-suki-', '.mp3');
+  checkFrontendAsset('soccer-tsubasa-burning-hero-', '.mid');
 
   console.log('\n[3] 清除可能混入的明文后端源码:');
   nukePlainBackend();
@@ -249,7 +280,10 @@ function main() {
   console.log('\n[5] 去AI水印 sidecar runtime:');
   checkAiWatermarkRuntime();
 
-  console.log('\n[6] resources/ 完整结构:');
+  console.log('\n[6] RH工具箱制作器分发检查:');
+  checkNoRhToolboxMaker();
+
+  console.log('\n[7] resources/ 完整结构:');
   listDir(RES);
 
   if (missingCount > 0) {

@@ -61,6 +61,12 @@ import {
  *   - Seedance  (kind=seedance) — 零破坏兼容旧 veo 字段
  * 流程: submit → poll(5s 间隔) → 转存 → 展示
  */
+const VIDEO_POLL_TIMEOUT_SECONDS = 3600;
+const VIDEO_POLL_INTERVAL_MS = 5000;
+const VIDEO_MAX_POLL = Math.ceil((VIDEO_POLL_TIMEOUT_SECONDS * 1000) / VIDEO_POLL_INTERVAL_MS);
+const VIDEO_FAL_POLL_INTERVAL_MS = 6000;
+const VIDEO_FAL_MAX_POLL = Math.ceil((VIDEO_POLL_TIMEOUT_SECONDS * 1000) / VIDEO_FAL_POLL_INTERVAL_MS);
+
 const splitGrokFalRefUrls = (raw: string): string[] =>
   String(raw || '')
     .split(/[\n,，]+/)
@@ -276,8 +282,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     stopPoll();
     return new Promise<void>((resolve, reject) => {
       let elapsed = 0;
-      const POLL_INT = 5000;
-      const MAX = 480; // 40 分钟
+      const POLL_INT = VIDEO_POLL_INTERVAL_MS;
+      const MAX = VIDEO_MAX_POLL; // 60 分钟
       let lastProgress = '';
       pollTimer.current = window.setInterval(async () => {
         elapsed += 1;
@@ -327,8 +333,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     stopPoll();
     return new Promise<void>((resolve, reject) => {
       let elapsed = 0;
-      const POLL_INT = 6000;
-      const MAX = 600; // 60分钟
+      const POLL_INT = VIDEO_FAL_POLL_INTERVAL_MS;
+      const MAX = VIDEO_FAL_MAX_POLL; // 60分钟
       pollTimer.current = window.setInterval(async () => {
         elapsed += 1;
         if (elapsed > MAX) {

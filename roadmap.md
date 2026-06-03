@@ -1,5 +1,214 @@
 # T8-penguin-canvas Roadmap
 
+## 云端上传目标路线（开发中）
+
+> 目标：让上传素材、输出素材以及生成后的图像 / 视频 / 音频可以在画布内右键直接上传到夸克、百度网盘、腾讯云 OSS/COS 和阿里云 OSS。该能力作为资源库之外的“外部归档 / 分享”辅助入口，不改变当前生成、资源库、节点发送和自动保存主流程。
+
+### 1. 产品原则
+
+- 入口统一：复用现有素材 `data-drag-source` 右键协议，凡是 UploadNode、OutputNode、资源卡片或后续节点暴露的图像 / 视频 / 音频，都能用同一个菜单上传。
+- 默认不打扰：未配置云端目标时，右键菜单只显示简短提示；不会阻塞加入资源库、预览、拖拽或节点运行。
+- 设置集中：API 设置页新增「云端上传目标【可选】」，放在本地保存路径附近，默认折叠；用户只需配置一次，右键菜单自动读取启用目标。
+- 目标可读：每个目标都有显示名、启用开关、默认目标、目录 / 前缀、配置检查按钮和上传状态；密钥只在后端保存并脱敏展示。
+- 输出统一：上传成功后返回云端路径 / URL，并提供复制入口；失败时给出平台、文件名和原因，不吞掉原素材。
+- 可扩展：平台适配器独立于节点组件，后续新增 S3、WebDAV、MinIO、OneDrive 等目标时，只增加 provider adapter 与设置 schema，不重写右键菜单。
+
+### 2. 第一版范围
+
+- 右键菜单新增「上传到云端」分区，列出已启用目标；点击后上传当前图像 / 视频 / 音频素材。
+- 后端新增 `/api/cloud-uploads/status`、`/api/cloud-uploads/upload`、`/api/cloud-uploads/test`，负责读取设置、解析本地素材、调用平台适配器、返回结果。
+- 设置新增四个内置目标：腾讯云 COS、阿里云 OSS、百度网盘、夸克网盘。腾讯云 COS / 阿里云 OSS 第一版做成真实可上传；百度网盘 / 夸克网盘先保留清晰配置位与友好错误，等稳定授权或 CLI 方案确定后接入真实上传。
+- 腾讯云 COS / 阿里云 OSS 使用对象存储路径前缀，例如 `t8-canvas/{kind}/{yyyy-mm}/filename.ext`；上传成功可返回公共域名或对象 key。
+- 素材解析支持 `/files/input/*`、`/files/output/*`、资源库文件、素材集文件、dataURL 和远程 URL；大文件保持后端流式上传，避免前端读入内存。
+- 右键上传不会修改画布节点数据；只作为外部副本，不影响资源库、本地自动保存和生成结果。
+
+### 3. 安全与隐私
+
+- 云端密钥、AK/SK、AccessToken、Cookie 等敏感值只能由后端保存，GET 设置接口必须脱敏，日志不得输出明文。
+- 用户留空密钥字段时保留旧值，输入新值才覆盖；导出设置时继续使用脱敏状态，避免误把密钥放进备份。
+- 夸克 / 百度如果后续使用 Cookie、OAuth token 或第三方 CLI，必须明确标注登录状态、过期风险和授权边界；不能把不稳定的抓包字段伪装成正式 API。
+- 上传远程 URL 时沿用资源库的安全思路：限制超时、禁止内网探测，避免把云端上传变成 SSRF 通道。
+
+### 4. 后续阶段
+
+- 第二阶段支持批量上传素材集 / 多选输出，并按目标返回批量结果。
+- 第三阶段支持上传完成后自动写入资源库 metadata，例如云端 URL、bucket、object key、上传时间。
+- 第四阶段支持对象存储预签名下载链接、私有桶分享链接有效期、上传后复制 Markdown / HTML / 直链。
+- 第五阶段接入百度网盘 OAuth / PCS 上传和夸克稳定 CLI 或官方能力；若平台授权不稳定，保留实验标签并不作为默认推荐。
+
+## ComfyUI 本地 API 简化接入路线（开发中）
+
+> 目标：把当前“粘 API Workflow JSON + 手写 fields JSON”的高级配置，改成普通用户可理解的向导式接入。ComfyUI 仍属于扩展 API 平台高级来源，不替代贞贞主流程；只有用户主动启用并在图像节点里选择 ComfyUI 工作流时才生效。
+
+### 1. 设计原则
+
+- 连接先行：设置页先测试 `http://127.0.0.1:8188` 的 `/queue`，再导入工作流，避免用户不知道是 ComfyUI 没开还是 workflow 配错。
+- 导入即分析：用户粘贴 API Workflow 后自动扫描常见节点，不再默认要求手写 fields JSON。
+- 映射可视化：把 ComfyUI 节点字段展示成表格，用下拉选择来源：正向 Prompt、负向 Prompt、上游图片、宽、高、Seed、Steps、CFG、Sampler、Scheduler、固定值。
+- 高级入口保留：保留 raw workflow JSON 和 fields JSON 作为高级模式，兼容旧配置和复杂工作流。
+- 后端兜底：后端继续保留 heuristic patch；显式映射优先，自动映射其次，避免旧画布断裂。
+- 输出统一：ComfyUI `/view` 输出仍转存为 T8 `/files/output/*`，继续兼容 OutputNode、资源库、自动保存、节点发送和 Loop。
+
+### 2. 第一版范围
+
+- 设置页 ComfyUI 表单新增自动识别输入字段和推荐映射表。
+- 工作流 JSON 解析成功后自动生成 fields 映射：`CLIPTextEncode.text`、`LoadImage.image`、`EmptyLatentImage.width/height`、`KSampler.seed/steps/cfg/sampler_name/scheduler`。
+- 后端 ComfyUI adapter 支持 `source=image1/image2/...`：自动把图像节点上游参考图上传到 ComfyUI `/upload/image`，再写入 `LoadImage.image`。
+- 图像节点选择 ComfyUI 高级来源时保留工作流下拉，并补充“需要上游图片”提示，减少运行失败。
+- 测试覆盖自动映射、LoadImage 上传注入、旧 fields JSON 兼容和生产构建。
+
+### 3. 后续阶段
+
+- 支持多个工作流库条目：名称、类型、标签、缩略图、测试状态、导入/导出。
+- 支持 ControlNet / OpenPose / Mask / Video 工作流的专用映射来源。
+- 设置页加入“从 ComfyUI 历史任务导入当前 prompt/workflow”的快捷入口。
+- 后续可新增独立“本地 ComfyUI”节点，但只有保存至少一个工作流后才在侧栏显示。
+
+## ComfyUI 超市与应用制作工具路线（开发中）
+
+> 目标：新增独立「ComfyUI」分类，包含「ComfyUI超市」与「ComfyUI应用制作工具」两个节点。让用户把本地 ComfyUI API Workflow JSON 变成可保存、可导入、可一键运行的画布应用；同时保留当前扩展 API 平台里的 ComfyUI 高级来源，避免破坏旧画布。
+
+### 1. 产品定位
+
+- `ComfyUI超市` 是用户日常运行入口：选择应用、接入上游素材、填写少量参数、运行并输出图像 / 视频 / 音频 / 文本。
+- `ComfyUI应用制作工具` 是普通用户也能使用的本地工作流封装工具：上传或粘贴 ComfyUI API Workflow JSON，自动识别参数，测试后保存到 ComfyUI超市。
+- ComfyUI 应用和 RH工具箱一样走 manifest 驱动，但和 RH工具箱不同：ComfyUI 工作流通常来自用户本机，因此制作工具可以进入用户包，不作为维护者私有工具隐藏。
+- 新功能不替代图像节点里的 ComfyUI 高级来源；旧设置继续可用，新增节点只是把复杂 workflow 管理从 API 设置页搬到更直观的画布节点里。
+
+### 2. Manifest 协议
+
+- 应用定义使用 `t8-comfyui-app-manifest`，包含 `categories[]` 与 `apps[]`。
+- 每个应用必须有稳定 `id`、`title`、`categoryId`、`workflowJson`、`fields`、`userParams`、`outputs`、`runtime`、`ui`。
+- `fields` 负责 patch ComfyUI workflow：`nodeId / fieldName / source / value`。`source` 可为 `prompt`、`negative`、`image1`、`video1`、`audio1`、`width`、`height`、`seed`、`steps`、`cfg`、`sampler_name`、`scheduler`、`denoise`、`batch_size`、`model_name`、`clip_name`、`vae_name` 或自定义参数 key。
+- `userParams` 只暴露新手能理解的字段，默认把 Prompt、负向 Prompt、尺寸、批量、采样器参数、模型名、VAE/CLIP 名列出来；复杂节点字段默认固定在 workflow 原值里。
+- 应用保存分两层：内置默认 manifest 放在源码数据文件；用户导入 / 制作的应用保存在浏览器本地库，换画布不丢，节点数据只保存 `appId + 参数值 + 素材排序/排除`。
+
+### 3. 自动识别范围
+
+- Prompt：识别 `CLIPTextEncode.text`，第一条为正向，第二条或标题包含 negative/负向/反向的为负向。
+- 图像输入：识别 `LoadImage.image`、`ImageInput` 等常见图像输入，映射为 `image1/image2/image3...`。
+- 视频/音频输入：识别常见 `LoadVideo`、`VHS`、`LoadAudio`、`AudioInput` 字段，映射为 `video1/audio1`。
+- 尺寸：识别 `EmptyLatentImage.width/height/batch_size`。
+- 采样：识别 `KSampler.seed/noise_seed/steps/cfg/sampler_name/scheduler/denoise`。
+- 模型与资源：识别 `CheckpointLoader/UNETLoader/AnimaBoosterLoader.model_name`、`CLIPLoader.clip_name`、`VAELoader.vae_name`、`LoraLoader.lora_name/strength_model/strength_clip`。
+- 输出：识别 `SaveImage/PreviewImage`、视频合成 / 保存节点、音频保存节点和文本输出节点，后端回收结果继续归一成 T8 的 `/files/output/*`。
+
+### 4. 第一版交互
+
+- 制作工具：上传 JSON → 自动识别 → 填应用名/分类 → 勾选用户要暴露的参数 → 保存到超市 / 导出 JSON。
+- 制作工具必须给新手友好提示：区分“API Workflow JSON”和普通 ComfyUI 前端 workflow；识别失败时说明如何在 ComfyUI 开启 dev mode 导出 API workflow。
+- 超市节点：左侧是应用搜索和分类；右侧是当前应用参数、上游素材预览、运行按钮与结果预览。
+- 超市节点必须支持单个上游素材右下角 X 排除，保留当前画布已经有的素材排序、排除和恢复体验。
+- 图像节点选择 ComfyUI 高级来源时，不再显示 GPT/FAL/MJ 的比例、尺寸、质量等参数；改为显示该 workflow 自动识别出的 ComfyUI 参数面板。
+
+### 5. 技术落地
+
+- 复用 `src/utils/comfyuiWorkflow.ts` 作为唯一 analyzer；后续扩展只加检测规则，不给单个 workflow 写硬编码。
+- 新增 `src/utils/comfyuiApps.ts` 作为 manifest 归一、默认参数构建、存储和导入导出的唯一来源。
+- `ComfyUI超市` 运行时通过现有 `/api/proxy/external/image` 和 ComfyUI provider adapter 提交；provider 可由设置页选择，workflow 来自应用 manifest。
+- 后端 `backend/src/providers/comfyui.js` 保持显式 fields 优先、自动推断兜底；新增字段只扩展 `sourceValue()`，不破坏旧工作流。
+- 第一版重点跑通文生图 / 图生图工作流；视频、音频和复杂 mask/controlnet 先按协议预留，后续逐步增强 UI。
+
+### 6. 验收样本
+
+- 本轮必须用 `C:\（动漫抽卡神器）Anima+V1.0正式版自动提示词文生图V4 (2).json` 做分析样本。
+- 导入后应自动识别 10+ 个字段：正向 Prompt、负向 Prompt、width、height、batch_size、seed、steps、cfg、sampler_name、scheduler、denoise、model_name、clip_name、vae_name。
+- 在图像节点已选择原 ComfyUI 高级来源时，应看到 ComfyUI 参数，而不是 GPT 默认参数。
+- 能否真实出图取决于本机 ComfyUI 是否在线、是否安装 Anima 自定义节点与对应模型；如果本机缺模型/节点，前端必须给出可理解错误，不能显示成“GPT 参数没了但不知道怎么用”。
+
+## RH 工具箱路线（开发中）
+
+> 目标：新增只读精选节点「RH工具箱」。它和「RH超市」共享 RunningHub 提交能力，但职责不同：RH超市让用户自己维护应用；RH工具箱只展示维护者预置的工具，并通过统一调用协议给画布其他功能复用，例如图像抠图/编辑/放大、视频编辑/放大、文本扩写、音频克隆等。
+
+### 1. 产品定位
+
+- RH工具箱放在 RH 分类，作为维护者精选工具入口；用户可以使用、搜索、按分类运行，但不能在客户端新增、编辑、导入或导出工具。
+- 制作方式面向维护者：用 manifest / maker 生成工具定义，打包 Electron 时只带清洗后的运行 manifest，不把制作界面、草稿、调试数据或私有说明打进用户包。
+- RH工具箱不是新的一套业务 API，而是 RunningHub WebApp 的能力包装层：底层继续走统一 `rhApiKey`、`submitRh`、`queryRh`、`fetchRhAppInfo`、`uploadRhAsset`。
+- 所有输出必须归一化为现有画布协议：`imageUrl/imageUrls`、`videoUrl/videoUrls`、`audioUrl/audioUrls`、`outputText/texts`、`urls`、`taskId/raw`，继续兼容输出素材、资源库、自动保存、节点发送和循环器。
+
+### 2. Manifest 与可扩展协议
+
+- 运行 manifest 是唯一权威来源，建议文件为 `src/data/rhToolboxManifest.ts`；每个工具必须有稳定 `id`，后续重命名只改 `title`，不能改 `id`。
+- 分类结构包含 `category.id/name/description/order/icon`，工具结构包含 `id/title/description/categoryId/webappId/enabled/order/capabilities/inputSchema/outputSchema/fixedParams/userParams/runtime/ui/version`。
+- `inputSchema` 负责把 T8 输入映射到 RH nodeInfoList 字段：`key/kind/rhNodeId/fieldName/required/multiple/maxItems/defaultValue/uploadAsset/order`。
+- `fixedParams` 用于维护者固定 RH 参数，例如模型、模式、质量、尺寸；`userParams` 用于暴露给用户的少量安全参数，例如强度、倍率、语言、风格。
+- `outputSchema` 描述工具输出语义，例如 `image.transparent`、`video.upscaled`、`text.expanded`、`audio.cloned`，并声明默认处理策略 `append-output / replace-source / text-only / multi-output`。
+- 所有工具都必须通过同一个 runner 构建 `nodeInfoList`，禁止为每个应用写一个专属 React 分支；新增应用应尽量只新增 manifest。
+
+### 3. 能力标签
+
+- 图像能力：`image.cutout`、`image.edit`、`image.upscale`、`image.expand`、`image.restore`、`image.background`、`image.color`。
+- 视频能力：`video.edit`、`video.upscale`、`video.frame-interpolate`、`video.remove-bg`、`video.retime`、`video.to-image`。
+- 文本能力：`text.expand`、`text.rewrite`、`text.translate`、`text.prompt-enhance`、`text.summarize`、`text.classify`。
+- 音频能力：`audio.clone`、`audio.tts`、`audio.separate`、`audio.enhance`、`audio.denoise`、`audio.music`。
+- 其他节点调用 RH工具箱时只按能力标签筛选工具，不依赖具体 WebApp 名称；例如图像编辑节点可以请求 `image.cutout`，视频节点可以请求 `video.upscale`，文本节点可以请求 `text.expand`。
+
+### 4. 第一阶段：节点与通用调用内核
+
+- 新增 `rh-toolbox` 节点，左侧接 `text/image/video/audio`，右侧输出 `text/image/video/audio`。
+- 节点初始为工具列表：分类、搜索、能力标签、工具说明、空状态提示；只显示 `enabled !== false` 的工具。
+- 点击工具后进入运行视图：展示上游素材、可排序/排除、少量用户参数、实例类型、运行按钮、任务状态和输出预览。
+- 新增纯工具函数负责 manifest 归一、能力筛选、输入挑选、RH nodeInfoList 构建、输出类型分流，保证其他节点未来也能直接复用。
+- 新增前端 service `runRhToolboxTool()`：自动拉取 RH appInfo、上传媒体素材、提交任务、轮询结果、归一化输出。
+- 第一版无需把快捷调用按钮嵌入其他节点，但服务接口必须为后续“在图像编辑里一键抠图并替换原图”等场景预留 `caller/sourceMaterialId/outputRole` 字段。
+
+### 4.1 维护者制作器节点（开发态）
+
+- 新增开发态节点 `rh-toolbox-maker` / 「RH工具箱制作器」：只在 `import.meta.env.DEV` 下注册到侧栏和 `nodeTypes`，生产包不展示、不加载制作器组件。
+- 制作器在画布中填写工具标题、稳定 ID、分类、WebApp ID、能力标签、输入映射、用户参数、固定参数、输出声明、运行参数和快捷入口开关。
+- 制作器可按 WebApp ID 调用 `fetchRhAppInfo()` 拉取 RH `nodeInfoList`，维护者可一键把字段加入上游输入、用户参数或固定参数，减少手工编辑 manifest 的往返。
+- 制作器输出规范化后的单工具 manifest JSON，可复制、下载，也可保存到浏览器开发草稿；开发态 `RH工具箱` 节点会合并这些草稿用于试跑。
+- 开发草稿只用于本机维护验证，不是用户功能；正式发布仍应把确认后的工具写入运行 manifest，并保持用户端只读。
+- `electron/_post_build.cjs` 必须检查用户包中没有 `RHToolboxMakerNode` / 「RH工具箱制作器」等制作器前端代码或 `rh-toolbox-maker` 私有目录。
+
+### 5. 后续阶段
+
+- 第二阶段：在图像预览 / 图像编辑 / 输出素材里增加能力快捷入口，例如「抠图」「放大」「扩图」，运行后可选择替换原图、追加为新图或生成新输出节点。
+- 第三阶段：视频节点增加视频工具快捷入口，例如视频放大、插帧、改节奏、背景移除，支持把结果回写到当前节点参考素材或输出素材。
+- 第四阶段：文本节点与 LLM 节点支持 `text.expand/rewrite/prompt-enhance` 快捷调用，保留原文本并可一键替换或追加版本。
+- 第五阶段：音频节点支持 `audio.clone/tts/separate/enhance`，输出按音频多轨协议回收，避免覆盖用户已有素材。
+- 第六阶段：制作工具成熟后增加 manifest 校验、预览、导入 RH appInfo 自动生成字段映射、版本差异检测和打包前校验；用户包仍只带运行 manifest。
+
+### 6. 打包与维护规范
+
+- Electron 用户包不得包含 RH工具箱 maker 源码、草稿 JSON、测试 WebApp 私密说明或调试日志；只允许包含前端运行 manifest 和加密后端。
+- 若后续新增私有 maker 目录，`electron/_post_build.cjs` 必须加入禁止混入检查，例如 `resources/tools/rh-toolbox-maker`、`resources/rh-toolbox-maker`、`resources/app/rh-toolbox-maker`。
+- 每次新增工具必须至少检查：manifest id 不重复、分类存在、webappId 非空、inputSchema 映射合法、能力标签可被其他节点识别、空输入有友好错误。
+- 新增能力标签或输出角色时同步更新 `roadmap.md`、`features.json`、测试和后续 `skill.md` 规范。
+
+## 宫格编辑节点路线（开发中）
+
+> 目标：新增独立「宫格编辑」节点，用于多图分镜拼版。它和现有「宫格剪裁」职责相反：宫格剪裁是一张图拆成多图，宫格编辑是多张图按格子排序后生成一张拼接图。
+
+### 1. 第一阶段：分镜拼版基础版
+
+- 工具节点分类新增可见节点「宫格编辑」，左侧接 `image`，右侧输出 `image`。
+- 支持横向格数 `cols` 与纵向格数 `rows`，例如 `3×4` 表示横向 3 格、纵向 4 格；默认先用 `3×3`，提供 `2×2 / 3×3 / 3×4 / 4×3 / 1×4 / 4×1` 预设。
+- 支持输出尺寸：常用比例 `1:1 / 4:3 / 16:9 / 9:16` 与自定义宽高；第一版直接输出 PNG，节点预览保持真实输出比例并在竖版/超长比例下滚动查看，不压缩成方块。
+- 左侧图像输入会自动填入宫格；节点内也提供每格 `+` 和本地上传入口，用户可手动补图。
+- 格子支持拖拽排序，顺序写入节点 `data.gridEditorOrder`，避免上游变化时丢失用户编排。
+- 每格可删除当前图片；图片不足时保留空占位，运行时输出背景色空格，不报错。
+- 图片超过格子数量时显示溢出提示，并提供「自动扩容」把行数补足。
+- 每格显示序号开关，方便分镜 1、2、3 对应提示词或脚本。
+- `拆分` 第一版先把当前已填格子的图片按顺序写回节点 `imageUrls / urls`，由现有自动输出链路生成多图合集；后续再扩展“打散到画布”。
+- `运行` 调用后端 `/api/image/grid-compose`，按当前格子、间距、背景、适配模式生成一张拼接大图并写入 `imageUrl`。
+
+### 2. 后端与数据规范
+
+- 后端新增 `POST /api/image/grid-compose`，使用 `sharp` 统一拼图，复用现有 `/files/input`、`/files/output`、资源库文件和 dataURL 图像解析。
+- 请求结构以 `rows / cols / width / height / gap / background / fit / showIndexes / cells[]` 为核心，`cells` 长度按 `rows*cols` 保留空格位置。
+- `fit` 首版支持 `adaptive / cover / contain / fill`：默认 `adaptive` 保留整图并补背景，避免分镜窄格裁切人物；`cover` 适合统一画面比例，`contain` 明确完整留白，`fill` 仅在用户明确选择时拉伸。
+- 后端必须限制 `rows/cols`、输出尺寸和格子总数，避免误设超大拼图拖垮内存。
+- 输出仍落到 `/files/output/*`，继续兼容 OutputNode、资源库、节点发送、Loop 和自动保存。
+
+### 3. 后续扩展
+
+- 第二阶段支持双击单格进入裁切编辑，调整单张图片在格子里的缩放、平移、旋转和裁切框。
+- 第二阶段支持边框样式、格子标题、场记文字、页码、水印、统一字幕条。
+- 第三阶段支持保存为资源库「分镜宫格模板」，包括行列、尺寸、背景、间距、序号和每格说明。
+- 第三阶段支持从文本分割 / LLM 分镜文本自动给每格生成标题，并与图片顺序绑定。
+
 ## 画板节点抠图路线（开发中）
 
 > 目标：在现有「画板」节点内增加轻量 Photoshop 式套索与钢笔抠图，让用户可以直接在图层画板中对图片素材做非破坏式透明 PNG 抠出，不打断画板、图层、导入导出和 RUN 输出流程。

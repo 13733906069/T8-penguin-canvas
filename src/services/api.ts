@@ -2,7 +2,7 @@
  * T8-penguin-canvas 后端 API 封装
  * 所有请求走 Vite proxy → http://127.0.0.1:18766
  */
-import type { AdvancedProviderConfig, ApiSettings, CanvasData, CanvasListItem } from '../types/canvas';
+import type { AdvancedProviderConfig, ApiSettings, CanvasData, CanvasListItem, CloudUploadSummary, CloudUploadTargetConfig } from '../types/canvas';
 import type { ThemeTemplate } from '../theme/types';
 import type { MediaKind } from '../utils/mediaCollection';
 
@@ -152,6 +152,62 @@ export async function testAdvancedProvider(payload: {
     protocol: payload.provider?.protocol || '',
     error: '测试接口没有返回结果',
   };
+}
+
+export interface CloudUploadStatus {
+  targets: CloudUploadTargetConfig[];
+  summary: CloudUploadSummary;
+}
+
+export interface CloudUploadTestResult {
+  ok: boolean;
+  supported?: boolean;
+  message?: string;
+  error?: string;
+  target?: CloudUploadTargetConfig;
+}
+
+export interface CloudUploadAssetResult {
+  provider: string;
+  targetId: string;
+  label: string;
+  objectKey?: string;
+  path?: string;
+  url?: string;
+  filename?: string;
+  size?: number;
+  mime?: string;
+  kind?: string;
+  uploadedAt?: string;
+}
+
+export function getCloudUploadStatus() {
+  return safeRequest<CloudUploadStatus>(`${BASE}/cloud-uploads/status`);
+}
+
+export function testCloudUploadTarget(payload: {
+  targetId?: string;
+  target?: CloudUploadTargetConfig;
+}) {
+  return safeRequest<CloudUploadTestResult>(`${BASE}/cloud-uploads/test`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function uploadCloudAsset(payload: {
+  targetId: string;
+  url: string;
+  kind?: ResourceMediaKind | string;
+  filename?: string;
+  title?: string;
+  sourceNodeId?: string;
+  sourceCanvasId?: string;
+}) {
+  return safeRequest<CloudUploadAssetResult>(`${BASE}/cloud-uploads/upload`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 // ========== 文件自动保存到本地路径 (v1.2.10.2) ==========
