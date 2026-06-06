@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FolderPlus, Library, Plus, X } from 'lucide-react';
+import { CloudUpload, FolderPlus, Library, Plus, X } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useCanvasStore } from '../stores/canvas';
+import { trackAchievementEvent } from '../stores/achievements';
 import * as api from '../services/api';
+import type { CloudUploadTargetConfig } from '../types/canvas';
 import type { ResourceCategory, ResourceKind, ResourceMaterialSetKind, ResourceMediaKind } from '../services/api';
+import SmartImage from './SmartImage';
 
 interface MenuState {
   x: number;
@@ -38,16 +41,28 @@ export default function MaterialContextMenu() {
   const isPixel = style === 'pixel';
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [categories, setCategories] = useState<ResourceCategory[]>([]);
+  const [cloudTargets, setCloudTargets] = useState<CloudUploadTargetConfig[]>([]);
+  const [cloudUploadingId, setCloudUploadingId] = useState('');
   const [message, setMessage] = useState('');
+  const [cloudResult, setCloudResult] = useState<api.CloudUploadAssetResult | null>(null);
 
   const close = useCallback(() => {
     setMenu(null);
     setMessage('');
+    setCloudUploadingId('');
+    setCloudResult(null);
   }, []);
 
   const loadCategories = useCallback(async (kind: ResourceKind) => {
     const r = await api.getResourceCategories(kind);
     if (r.success) setCategories(r.data);
+  }, []);
+
+  const loadCloudTargets = useCallback(async () => {
+    const r = await api.getCloudUploadStatus();
+    if (r.success) {
+      setCloudTargets((r.data.targets || []).filter((target) => target.enabled));
+    }
   }, []);
 
   useEffect(() => {
@@ -74,7 +89,9 @@ export default function MaterialContextMenu() {
       };
       setMenu(next);
       setMessage('');
+      setCloudResult(null);
       loadCategories(kind);
+      loadCloudTargets();
     };
     const onMaterialSetMenu = (e: Event) => {
       const detail = (e as CustomEvent)?.detail || {};
@@ -91,6 +108,7 @@ export default function MaterialContextMenu() {
         materialSetItems,
       });
       setMessage('');
+      setCloudResult(null);
       loadCategories('set');
     };
     document.addEventListener('contextmenu', onContext, true);
@@ -99,7 +117,7 @@ export default function MaterialContextMenu() {
       document.removeEventListener('contextmenu', onContext, true);
       window.removeEventListener('penguin:open-material-set-resource-menu', onMaterialSetMenu as EventListener);
     };
-  }, [loadCategories]);
+  }, [loadCategories, loadCloudTargets]);
 
   useEffect(() => {
     if (!menu) return;
@@ -140,6 +158,13 @@ export default function MaterialContextMenu() {
         });
     if (r.success) {
       const duplicate = (r as any).duplicate;
+      if (!duplicate) {
+        trackAchievementEvent({
+          type: 'resource.saved',
+          kind: menu.kind === 'set' ? `${menu.materialSetKind || 'material'}-set` : menu.kind,
+          category: categoryId,
+        });
+      }
       setMessage(duplicate ? '已存在，已定位到该分类' : '已加入资源库');
       window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
       window.setTimeout(close, 650);
@@ -158,6 +183,39 @@ export default function MaterialContextMenu() {
       await addToCategory(r.data.id);
     } else {
       setMessage(r.error || '分类创建失败');
+    }
+  };
+
+  const uploadToCloud = async (target: CloudUploadTargetConfig) => {
+    if (!menu || menu.kind === 'set' || !menu.url) return;
+    setCloudUploadingId(target.id);
+    setCloudResult(null);
+    setMessage(`正在上传到 ${target.label || '云端'}...`);
+    const r = await api.uploadCloudAsset({
+      targetId: target.id,
+      url: menu.url,
+      kind: menu.kind,
+      filename: menu.title,
+      title: menu.title,
+      sourceNodeId: menu.sourceNodeId,
+      sourceCanvasId: activeCanvasId || '',
+    });
+    setCloudUploadingId('');
+    if (r.success) {
+      setCloudResult(r.data);
+      const copyValue = r.data.url || r.data.path || '';
+      if (copyValue) {
+        try {
+          await navigator.clipboard?.writeText(copyValue);
+          setMessage(`已上传到 ${target.label || '云端'}，链接已复制`);
+        } catch {
+          setMessage(`已上传到 ${target.label || '云端'}`);
+        }
+      } else {
+        setMessage(`已上传到 ${target.label || '云端'}`);
+      }
+    } else {
+      setMessage(r.error || '云端上传失败');
     }
   };
 
@@ -199,7 +257,7 @@ export default function MaterialContextMenu() {
       </div>
       {menu.kind === 'image' && menu.previewUrl && (
         <div className="h-24 bg-black overflow-hidden">
-          <img src={menu.previewUrl} className="w-full h-full object-cover" draggable={false} />
+          <SmartImage src={menu.previewUrl} className="w-full h-full object-cover" draggable={false} thumbSize={320} />
         </div>
       )}
       {menu.kind === 'set' && (
@@ -219,9 +277,48 @@ export default function MaterialContextMenu() {
           <span>新建分类...</span>
         </button>
       </div>
+      {menu.kind !== 'set' && (
+        <div
+          className="py-1"
+          style={{
+            borderTop: isPixel ? '2px solid #1A1410' : `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
+          }}
+        >
+          <div className={`px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 ${isDark && !isPixel ? 'text-white/65' : ''}`}>
+            <CloudUpload size={12} />
+            <span>上传到云端</span>
+          </div>
+          {cloudTargets.length === 0 ? (
+            <div className={`px-3 pb-2 text-[11px] ${isPixel ? '' : isDark ? 'text-white/55' : 'text-zinc-500'}`}>
+              未启用云端目标，请先到 API 设置中配置。
+            </div>
+          ) : (
+            <div className="max-h-36 overflow-y-auto">
+              {cloudTargets.map((target) => (
+                <button
+                  key={target.id}
+                  className={itemCls}
+                  onClick={() => uploadToCloud(target)}
+                  disabled={!!cloudUploadingId}
+                  title={target.label}
+                >
+                  <CloudUpload size={12} />
+                  <span className="truncate">{target.label || target.id}</span>
+                  {cloudUploadingId === target.id && <span className="ml-auto text-[10px]">上传中</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {message && (
         <div className={`px-3 py-2 text-[11px] ${isPixel ? 'border-t-2 border-[var(--px-ink)] bg-[var(--px-yellow)]' : isDark ? 'border-t border-white/10 text-white/70' : 'border-t border-black/10 text-zinc-600'}`}>
           {message}
+          {cloudResult?.url && (
+            <div className="mt-1 truncate" title={cloudResult.url}>
+              {cloudResult.url}
+            </div>
+          )}
         </div>
       )}
     </div>

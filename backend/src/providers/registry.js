@@ -149,7 +149,7 @@ const DEFAULT_ADVANCED_PROVIDERS = [
       executablePath: '',
       useWsl: false,
       wslDistro: '',
-      pollSeconds: 900,
+      pollSeconds: 3600,
     },
   },
 ];
@@ -320,12 +320,25 @@ function normalizeComfyFields(value) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
     const nodeId = cleanText(raw.nodeId || raw.node || '', 80);
     const fieldName = cleanText(raw.fieldName || raw.input || raw.name || '', 80);
-    const source = cleanText(raw.source || fieldName, 80);
+    const fixedValue = cloneJsonValue(raw.value, 64 * 1024);
+    const source = cleanText(raw.source || (fixedValue !== undefined ? 'fixed' : fieldName), 80);
     if (!nodeId || !fieldName) continue;
     const field = { nodeId, fieldName, source };
-    const fixedValue = cloneJsonValue(raw.value, 64 * 1024);
-    if (fixedValue !== undefined) field.value = fixedValue;
+    if (source === 'fixed' && fixedValue !== undefined) field.value = fixedValue;
     out.push(field);
+  }
+  return out.slice(0, 200);
+}
+
+function normalizeComfyExcludeRules(value) {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[\n,;，；]+/);
+  const out = [];
+  for (const raw of rawItems) {
+    const item = cleanText(raw, 120);
+    if (!item || out.includes(item)) continue;
+    out.push(item);
   }
   return out.slice(0, 200);
 }
@@ -360,6 +373,8 @@ function normalizeComfyuiConfig(value) {
           if (workflowJson !== undefined) workflow.workflowJson = workflowJson;
           const fields = normalizeComfyFields(item.fields);
           if (fields.length) workflow.fields = fields;
+          const excludeRules = normalizeComfyExcludeRules(item.excludeRules || item.exclude_rules || item.excludedFields || item.excluded_fields);
+          if (excludeRules.length) workflow.excludeRules = excludeRules;
           return workflow;
         })
         .filter((item) => item && item.id && item.name)
@@ -374,7 +389,7 @@ function normalizeJimengConfig(value) {
     executablePath: cleanText(raw.executablePath || raw.binPath || '', 260),
     useWsl: normalizeBoolean(raw.useWsl, false),
     wslDistro: cleanText(raw.wslDistro || '', 80),
-    pollSeconds: normalizeNumber(raw.pollSeconds, 900, 1, 3600),
+    pollSeconds: normalizeNumber(raw.pollSeconds, 3600, 0, 3600),
   };
 }
 

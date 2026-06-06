@@ -2,7 +2,7 @@
  * T8-penguin-canvas 后端 API 封装
  * 所有请求走 Vite proxy → http://127.0.0.1:18766
  */
-import type { AdvancedProviderConfig, ApiSettings, CanvasData, CanvasListItem } from '../types/canvas';
+import type { AdvancedProviderConfig, ApiSettings, CanvasData, CanvasListItem, CloudUploadSummary, CloudUploadTargetConfig } from '../types/canvas';
 import type { ThemeTemplate } from '../theme/types';
 import type { MediaKind } from '../utils/mediaCollection';
 
@@ -152,6 +152,62 @@ export async function testAdvancedProvider(payload: {
     protocol: payload.provider?.protocol || '',
     error: '测试接口没有返回结果',
   };
+}
+
+export interface CloudUploadStatus {
+  targets: CloudUploadTargetConfig[];
+  summary: CloudUploadSummary;
+}
+
+export interface CloudUploadTestResult {
+  ok: boolean;
+  supported?: boolean;
+  message?: string;
+  error?: string;
+  target?: CloudUploadTargetConfig;
+}
+
+export interface CloudUploadAssetResult {
+  provider: string;
+  targetId: string;
+  label: string;
+  objectKey?: string;
+  path?: string;
+  url?: string;
+  filename?: string;
+  size?: number;
+  mime?: string;
+  kind?: string;
+  uploadedAt?: string;
+}
+
+export function getCloudUploadStatus() {
+  return safeRequest<CloudUploadStatus>(`${BASE}/cloud-uploads/status`);
+}
+
+export function testCloudUploadTarget(payload: {
+  targetId?: string;
+  target?: CloudUploadTargetConfig;
+}) {
+  return safeRequest<CloudUploadTestResult>(`${BASE}/cloud-uploads/test`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function uploadCloudAsset(payload: {
+  targetId: string;
+  url: string;
+  kind?: ResourceMediaKind | string;
+  filename?: string;
+  title?: string;
+  sourceNodeId?: string;
+  sourceCanvasId?: string;
+}) {
+  return safeRequest<CloudUploadAssetResult>(`${BASE}/cloud-uploads/upload`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 // ========== 文件自动保存到本地路径 (v1.2.10.2) ==========
@@ -332,8 +388,9 @@ export function importRHToolsBackup(payload: RHToolsBackup, mode: 'replace' | 'm
 }
 
 // ========== 资源库 (v1.3.4) ==========
-export type ResourceKind = 'image' | 'video' | 'audio' | 'set' | 'pose' | 'workflow';
+export type ResourceKind = 'image' | 'video' | 'audio' | 'panorama' | 'set' | 'pose' | 'workflow';
 export type ResourceMediaKind = 'image' | 'video' | 'audio';
+export type ResourceAddKind = ResourceMediaKind | 'panorama';
 export type ResourceMaterialSetKind = 'text' | 'image' | 'video' | 'audio';
 
 export interface ResourceCategory {
@@ -405,7 +462,7 @@ export interface AddResourceSetPayload {
 
 export interface AddResourcePayload {
   url: string;
-  kind: ResourceMediaKind;
+  kind: ResourceAddKind;
   categoryId?: string;
   title?: string;
   tags?: string[];
@@ -579,113 +636,131 @@ export function deleteThemeTemplate(id: string) {
   });
 }
 
-// ========== 算力充值 ==========
+// ========== 主题成就 / 时长 ==========
 
-export interface RechargeConfig {
-  website_url: string;
-  agent_base_url: string;
-  configured: boolean;
-  device_id: string;
+export type AchievementEventType =
+  | 'theme.active_tick'
+  | 'theme.switched'
+  | 'hidden_mode.enabled'
+  | 'hidden_mode.used'
+  | 'node.created'
+  | 'node.run_success'
+  | 'resource.saved'
+  | 'workflow.saved'
+  | 'panorama.generated'
+  | 'parsehub.resolved';
+
+export interface AchievementEventPayload {
+  type: AchievementEventType;
+  theme?: string;
+  amountSeconds?: number;
+  nodeType?: string;
+  kind?: string;
+  category?: string;
 }
 
-export interface RechargeBinding {
-  bound: boolean;
-  website_user_id?: number;
-  bind_time?: string;
+export interface AchievementSummary {
+  today: string;
+  todaySeconds: number;
+  totalActiveSeconds: number;
+  achievementCount: number;
+  unlockedCount: number;
+  filmCount: number;
+  unlockedFilmCount: number;
+  recentUnlocks: AchievementDefinitionData[];
+  recentFilms: AchievementUnlockedFilm[];
 }
 
-export interface RechargePlan {
+export interface AchievementDefinitionData {
   id: string;
-  power: number;
-  price: number;
-  quota: number;
-  name: string;
-  test?: boolean;
+  theme: string;
+  themeLabel: string;
+  title: string;
+  description: string;
+  rarity: string;
+  condition: Record<string, any>;
+  medal?: boolean;
+  hidden?: boolean;
 }
 
-export type RechargeOrderStatus = 'pending' | 'transferring' | 'success' | 'transfer_failed';
-
-export interface RechargeOrder {
-  order_id: string;
-  website_user_id: number;
-  plan_id: string;
-  plan_name: string;
-  power: number;
-  amount: number;
-  quota: number;
-  pay_type: 'alipay' | 'wxpay';
-  status: RechargeOrderStatus;
-  pay_url?: string;
-  trade_no?: string;
-  create_time?: string;
-  pay_time?: string;
-  transfer_message?: string;
+export interface AchievementUnlocked {
+  id: string;
+  theme: string;
+  title: string;
+  rarity: string;
+  unlockedAt: string;
+  eventType?: string;
 }
 
-export interface RechargeOrderCreateResponse {
-  success: boolean;
-  order_id: string;
-  pay_url: string;
-  amount: number;
-  power: number;
-  quota: number;
-  plan_name: string;
-  pay_type: 'alipay' | 'wxpay';
+export interface AchievementUnlockedFilm {
+  id: string;
+  theme: string;
+  title: string;
+  unlockedAt: string;
+  sourceAchievementId: string;
+  hasMedia: boolean;
+  status: 'awaiting-media' | string;
+  lockedText?: string;
+  unavailableText?: string;
+  playedSeconds?: number;
 }
 
-export interface RechargeOrderCheckResponse {
-  success: boolean;
-  status: RechargeOrderStatus;
-  order_id: string;
-  plan_name: string;
-  amount: number;
-  quota: number;
-  power?: number;
-  pay_url?: string;
-  pay_time?: string;
-  transfer_message?: string;
+export interface AchievementProfile {
+  schema: 't8-achievements';
+  version: number;
+  profileId: string;
+  createdAt: string;
+  updatedAt: string;
+  themeStats: Record<string, any>;
+  events: Array<Record<string, any>>;
+  unlockedAchievements: Record<string, AchievementUnlocked>;
+  claimedMedals: Record<string, any>;
+  unlockedFilms: Record<string, AchievementUnlockedFilm>;
+  preferences: {
+    enabled: boolean;
+    showToast: boolean;
+    showTopBadge: boolean;
+  };
 }
 
-export function getRechargeConfig() {
-  return request<RechargeConfig>(`${BASE}/recharge/config`);
+export interface AchievementProfileData {
+  profile: AchievementProfile;
+  manifest: Record<string, any>;
+  definitions: AchievementDefinitionData[];
+  summary: AchievementSummary;
+  event?: Record<string, any>;
+  ignored?: boolean;
 }
 
-export function getRechargeBinding() {
-  return request<RechargeBinding>(`${BASE}/recharge/binding`);
+export function getAchievementProfile() {
+  return safeRequest<AchievementProfileData>(`${BASE}/achievements/profile`);
 }
 
-export function bindRechargeUser(websiteUserId: number) {
-  return request<{ success: boolean; website_user_id: number }>(`${BASE}/recharge/binding`, {
+export function recordAchievementEvent(payload: AchievementEventPayload) {
+  return safeRequest<AchievementProfileData>(`${BASE}/achievements/event`, {
     method: 'POST',
-    body: JSON.stringify({ website_user_id: websiteUserId }),
+    body: JSON.stringify(payload),
   });
 }
 
-export function unbindRechargeUser() {
-  return request<{ success: boolean }>(`${BASE}/recharge/binding`, { method: 'DELETE' });
-}
-
-export function getRechargePlans() {
-  return request<RechargePlan[]>(`${BASE}/recharge/plans`);
-}
-
-export function createRechargeOrder(planId: string, payType: 'alipay' | 'wxpay') {
-  return request<RechargeOrderCreateResponse>(`${BASE}/recharge/order/create`, {
+export function updateAchievementPreferences(payload: Partial<AchievementProfile['preferences']>) {
+  return safeRequest<AchievementProfileData>(`${BASE}/achievements/preferences`, {
     method: 'POST',
-    body: JSON.stringify({ plan_id: planId, pay_type: payType }),
+    body: JSON.stringify(payload),
   });
 }
 
-export function checkRechargeOrder(orderId: string) {
-  return request<RechargeOrderCheckResponse>(`${BASE}/recharge/order/${encodeURIComponent(orderId)}/check`);
+export function resetAchievements() {
+  return safeRequest<AchievementProfileData>(`${BASE}/achievements/reset`, { method: 'POST' });
 }
 
-export function retryRechargeOrder(orderId: string) {
-  return request<RechargeOrderCheckResponse>(`${BASE}/recharge/order/${encodeURIComponent(orderId)}/retry`, {
+export function exportAchievements() {
+  return safeRequest<AchievementProfile>(`${BASE}/achievements/export`);
+}
+
+export function importAchievements(data: AchievementProfile | Record<string, any>) {
+  return safeRequest<AchievementProfileData>(`${BASE}/achievements/import`, {
     method: 'POST',
+    body: JSON.stringify({ data }),
   });
-}
-
-export function getRechargeOrders(limit = 20) {
-  return request<RechargeOrder[]>(`${BASE}/recharge/orders?limit=${encodeURIComponent(String(limit))}`);
 }

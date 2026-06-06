@@ -17,6 +17,7 @@ import { useNodes, useViewport, useReactFlow, type Node } from '@xyflow/react';
 import { Play, Square, X } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useRunBusStore } from '../stores/runBus';
+import { trackAchievementEvent } from '../stores/achievements';
 import { useHiddenFeatureStore, isRhDuckUploadEnabled, isYyhPortraitEnabled } from '../stores/hiddenFeatures';
 import { resolveThemeTemplate } from '../theme/defaultTemplates';
 import { getMediaItemsFromData } from '../utils/mediaCollection';
@@ -27,15 +28,17 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
     // v1.2.10.1: RH 工具节点
-    'rh-tools', 'rh-toolbox',
+    'rh-tools', 'rh-toolbox', 'comfyui-store',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
   // v1.2.8 循环器 / 从合集获取
   'loop', 'pick-from-set',
   // v1.4.6: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
   'cinematic', 'video-motion',
-  'portrait-master', 'pose-master',
+  'portrait-master', 'pose-master', 'aggregate-parser',
+  'topaz-image-upscale', 'topaz-video-upscale',
   'remove-ai-watermark',
 ]);
 
@@ -49,6 +52,8 @@ const ACTION_COLORS: Record<string, { run: string; stop: string; close: string }
   naruto: { run: '#f4511e', stop: '#f59e0b', close: '#d11d1d' },
   eva: { run: '#78ff4d', stop: '#ff9d00', close: '#ff3046' },
   yyh: { run: '#52ff9a', stop: '#ffb84d', close: '#ff4f7b' },
+  'soccer-hero': { run: '#1f9f4a', stop: '#f5d550', close: '#d64242' },
+  'dragon-ball': { run: '#ffb000', stop: '#38bdf8', close: '#dc2626' },
 };
 
 const NodeActionBar = () => {
@@ -180,8 +185,13 @@ const NodeActionBar = () => {
     clearHoldTimer();
     setHoldArmed(true);
     holdTimerRef.current = window.setTimeout(() => {
-      if (rhDuckEligible) toggleRhDuckUpload(selectedExe.id);
-      else if (yyhPortraitEligible) toggleYyhPortrait(selectedExe.id);
+      if (rhDuckEligible) {
+        const enabled = toggleRhDuckUpload(selectedExe.id);
+        if (enabled) trackAchievementEvent({ type: 'hidden_mode.enabled', theme: visualStyle, kind: 'rh-duck', nodeType: 'upload' });
+      } else if (yyhPortraitEligible) {
+        const enabled = toggleYyhPortrait(selectedExe.id);
+        if (enabled) trackAchievementEvent({ type: 'hidden_mode.enabled', theme: visualStyle, kind: 'yyh-portrait', nodeType: 'portrait-master' });
+      }
       suppressClickRef.current = true;
       holdTimerRef.current = null;
       setHoldArmed(false);

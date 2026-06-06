@@ -9,6 +9,7 @@ import { useUpstreamMaterials, type MaterialKind, type Material } from './useUps
 import { topologicalSort } from '../../utils/topologicalSort';
 import { PORT_COLOR } from '../../config/portTypes';
 import LoopingVideo from '../LoopingVideo';
+import SmartImage from '../SmartImage';
 // v1.2.10.5: 节点落点防重叠 —— 多链克隆子图整组避让
 import { placeBatchNodes, rectOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
@@ -36,10 +37,13 @@ const EXEC_TYPES = new Set<string>([
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
     // v1.2.10.1: RH 工具节点 (循环器中作为 EXEC 使用)
-    'rh-tools', 'rh-toolbox',
+    'rh-tools', 'rh-toolbox', 'comfyui-store',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine',
+  'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
+  'aggregate-parser',
+  'topaz-image-upscale', 'topaz-video-upscale',
 ]);
 
 // 自动计算型下游节点：没有 useRunTrigger，不应放入 EXEC_TYPES 等待 runBus，
@@ -129,10 +133,12 @@ function hasPassiveLoopNode(nodes: Node[]): boolean {
 }
 
 // ===== helper: 等待某节点 lastDone =====
+const LOOP_NODE_WAIT_TIMEOUT_MS = 60 * 60 * 1000;
+
 // 重要 BUGFIX: 必须用 startTs 过滤上一轮遗留的 lastDone, 否则同一 nodeId 被循环复用时,
 // subscribe 在 triggerRunMany() 触发的 set 第一次回调会看到 lastDone.id === nodeId (上轮的) 立刻 finish,
 // 导致本轮根本没跑。
-function awaitNode(nodeId: string, cancelRef: React.MutableRefObject<boolean>, timeoutMs = 5 * 60 * 1000): Promise<boolean> {
+function awaitNode(nodeId: string, cancelRef: React.MutableRefObject<boolean>, timeoutMs = LOOP_NODE_WAIT_TIMEOUT_MS): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let resolved = false;
     const startTs = Date.now();
@@ -154,7 +160,7 @@ function awaitNode(nodeId: string, cancelRef: React.MutableRefObject<boolean>, t
 }
 
 // ===== helper: 等待某节点 lastDone, 但不发起触发 (并联模式各链内部已自行 trigger) =====
-function awaitOnly(nodeId: string, cancelRef: React.MutableRefObject<boolean>, timeoutMs = 5 * 60 * 1000): Promise<boolean> {
+function awaitOnly(nodeId: string, cancelRef: React.MutableRefObject<boolean>, timeoutMs = LOOP_NODE_WAIT_TIMEOUT_MS): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let resolved = false;
     const startTs = Date.now();
@@ -842,7 +848,7 @@ const LoopNode = (p: NodeProps) => {
           {items.slice(0, 9).map((m, i) => (
             <div key={i} style={{ aspectRatio: '1 / 1', borderRadius: 4, overflow: 'hidden', background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', border: isPixel ? '1px solid var(--px-ink)' : 'none', minWidth: 0 }}>
               {kind === 'image' ? (
-                <img src={m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <SmartImage src={m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} thumbSize={180} />
               ) : kind === 'video' ? (
                 <LoopingVideo src={m.url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted />
               ) : kind === 'audio' ? (

@@ -18,6 +18,8 @@ export type NodeType =
   | 'rh-tools'
   | 'rh-toolbox'
   | 'rh-toolbox-maker'
+  | 'comfyui-store'
+  | 'comfyui-app-maker'
   // Special (5)
   | 'multi-angle-3d'
   | 'panorama-720'
@@ -46,12 +48,17 @@ export type NodeType =
   | 'relay'
   | 'remove-ai-watermark'
   | 'video-output'
-  // Toolbox (5)
+  // Toolbox (6)
   | 'cinematic'
   | 'video-motion'
   | 'multi-angle-visual'
   | 'portrait-master'
   | 'pose-master'
+  | 'aggregate-parser'
+  | 'topaz-image-upscale'
+  | 'topaz-video-upscale'
+  // 3D (1)
+  | 'panorama-3d'
   // Input/Output 素材 (2) - 上传素材(图像/视频/音频三合一) + 输出素材(文本/图像/视频/音频预览)
   | 'upload'
   | 'material-set'
@@ -61,10 +68,12 @@ export type NodeType =
 export type NodeCategory =
   | 'core'
   | 'rh'
+  | 'comfyui'
   | 'special'
   | 'utility'
   | 'auxiliary'
   | 'toolbox'
+  | '3d'
   | 'input';
 
 // 节点元数据(用于 Sidebar 展示)
@@ -129,6 +138,7 @@ export interface AdvancedProviderConfig {
       name: string;
       workflowJson?: Record<string, any>;
       fields?: Array<{ nodeId: string; fieldName: string; source?: string; value?: any }>;
+      excludeRules?: string[];
     }>;
   };
   jimengConfig?: {
@@ -144,6 +154,65 @@ export interface AdvancedProviderSummary {
   configuredKeyCount: number;
   comfyuiConfigured: boolean;
   jimengConfigured: boolean;
+}
+
+export type CloudUploadProvider =
+  | 'tencent-cos'
+  | 'aliyun-oss'
+  | 'baidu-netdisk'
+  | 'quark-netdisk';
+
+export interface CloudUploadTargetConfig {
+  id: string;
+  provider: CloudUploadProvider;
+  label: string;
+  enabled?: boolean;
+  isDefault?: boolean;
+  prefix?: string;
+  publicBaseUrl?: string;
+  tencentCos?: {
+    bucket?: string;
+    region?: string;
+    secretId?: string;
+    secretKey?: string;
+    hasSecretId?: boolean;
+    hasSecretKey?: boolean;
+  };
+  aliyunOss?: {
+    bucket?: string;
+    endpoint?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+    hasAccessKeyId?: boolean;
+    hasAccessKeySecret?: boolean;
+  };
+  baiduNetdisk?: {
+    folder?: string;
+    accessToken?: string;
+    refreshToken?: string;
+    appKey?: string;
+    appSecret?: string;
+    hasAccessToken?: boolean;
+    hasRefreshToken?: boolean;
+    hasAppKey?: boolean;
+    hasAppSecret?: boolean;
+  };
+  quarkNetdisk?: {
+    folder?: string;
+    mode?: 'external-command' | 'cookie';
+    commandPath?: string;
+    cookie?: string;
+    hasCookie?: boolean;
+  };
+}
+
+export interface CloudUploadSummary {
+  totalCount: number;
+  enabledCount: number;
+  configuredCount: number;
+  supportedUploadCount: number;
+  defaultTargetId?: string;
+  defaultLabel?: string;
 }
 
 export type CanvasProviderSource = 'zhenzhen' | AdvancedProviderProtocol;
@@ -211,6 +280,8 @@ export interface ApiSettings {
   eagleApiBase?: string;
   advancedProviders?: AdvancedProviderConfig[];
   advancedProviderSummary?: AdvancedProviderSummary;
+  cloudUploadTargets?: CloudUploadTargetConfig[];
+  cloudUploadSummary?: CloudUploadSummary;
   preferences?: {
     theme?: 'dark' | 'light';
     language?: string;

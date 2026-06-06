@@ -5,6 +5,11 @@ const path = require('path');
 const { spawn } = require('child_process');
 const config = require('../../config');
 const {
+  ensureRuntimeArchiveExtracted,
+  getRuntimeArchiveInfo,
+  getRuntimeCachePath,
+} = require('../../utils/runtimeArchive');
+const {
   createAiWatermarkOutputPath,
   kindFromPath,
   outputUrlFromPath,
@@ -91,6 +96,40 @@ function integer(value, fallback, min, max) {
 function choice(value, allowed, fallback) {
   const v = String(value || '').trim();
   return allowed.includes(v) ? v : fallback;
+}
+
+function versionTuple(version) {
+  const match = String(version || '').match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!match) return null;
+  return [
+    Number(match[1]) || 0,
+    Number(match[2]) || 0,
+    Number(match[3]) || 0,
+  ];
+}
+
+function versionAtLeast(version, minimum) {
+  const current = versionTuple(version);
+  const target = versionTuple(minimum);
+  if (!current || !target) return false;
+  for (let i = 0; i < 3; i += 1) {
+    if (current[i] > target[i]) return true;
+    if (current[i] < target[i]) return false;
+  }
+  return true;
+}
+
+function supportsInvisible089(options = {}) {
+  const version = String(options.upstreamVersion || options.runtimeVersion || '').trim();
+  return !version || versionAtLeast(version, '0.8.9');
+}
+
+function normalizeInvisiblePipeline(value, upstreamVersion = '') {
+  const raw = String(value || 'default').trim();
+  const modern = !String(upstreamVersion || '').trim() || versionAtLeast(upstreamVersion, '0.8.9');
+  if (raw === 'controlnet') return modern ? 'controlnet' : 'ctrlregen';
+  if (raw === 'ctrlregen') return modern ? 'controlnet' : 'ctrlregen';
+  return 'default';
 }
 
 function normalizeRegion(region) {
@@ -205,6 +244,14 @@ function commandCandidates() {
   if (runtimeRoot) {
     pushRuntimeRootCandidates(candidates, runtimeRoot, 'T8_REMOVE_AI_WATERMARKS_RUNTIME', env);
   }
+  if (!config.IS_PACKAGED) {
+    pushRuntimeRootCandidates(
+      candidates,
+      path.resolve(config.BASE_DIR, 'tools', 'remove-ai-watermarks-runtime'),
+      'local remove-ai-watermarks runtime slot',
+      env,
+    );
+  }
   const resourcesRoot = String(env.T8PC_RES || '').trim();
   if (resourcesRoot) {
     pushRuntimeRootCandidates(
@@ -214,6 +261,12 @@ function commandCandidates() {
       env,
     );
   }
+  pushRuntimeRootCandidates(
+    candidates,
+    getRuntimeCachePath('remove-ai-watermarks'),
+    'cached remove-ai-watermarks runtime',
+    env,
+  );
 
   const sourceRoots = [];
   const envSource = String(env.T8_REMOVE_AI_WATERMARKS_SRC || '').trim();
@@ -409,11 +462,16 @@ function runCommand(candidate, args, options = {}) {
 }
 
 function aiWatermarkEnvFingerprint() {
+  const archive = getRuntimeArchiveInfo('remove-ai-watermarks');
   return [
     process.env.T8_REMOVE_AI_WATERMARKS_BIN || '',
     process.env.T8_REMOVE_AI_WATERMARKS_RUNTIME || '',
     process.env.T8_REMOVE_AI_WATERMARKS_SRC || '',
     process.env.T8PC_RES || '',
+    archive.archivePath || '',
+    archive.archiveSize || '',
+    archive.archiveMtimeMs || '',
+    archive.ready ? 'ready' : 'pending',
     process.env.PATH || '',
   ].join('\u0000');
 }
@@ -508,7 +566,14 @@ except Exception as exc:
   };
 }
 
-async function resolveAiWatermarkCommand() {
+async function resolveAiWatermarkCommand(options = {}) {
+  if (options.prepareEmbeddedRuntime) {
+    const info = getRuntimeArchiveInfo('remove-ai-watermarks');
+    if (info.archiveExists && !info.ready) {
+      console.log('[ai-watermark] preparing embedded remove-ai-watermarks runtime archive...');
+      ensureRuntimeArchiveExtracted('remove-ai-watermarks');
+    }
+  }
   const candidates = commandCandidates();
   const fingerprint = commandCandidatesFingerprint(candidates);
   const cached = getCachedResolution(fingerprint);
@@ -579,7 +644,7 @@ function runPythonProbe(probe, code) {
 async function detectDynamicCapabilities(resolved) {
   const code = `
 import importlib.util, json
-data = {"markKeys": [], "optionalFeatures": {"invisible": False, "lama": False, "detect": False, "trustmark": False}, "version": ""}
+data = {"markKeys": [], "optionalFeatures": {"invisible": False, "lama": False, "detect": False, "trustmark": False, "restore": False, "auto": False, "controlnet": False, "adaptivePolish": False}, "version": ""}
 try:
     import remove_ai_watermarks
     data["version"] = getattr(remove_ai_watermarks, "__version__", "")
@@ -602,6 +667,13 @@ except Exception:
     data["optionalFeatures"]["lama"] = False
 data["optionalFeatures"]["detect"] = importlib.util.find_spec("imwatermark") is not None
 data["optionalFeatures"]["trustmark"] = importlib.util.find_spec("trustmark") is not None
+data["optionalFeatures"]["auto"] = importlib.util.find_spec("remove_ai_watermarks.auto_config") is not None
+data["optionalFeatures"]["adaptivePolish"] = importlib.util.find_spec("remove_ai_watermarks.humanizer") is not None
+try:
+    from remove_ai_watermarks import face_restore
+    data["optionalFeatures"]["restore"] = bool(face_restore.is_available())
+except Exception:
+    data["optionalFeatures"]["restore"] = False
 print(json.dumps(data, ensure_ascii=False))
 `.trim();
   for (const probe of pythonProbeCandidates(resolved)) {
@@ -642,6 +714,38 @@ function setCachedCapabilities(fingerprint, value) {
 async function detectCapabilities() {
   const resolved = await resolveAiWatermarkCommand();
   if (!resolved.installed) {
+    const archive = getRuntimeArchiveInfo('remove-ai-watermarks');
+    if (archive.archiveExists) {
+      const capabilities = archive.manifest?.capabilities || {};
+      const version = archive.manifest?.source?.version || archive.manifest?.version || '';
+      return {
+        installed: true,
+        version,
+        resolver: archive.ready ? 'cached remove-ai-watermarks runtime' : 'embedded remove-ai-watermarks runtime archive',
+        runtimeArchivePending: !archive.ready,
+        runtimeArchive: {
+          archiveExists: true,
+          ready: archive.ready,
+          archiveFile: archive.archiveFile,
+          archiveSize: archive.archiveSize,
+        },
+        markKeys: Array.isArray(capabilities.visibleMarks) && capabilities.visibleMarks.length > 0
+          ? capabilities.visibleMarks
+          : FALLBACK_MARKS,
+        optionalFeatures: {
+          invisible: !!capabilities.invisible,
+          lama: !!capabilities.lama,
+          detect: !!capabilities.detect,
+          trustmark: !!capabilities.trustmark,
+          restore: !!capabilities.restore,
+          auto: !!capabilities.auto,
+          controlnet: !!capabilities.controlnet,
+          adaptivePolish: !!capabilities.adaptivePolish,
+        },
+        setupHints: setupHints(),
+        errors: archive.ready ? [] : ['内置运行时归档将在首次执行时解压到用户数据目录。'],
+      };
+    }
     return {
       installed: false,
       version: '',
@@ -652,6 +756,10 @@ async function detectCapabilities() {
         lama: false,
         detect: false,
         trustmark: false,
+        restore: false,
+        auto: false,
+        controlnet: false,
+        adaptivePolish: false,
       },
       setupHints: setupHints(),
       errors: resolved.errors || [],
@@ -662,6 +770,7 @@ async function detectCapabilities() {
   if (cached) return cached;
 
   const dynamic = await detectDynamicCapabilities(resolved);
+  const modernInvisible = versionAtLeast(dynamic?.version || resolved.version || '', '0.8.9');
   const data = {
     installed: true,
     version: dynamic?.version || resolved.version || '',
@@ -674,6 +783,10 @@ async function detectCapabilities() {
       lama: !!dynamic?.optionalFeatures?.lama,
       detect: !!dynamic?.optionalFeatures?.detect,
       trustmark: !!dynamic?.optionalFeatures?.trustmark,
+      restore: !!dynamic?.optionalFeatures?.restore,
+      auto: !!dynamic?.optionalFeatures?.auto || modernInvisible,
+      controlnet: !!dynamic?.optionalFeatures?.controlnet || modernInvisible,
+      adaptivePolish: !!dynamic?.optionalFeatures?.adaptivePolish || modernInvisible,
     },
     setupHints: setupHints(),
     errors: [],
@@ -686,7 +799,7 @@ function setupHints() {
   return [
     '推荐: pipx install remove-ai-watermarks',
     '也可以: uv tool install remove-ai-watermarks',
-    'Electron 离线包: 将准备好的 runtime 放入 tools/remove-ai-watermarks-runtime 并在打包时复制到 resources/tools/remove-ai-watermarks',
+    'Electron 离线包: 将准备好的 runtime 放入 tools/remove-ai-watermarks-runtime, 打包前执行 npm run prepack:runtimes 生成归档',
     '已有 runtime 根目录时设置 T8_REMOVE_AI_WATERMARKS_RUNTIME',
     '已有本地源码时设置 T8_REMOVE_AI_WATERMARKS_SRC 指向 clone 根目录',
     '已有可执行文件时设置 T8_REMOVE_AI_WATERMARKS_BIN 指向 remove-ai-watermarks(.cmd)',
@@ -733,13 +846,18 @@ function eraseArgs(sourcePath, outputPath, options = {}) {
 }
 
 function invisibleArgs(sourcePath, outputPath, options = {}) {
-  const pipeline = choice(options.pipeline, ['default', 'ctrlregen'], 'default');
+  const modernInvisible = supportsInvisible089(options);
+  const pipeline = normalizeInvisiblePipeline(options.pipeline, options.upstreamVersion || options.runtimeVersion || '');
+  const autoTune = options.auto === true || options.autoTune === true;
   const device = choice(options.device, ['auto', 'cpu', 'mps', 'cuda', 'xpu'], 'auto');
   const steps = integer(options.steps, 50, 4, 200);
   const humanize = finiteNumber(options.humanize, 0, 0, 20);
   const rawMaxResolution = integer(options.maxResolution, 0, 0, 8192);
   const maxResolution = rawMaxResolution > 0 ? Math.max(256, rawMaxResolution) : 0;
-  const args = ['invisible', sourcePath, '-o', outputPath, '--steps', steps, '--pipeline', pipeline, '--device', device, '--humanize', humanize, '--max-resolution', maxResolution];
+  const args = ['invisible', sourcePath, '-o', outputPath, '--steps', steps, '--device', device, '--humanize', humanize, '--max-resolution', maxResolution];
+  if (!autoTune || pipeline !== 'default') {
+    args.push('--pipeline', pipeline);
+  }
   if (options.strength !== undefined && options.strength !== null && options.strength !== '') {
     args.push('--strength', Math.max(1 / steps, finiteNumber(options.strength, 0.3, 0, 1)));
   }
@@ -747,8 +865,27 @@ function invisibleArgs(sourcePath, outputPath, options = {}) {
     args.push('--seed', integer(options.seed, 0, -2147483648, 2147483647));
   }
   if (options.hfToken) args.push('--hf-token', String(options.hfToken));
-  if (options.protectText === true) args.push('--protect-text');
-  if (options.protectFaces === true) args.push('--protect-faces');
+  if (modernInvisible) {
+    if (options.minResolution !== undefined && options.minResolution !== null && options.minResolution !== '') {
+      args.push('--min-resolution', integer(options.minResolution, 1024, 0, 8192));
+    }
+    const controlnetScale = finiteNumber(options.controlnetScale, 1, 0, 3);
+    if (controlnetScale !== 1 || pipeline === 'controlnet') args.push('--controlnet-scale', controlnetScale);
+    const unsharp = finiteNumber(options.unsharp, 0, 0, 3);
+    if (unsharp > 0) args.push('--unsharp', unsharp);
+    if (autoTune) args.push('--auto');
+    if (options.adaptivePolish === true) args.push('--adaptive-polish');
+    const restoreFacesWeight = finiteNumber(options.restoreFacesWeight, 0.5, 0, 1);
+    if (options.restoreFaces === true) {
+      args.push('--restore-faces');
+      args.push('--restore-faces-weight', restoreFacesWeight);
+    } else if (restoreFacesWeight !== 0.5) {
+      args.push('--restore-faces-weight', restoreFacesWeight);
+    }
+  } else {
+    if (options.protectText === true) args.push('--protect-text');
+    if (options.protectFaces === true) args.push('--protect-faces');
+  }
   return args;
 }
 
@@ -902,7 +1039,7 @@ async function runAiWatermarkProcess({ sourcePath, mediaKind, mode, options = {}
   const normalizedMode = normalizeMode(mode);
   const runId = shortRunId();
   aiWatermarkLog(runId, `request start mode=${normalizedMode} source="${path.basename(String(sourcePath || ''))}" mediaKind=${mediaKind || kindFromPath(sourcePath) || 'unknown'}`);
-  const resolved = await resolveAiWatermarkCommand();
+  const resolved = await resolveAiWatermarkCommand({ prepareEmbeddedRuntime: true });
   if (!resolved.installed) {
     aiWatermarkLog(runId, `runtime missing errors=${JSON.stringify((resolved.errors || []).slice(0, 3))}`);
     throw new Error(`未安装 remove-ai-watermarks。${setupHints().slice(0, 2).join('；')}`);
@@ -912,7 +1049,7 @@ async function runAiWatermarkProcess({ sourcePath, mediaKind, mode, options = {}
     mode: normalizedMode,
     sourcePath,
     mediaKind: mediaKind || kindFromPath(sourcePath),
-    options,
+    options: { ...options, upstreamVersion: resolved.version || '' },
   });
   const executed = await executePlan(resolved.candidate, plan, { runId });
   if (plan.reportOnly) {
@@ -944,10 +1081,12 @@ module.exports = {
   detectCapabilities,
   normalizeMode,
   normalizeRegions,
+  normalizeInvisiblePipeline,
   redactCommandArgs,
   resolveAiWatermarkCommand,
   runAiWatermarkProcess,
   setupHints,
   invisibleArgs,
+  versionAtLeast,
   visibleArgs,
 };

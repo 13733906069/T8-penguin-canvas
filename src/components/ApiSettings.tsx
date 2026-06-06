@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog } from 'lucide-react';
+import { ChevronDown, ChevronRight, CloudUpload, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog } from 'lucide-react';
 import { useApiKeysStore, FIXED_ZHENZHEN_BASE, RH_BASE } from '../stores/apiKeys';
 import { useThemeStore } from '../stores/theme';
-import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings } from '../types/canvas';
-import { getRawSettings, testAdvancedProvider } from '../services/api';
+import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings, CloudUploadProvider, CloudUploadTargetConfig } from '../types/canvas';
+import { getRawSettings, testAdvancedProvider, testCloudUploadTarget } from '../services/api';
 import {
   advancedProviderSummary as summarizeAdvancedProviderForm,
   normalizeModelscopeLoraStrength,
@@ -11,6 +11,18 @@ import {
   parseAdvancedProviderModelText,
   stringifyAdvancedProviderModels,
 } from '../utils/advancedProviders';
+import {
+  COMFY_FIELD_SOURCE_OPTIONS,
+  BASIC_COMFY_TEXT_TO_IMAGE_SAMPLE_ID,
+  analyzeComfyWorkflow,
+  buildComfyWorkflowImportChecklist,
+  canonicalizeComfyFieldsByWorkflow,
+  filterComfyFieldsByExcludeRules,
+  parseComfyFieldExcludeRules,
+  stringifyBasicComfyTextToImageWorkflow,
+  type ComfyFieldMapping,
+} from '../utils/comfyuiWorkflow';
+import PromptTextarea from './PromptTextarea';
 
 interface ApiSettingsModalProps {
   open: boolean;
@@ -137,6 +149,75 @@ const MODELSCOPE_TOKEN_URLS = {
 
 const JIMENG_CLI_INSTALL_COMMAND = 'curl -s https://jimeng.jianying.com/cli | bash';
 
+const CLOUD_UPLOAD_LABELS: Record<CloudUploadProvider, string> = {
+  'tencent-cos': '腾讯云 COS',
+  'aliyun-oss': '阿里云 OSS',
+  'baidu-netdisk': '百度网盘',
+  'quark-netdisk': '夸克网盘',
+};
+
+const CLOUD_UPLOAD_GUIDES: Record<CloudUploadProvider, {
+  subtitle: string;
+  description: string;
+  status: string;
+}> = {
+  'tencent-cos': {
+    subtitle: '适合把生成素材归档到腾讯云对象存储，支持真实上传。',
+    description: '填写 Bucket、Region、SecretId 和 SecretKey；公共域名可选，留空时返回 COS 默认对象 URL。',
+    status: '已支持上传',
+  },
+  'aliyun-oss': {
+    subtitle: '适合把生成素材归档到阿里云对象存储，支持真实上传。',
+    description: '填写 Bucket、Endpoint、AccessKeyId 和 AccessKeySecret；公共域名可选，留空时返回 OSS 默认对象 URL。',
+    status: '已支持上传',
+  },
+  'baidu-netdisk': {
+    subtitle: '保留百度网盘配置位，等待稳定 OAuth / PCS 上传方案接入。',
+    description: '后续会优先接入正式授权流程，避免让用户手填不稳定 Cookie 或抓包字段。',
+    status: '规划中',
+  },
+  'quark-netdisk': {
+    subtitle: '保留夸克网盘配置位，等待稳定 CLI / 授权方案接入。',
+    description: '后续若接入外部 CLI，会在这里填写命令路径并统一走同一个右键上传入口。',
+    status: '实验位',
+  },
+};
+
+function summarizeCloudUploadForm(targets: CloudUploadTargetConfig[]) {
+  const normalized = Array.isArray(targets) ? targets : [];
+  const configuredCount = normalized.filter((target) => {
+    if (target.provider === 'tencent-cos') {
+      return !!(target.tencentCos?.bucket && target.tencentCos?.region && (target.tencentCos?.secretId || target.tencentCos?.hasSecretId) && (target.tencentCos?.secretKey || target.tencentCos?.hasSecretKey));
+    }
+    if (target.provider === 'aliyun-oss') {
+      return !!(target.aliyunOss?.bucket && target.aliyunOss?.endpoint && (target.aliyunOss?.accessKeyId || target.aliyunOss?.hasAccessKeyId) && (target.aliyunOss?.accessKeySecret || target.aliyunOss?.hasAccessKeySecret));
+    }
+    if (target.provider === 'baidu-netdisk') {
+      return !!(target.baiduNetdisk?.accessToken || target.baiduNetdisk?.hasAccessToken || target.baiduNetdisk?.refreshToken || target.baiduNetdisk?.hasRefreshToken);
+    }
+    if (target.provider === 'quark-netdisk') {
+      return !!(target.quarkNetdisk?.commandPath || target.quarkNetdisk?.cookie || target.quarkNetdisk?.hasCookie);
+    }
+    return false;
+  }).length;
+  const defaultTarget = normalized.find((target) => target.isDefault) || normalized.find((target) => target.enabled) || null;
+  return {
+    totalCount: normalized.length,
+    enabledCount: normalized.filter((target) => target.enabled).length,
+    configuredCount,
+    defaultLabel: defaultTarget?.label || '',
+  };
+}
+
+function tryParseJsonObject(raw: string): Record<string, any> | null {
+  try {
+    const parsed = JSON.parse(raw || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 interface AdvancedProviderFormBlockProps {
   title: string;
   note?: string;
@@ -202,7 +283,12 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [activeAdvancedProviderId, setActiveAdvancedProviderId] = useState<string>('');
   const [advancedDirty, setAdvancedDirty] = useState(false);
   const [advancedTestStatus, setAdvancedTestStatus] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({});
-  const [advancedComfyDrafts, setAdvancedComfyDrafts] = useState<Record<string, { workflowJson?: string; fields?: string }>>({});
+  const [advancedComfyDrafts, setAdvancedComfyDrafts] = useState<Record<string, { workflowJson?: string; fields?: string; excludeRules?: string }>>({});
+  const [cloudUploadOpen, setCloudUploadOpen] = useState(false);
+  const [cloudUploadTargetsInput, setCloudUploadTargetsInput] = useState<CloudUploadTargetConfig[]>([]);
+  const [activeCloudTargetId, setActiveCloudTargetId] = useState<string>('');
+  const [cloudUploadDirty, setCloudUploadDirty] = useState(false);
+  const [cloudTestStatus, setCloudTestStatus] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({});
   const [backupMessage, setBackupMessage] = useState<string>('');
   const backupFileInputRef = useRef<HTMLInputElement | null>(null);
   // 眼睛预览拉取的明文（仅缓存，不提交）
@@ -230,6 +316,14 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setAdvancedDirty(false);
       setAdvancedTestStatus({});
       setAdvancedComfyDrafts({});
+      setCloudUploadOpen(false);
+      const cloudTargets = Array.isArray((settings as any)?.cloudUploadTargets)
+        ? ((settings as any).cloudUploadTargets as CloudUploadTargetConfig[])
+        : [];
+      setCloudUploadTargetsInput(cloudTargets);
+      setActiveCloudTargetId(cloudTargets[0]?.id || '');
+      setCloudUploadDirty(false);
+      setCloudTestStatus({});
       // 回填文件自动保存路径(明文字段，不脱敏)
       setFileSavePathInput((settings as any)?.fileSavePath || '');
       setCanvasAutoSavePathInput((settings as any)?.canvasAutoSavePath || '');
@@ -262,6 +356,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     themeTemplatePath: themeTemplatePathInput.trim(),
     eagleApiBase: eagleApiBaseInput.trim(),
     ...(advancedDirty ? { advancedProviders: advancedProvidersInput } : {}),
+    ...(cloudUploadDirty ? { cloudUploadTargets: cloudUploadTargetsInput } : {}),
   });
 
   const isMaskedKeyValue = (value: unknown): boolean => {
@@ -296,6 +391,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     }
     if (Array.isArray((source as any).advancedProviders)) {
       next.advancedProviders = (source as any).advancedProviders;
+    }
+    if (Array.isArray((source as any).cloudUploadTargets)) {
+      next.cloudUploadTargets = (source as any).cloudUploadTargets;
     }
     return next;
   };
@@ -367,6 +465,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setActiveAdvancedProviderId(patch.advancedProviders[0]?.id || '');
       setAdvancedDirty(true);
       setAdvancedOpen(true);
+    }
+    if (Array.isArray((patch as any).cloudUploadTargets)) {
+      const targets = (patch as any).cloudUploadTargets as CloudUploadTargetConfig[];
+      setCloudUploadTargetsInput(targets);
+      setActiveCloudTargetId(targets[0]?.id || '');
+      setCloudUploadDirty(true);
+      setCloudUploadOpen(true);
     }
     setClassifiedOpen(true);
   };
@@ -447,6 +552,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     }
     if (advancedDirty) {
       (patch as any).advancedProviders = advancedProvidersInput;
+    }
+    if (cloudUploadDirty) {
+      (patch as any).cloudUploadTargets = cloudUploadTargetsInput;
     }
     if (Object.keys(patch).length === 0) {
       onClose();
@@ -540,6 +648,10 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const activeAdvancedProvider = advancedProvidersInput.find((provider) => provider.id === activeAdvancedProviderId)
     || advancedProvidersInput[0]
     || null;
+  const cloudSummary = summarizeCloudUploadForm(cloudUploadTargetsInput);
+  const activeCloudTarget = cloudUploadTargetsInput.find((target) => target.id === activeCloudTargetId)
+    || cloudUploadTargetsInput[0]
+    || null;
 
   const updateAdvancedProvider = (id: string, patch: Partial<AdvancedProviderConfig>) => {
     setAdvancedProvidersInput((prev) => prev.map((provider) => (
@@ -580,6 +692,364 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     }
   };
 
+  const updateCloudTarget = (id: string, patch: Partial<CloudUploadTargetConfig>) => {
+    setCloudUploadTargetsInput((prev) => prev.map((target) => (
+      target.id === id ? { ...target, ...patch } : target
+    )));
+    setCloudUploadDirty(true);
+  };
+
+  const updateCloudTargetNested = (
+    id: string,
+    key: 'tencentCos' | 'aliyunOss' | 'baiduNetdisk' | 'quarkNetdisk',
+    patch: Record<string, any>,
+  ) => {
+    setCloudUploadTargetsInput((prev) => prev.map((target) => (
+      target.id === id
+        ? { ...target, [key]: { ...(target as any)[key], ...patch } }
+        : target
+    )));
+    setCloudUploadDirty(true);
+  };
+
+  const markCloudDefault = (id: string) => {
+    setCloudUploadTargetsInput((prev) => prev.map((target) => ({ ...target, isDefault: target.id === id })));
+    setCloudUploadDirty(true);
+  };
+
+  const handleTestCloudTarget = async (target: CloudUploadTargetConfig) => {
+    setCloudTestStatus((prev) => ({ ...prev, [target.id]: { loading: true } }));
+    try {
+      const result = await testCloudUploadTarget({ target });
+      setCloudTestStatus((prev) => ({
+        ...prev,
+        [target.id]: {
+          ok: result.success ? result.data.ok : false,
+          message: result.success
+            ? (result.data.message || '配置可用')
+            : (result.error || '配置检查失败'),
+        },
+      }));
+    } catch (e: any) {
+      setCloudTestStatus((prev) => ({
+        ...prev,
+        [target.id]: { ok: false, message: e?.message || '配置检查失败' },
+      }));
+    }
+  };
+
+  const renderCloudTargetForm = (target: CloudUploadTargetConfig) => {
+    const providerLabel = CLOUD_UPLOAD_LABELS[target.provider] || target.provider;
+    const guide = CLOUD_UPLOAD_GUIDES[target.provider];
+    const sectionCls = isPixel
+      ? 't8-api-settings-provider-panel border p-3 space-y-4 min-w-0'
+      : 't8-api-settings-provider-panel border rounded-xl p-3 sm:p-4 space-y-4 min-w-0';
+    const formBlockCls = isPixel
+      ? 't8-api-settings-section border p-3 space-y-3'
+      : 't8-api-settings-section rounded-lg border p-3 space-y-3';
+    const fieldInputCls = `${inputCls.replace('flex-1 ', '')} w-full min-w-0`;
+    const guideBoxCls = isPixel
+      ? 't8-api-settings-guide border p-3 text-[11px] leading-relaxed'
+      : 't8-api-settings-guide rounded-lg border p-3 text-[11px] leading-relaxed';
+    const smallPillCls = isPixel
+      ? 't8-api-settings-pill inline-flex items-center px-1.5 py-0.5 border text-[10px] font-bold'
+      : 't8-api-settings-pill inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] font-semibold';
+    const supported = target.provider === 'tencent-cos' || target.provider === 'aliyun-oss';
+    const test = cloudTestStatus[target.id];
+    return (
+      <div className={sectionCls}>
+        <div className="flex items-start gap-3 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-sm font-black ${labelCls}`}>{target.label || providerLabel}</span>
+              <span className={smallPillCls}>{providerLabel}</span>
+              <span className={target.enabled ? 'text-[11px] font-bold text-emerald-500' : `text-[11px] font-bold ${hintCls}`}>
+                {target.enabled ? '已启用' : '未启用'}
+              </span>
+              <span className={supported ? 'text-[11px] font-bold text-emerald-500' : `text-[11px] font-bold ${hintCls}`}>
+                {guide?.status}
+              </span>
+            </div>
+            <p className={`mt-1 text-[11px] leading-relaxed ${hintCls}`}>{guide?.subtitle}</p>
+          </div>
+          <label className={`flex items-center gap-2 text-xs font-bold shrink-0 ${labelCls}`}>
+            <input
+              type="checkbox"
+              checked={!!target.enabled}
+              onChange={(e) => updateCloudTarget(target.id, { enabled: e.target.checked })}
+            />
+            右键菜单显示
+          </label>
+          <label className={`flex items-center gap-2 text-xs font-bold shrink-0 ${labelCls}`}>
+            <input
+              type="radio"
+              checked={!!target.isDefault}
+              onChange={() => markCloudDefault(target.id)}
+            />
+            默认目标
+          </label>
+          <button
+            type="button"
+            onClick={() => handleTestCloudTarget(target)}
+            disabled={!!test?.loading}
+            className={
+              isPixel
+                ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0'
+                : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0 inline-flex items-center gap-1'
+            }
+          >
+            <TestTube2 size={12} />
+            {test?.loading ? '检查中...' : '配置检查'}
+          </button>
+        </div>
+
+        {test?.message && (
+          <div className={test.ok ? 'text-[11px] text-emerald-500' : 'text-[11px] text-red-400'}>
+            {test.message}
+          </div>
+        )}
+
+        <div className={guideBoxCls}>
+          <div className="flex items-start gap-2">
+            <Info size={14} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="font-bold">这是什么？</div>
+              <p>{guide?.description}</p>
+              <p className={`mt-2 ${hintCls}`}>
+                右键上传只复制一份外部副本，不会改动画布节点、资源库文件或本地自动保存结果。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <AdvancedProviderFormBlock
+          className={formBlockCls}
+          labelClassName={labelCls}
+          hintClassName={hintCls}
+          title="1. 基础信息"
+          note="显示名称会出现在素材右键菜单中；路径前缀支持 {kind}、{yyyy-mm}、{date}，例如 t8-canvas/{kind}/{yyyy-mm}。"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <span className={`text-[11px] ${labelCls}`}>显示名称</span>
+              <input
+                value={target.label || ''}
+                onChange={(e) => updateCloudTarget(target.id, { label: e.target.value })}
+                className={fieldInputCls}
+                placeholder={providerLabel}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className={`text-[11px] ${labelCls}`}>路径前缀</span>
+              <input
+                value={target.prefix || ''}
+                onChange={(e) => updateCloudTarget(target.id, { prefix: e.target.value })}
+                className={fieldInputCls}
+                placeholder="t8-canvas/{kind}/{yyyy-mm}"
+              />
+            </label>
+            {supported && (
+              <label className="space-y-1 lg:col-span-2">
+                <span className={`text-[11px] ${labelCls}`}>公共域名（可选）</span>
+                <input
+                  value={target.publicBaseUrl || ''}
+                  onChange={(e) => updateCloudTarget(target.id, { publicBaseUrl: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="https://cdn.example.com/path · 留空返回默认对象 URL"
+                />
+              </label>
+            )}
+          </div>
+        </AdvancedProviderFormBlock>
+
+        {target.provider === 'tencent-cos' && (
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="2. 腾讯云 COS"
+            note="SecretId / SecretKey 留空或保留 **** 表示不覆盖后端已保存密钥。"
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>Bucket</span>
+                <input
+                  value={target.tencentCos?.bucket || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'tencentCos', { bucket: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="example-1250000000"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>Region</span>
+                <input
+                  value={target.tencentCos?.region || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'tencentCos', { region: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="ap-guangzhou"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>SecretId</span>
+                <input
+                  type="password"
+                  value={target.tencentCos?.secretId || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'tencentCos', { secretId: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.tencentCos?.hasSecretId ? '留空保持不变' : '请输入 SecretId'}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>SecretKey</span>
+                <input
+                  type="password"
+                  value={target.tencentCos?.secretKey || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'tencentCos', { secretKey: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.tencentCos?.hasSecretKey ? '留空保持不变' : '请输入 SecretKey'}
+                />
+              </label>
+            </div>
+          </AdvancedProviderFormBlock>
+        )}
+
+        {target.provider === 'aliyun-oss' && (
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="2. 阿里云 OSS"
+            note="Endpoint 可以填 oss-cn-hangzhou.aliyuncs.com 或完整 https 地址；保存时会统一清洗。"
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>Bucket</span>
+                <input
+                  value={target.aliyunOss?.bucket || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'aliyunOss', { bucket: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="example-bucket"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>Endpoint</span>
+                <input
+                  value={target.aliyunOss?.endpoint || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'aliyunOss', { endpoint: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="oss-cn-hangzhou.aliyuncs.com"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>AccessKeyId</span>
+                <input
+                  type="password"
+                  value={target.aliyunOss?.accessKeyId || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'aliyunOss', { accessKeyId: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.aliyunOss?.hasAccessKeyId ? '留空保持不变' : '请输入 AccessKeyId'}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>AccessKeySecret</span>
+                <input
+                  type="password"
+                  value={target.aliyunOss?.accessKeySecret || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'aliyunOss', { accessKeySecret: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.aliyunOss?.hasAccessKeySecret ? '留空保持不变' : '请输入 AccessKeySecret'}
+                />
+              </label>
+            </div>
+          </AdvancedProviderFormBlock>
+        )}
+
+        {target.provider === 'baidu-netdisk' && (
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="2. 百度网盘（预留）"
+            note="第一版不执行真实上传，字段用于后续 OAuth / PCS 接入时平滑迁移。"
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <label className="space-y-1 lg:col-span-2">
+                <span className={`text-[11px] ${labelCls}`}>网盘目录</span>
+                <input
+                  value={target.baiduNetdisk?.folder || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { folder: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="/apps/T8PenguinCanvas"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>Access Token</span>
+                <input
+                  type="password"
+                  value={target.baiduNetdisk?.accessToken || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { accessToken: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.baiduNetdisk?.hasAccessToken ? '留空保持不变' : '后续接入时使用'}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>Refresh Token</span>
+                <input
+                  type="password"
+                  value={target.baiduNetdisk?.refreshToken || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { refreshToken: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.baiduNetdisk?.hasRefreshToken ? '留空保持不变' : '后续接入时使用'}
+                />
+              </label>
+            </div>
+          </AdvancedProviderFormBlock>
+        )}
+
+        {target.provider === 'quark-netdisk' && (
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="2. 夸克网盘（预留）"
+            note="第一版不执行真实上传，字段用于后续稳定 CLI / 授权方案接入。"
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>网盘目录</span>
+                <input
+                  value={target.quarkNetdisk?.folder || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { folder: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="/T8PenguinCanvas"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>外部命令路径</span>
+                <input
+                  value={target.quarkNetdisk?.commandPath || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { commandPath: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="后续 CLI 接入时使用"
+                />
+              </label>
+              <label className="space-y-1 lg:col-span-2">
+                <span className={`text-[11px] ${labelCls}`}>Cookie / 授权信息（不推荐长期依赖）</span>
+                <input
+                  type="password"
+                  value={target.quarkNetdisk?.cookie || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { cookie: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.quarkNetdisk?.hasCookie ? '留空保持不变' : '等待稳定方案后再填写'}
+                />
+              </label>
+            </div>
+          </AdvancedProviderFormBlock>
+        )}
+      </div>
+    );
+  };
+
   const renderAdvancedProviderForm = (provider: AdvancedProviderConfig) => {
     const protocolLabel = ADVANCED_PROVIDER_LABELS[provider.protocol] || provider.protocol;
     const guide = ADVANCED_PROVIDER_GUIDES[provider.protocol];
@@ -603,7 +1073,23 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       : 't8-api-settings-pill inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] font-semibold';
     const comfyWorkflow = (provider.comfyuiConfig?.workflows?.[0] || { id: 'workflow-1', name: '默认工作流' }) as NonNullable<NonNullable<AdvancedProviderConfig['comfyuiConfig']>['workflows']>[number];
     const comfyDraft = advancedComfyDrafts[provider.id] || {};
-    const setComfyDraft = (patch: { workflowJson?: string; fields?: string }) => {
+    const comfyWorkflowRaw = comfyDraft.workflowJson ?? (comfyWorkflow.workflowJson ? JSON.stringify(comfyWorkflow.workflowJson, null, 2) : '');
+    const comfyWorkflowObject = tryParseJsonObject(comfyWorkflowRaw);
+    const comfyWorkflowSource = comfyWorkflowObject || comfyWorkflow.workflowJson || null;
+    const comfyAnalysis = analyzeComfyWorkflow(comfyWorkflowSource);
+    const comfyImportChecklist = buildComfyWorkflowImportChecklist(comfyWorkflowSource, comfyAnalysis);
+    const comfyExcludeRulesRaw = comfyDraft.excludeRules ?? parseComfyFieldExcludeRules((comfyWorkflow as any).excludeRules).join('\n');
+    const comfyExcludeRules = parseComfyFieldExcludeRules(comfyExcludeRulesRaw);
+    const comfyFilteredAnalysisFields = filterComfyFieldsByExcludeRules(comfyWorkflowSource, comfyAnalysis.fields, comfyExcludeRules);
+    const comfyExcludedFieldCount = Math.max(0, comfyAnalysis.fields.length - comfyFilteredAnalysisFields.length);
+    const comfyBaseMappedFields = (Array.isArray(comfyWorkflow.fields) && comfyWorkflow.fields.length
+      ? comfyWorkflow.fields
+      : comfyFilteredAnalysisFields) as ComfyFieldMapping[];
+    const comfyMappedFields = canonicalizeComfyFieldsByWorkflow(
+      comfyWorkflowSource,
+      filterComfyFieldsByExcludeRules(comfyWorkflowSource, comfyBaseMappedFields, comfyExcludeRules),
+    );
+    const setComfyDraft = (patch: { workflowJson?: string; fields?: string; excludeRules?: string }) => {
       setAdvancedComfyDrafts((prev) => ({ ...prev, [provider.id]: { ...(prev[provider.id] || {}), ...patch } }));
     };
     const updateComfyWorkflow = (patch: Record<string, any>) => {
@@ -614,22 +1100,140 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const updateComfyWorkflowJson = (raw: string) => {
       setComfyDraft({ workflowJson: raw });
       try {
-        updateComfyWorkflow({ workflowJson: JSON.parse(raw) });
-        setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: true, message: '工作流 JSON 已解析' } }));
+        const workflowJson = JSON.parse(raw);
+        const analysis = analyzeComfyWorkflow(workflowJson);
+        const nextFields = canonicalizeComfyFieldsByWorkflow(
+          workflowJson,
+          filterComfyFieldsByExcludeRules(workflowJson, analysis.fields, comfyExcludeRules),
+        );
+        updateComfyWorkflow({
+          workflowJson,
+          ...(nextFields.length ? { fields: nextFields } : {}),
+        });
+        if (nextFields.length) setComfyDraft({ fields: JSON.stringify(nextFields, null, 2) });
+        setAdvancedTestStatus((prev) => ({
+          ...prev,
+          [provider.id]: {
+            ok: true,
+            message: nextFields.length
+              ? `工作流已解析，自动识别 ${nextFields.length} 个输入字段`
+              : '工作流 JSON 已解析，但未自动识别到常用输入字段',
+          },
+        }));
       } catch {
         setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: false, message: '工作流 JSON 格式不正确，修正后会自动保存' } }));
       }
+    };
+    const updateComfyExcludeRules = (raw: string) => {
+      setComfyDraft({ excludeRules: raw });
+      const excludeRules = parseComfyFieldExcludeRules(raw);
+      const workflowJson = comfyWorkflowSource;
+      const currentFields = comfyAnalysis.fields.length
+        ? comfyAnalysis.fields
+        : (Array.isArray(comfyWorkflow.fields) ? comfyWorkflow.fields : []);
+      const fields = canonicalizeComfyFieldsByWorkflow(
+        workflowJson,
+        filterComfyFieldsByExcludeRules(workflowJson, currentFields as ComfyFieldMapping[], excludeRules),
+      );
+      updateComfyWorkflow({ excludeRules, fields });
+      setComfyDraft({ fields: JSON.stringify(fields, null, 2) });
+      setAdvancedTestStatus((prev) => ({
+        ...prev,
+        [provider.id]: {
+          ok: true,
+          message: excludeRules.length
+            ? `已设置 ${excludeRules.length} 条排除规则，当前映射保留 ${fields.length} 个字段`
+            : `已清空排除规则，当前映射保留 ${fields.length} 个字段`,
+        },
+      }));
+    };
+    const appendComfyExcludeRules = (items: string[]) => {
+      updateComfyExcludeRules([...parseComfyFieldExcludeRules(comfyExcludeRulesRaw), ...items].join('\n'));
+    };
+    const handleComfyWorkflowFile = (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => updateComfyWorkflowJson(String(reader.result || ''));
+      reader.onerror = () => setAdvancedTestStatus((prev) => ({
+        ...prev,
+        [provider.id]: { ok: false, message: '读取 workflow JSON 文件失败' },
+      }));
+      reader.readAsText(file, 'utf-8');
     };
     const updateComfyFields = (raw: string) => {
       setComfyDraft({ fields: raw });
       try {
         const parsed = JSON.parse(raw || '[]');
         if (!Array.isArray(parsed)) throw new Error('fields must be array');
-        updateComfyWorkflow({ fields: parsed });
+        const workflowJson = comfyWorkflowSource;
+        const fields = canonicalizeComfyFieldsByWorkflow(
+          workflowJson,
+          filterComfyFieldsByExcludeRules(workflowJson, parsed as ComfyFieldMapping[], comfyExcludeRules),
+        );
+        updateComfyWorkflow({ fields });
         setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: true, message: '参数映射已解析' } }));
       } catch {
         setAdvancedTestStatus((prev) => ({ ...prev, [provider.id]: { ok: false, message: '参数映射 JSON 需要是数组' } }));
       }
+    };
+    const applyComfyAutoMapping = () => {
+      const workflowJson = comfyWorkflowSource;
+      const analysis = analyzeComfyWorkflow(workflowJson || null);
+      const fields = canonicalizeComfyFieldsByWorkflow(
+        workflowJson || null,
+        filterComfyFieldsByExcludeRules(workflowJson || null, analysis.fields, comfyExcludeRules),
+      );
+      updateComfyWorkflow({ fields });
+      setComfyDraft({ fields: JSON.stringify(fields, null, 2) });
+      setAdvancedTestStatus((prev) => ({
+        ...prev,
+        [provider.id]: {
+          ok: fields.length > 0,
+          message: fields.length
+            ? `已应用自动映射：${fields.length} 个字段${comfyExcludeRules.length ? `，已按规则排除 ${analysis.fields.length - fields.length} 个` : ''}`
+            : '没有识别到可自动映射的字段',
+        },
+      }));
+    };
+    const applyComfySampleWorkflow = () => {
+      const workflowJson = JSON.parse(stringifyBasicComfyTextToImageWorkflow());
+      const analysis = analyzeComfyWorkflow(workflowJson);
+      const fields = canonicalizeComfyFieldsByWorkflow(workflowJson, analysis.fields);
+      updateComfyWorkflow({
+        id: BASIC_COMFY_TEXT_TO_IMAGE_SAMPLE_ID,
+        name: '基础文生图样例',
+        workflowJson,
+        fields,
+        excludeRules: [],
+      });
+      setComfyDraft({
+        workflowJson: JSON.stringify(workflowJson, null, 2),
+        fields: JSON.stringify(fields, null, 2),
+        excludeRules: '',
+      });
+      setAdvancedTestStatus((prev) => ({
+        ...prev,
+        [provider.id]: {
+          ok: true,
+          message: '已载入基础文生图样例。运行前请把 Checkpoint 改成本机已安装的模型文件名。',
+        },
+      }));
+    };
+    const updateComfyField = (index: number, patch: Partial<ComfyFieldMapping>) => {
+      const nextFields = canonicalizeComfyFieldsByWorkflow(
+        comfyWorkflowSource,
+        filterComfyFieldsByExcludeRules(
+          comfyWorkflowSource,
+          comfyMappedFields.map((field, i) => (i === index ? { ...field, ...patch } : field)),
+          comfyExcludeRules,
+        ),
+      );
+      updateComfyWorkflow({ fields: nextFields });
+      setComfyDraft({ fields: JSON.stringify(nextFields, null, 2) });
+    };
+    const removeComfyField = (index: number) => {
+      const nextFields = comfyMappedFields.filter((_, i) => i !== index);
+      updateComfyWorkflow({ fields: nextFields });
+      setComfyDraft({ fields: JSON.stringify(nextFields, null, 2) });
     };
     const modelscopeLoras = Array.isArray(provider.modelscopeConfig?.loras) ? provider.modelscopeConfig.loras : [];
     const setModelscopeLoras = (loras: any[]) => {
@@ -879,11 +1483,14 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           >
             <label className="space-y-1 block">
               <span className={`text-[11px] ${labelCls}`}>实例地址列表（一行一个）</span>
-              <textarea
+              <PromptTextarea
+                title="ComfyUI 实例地址列表"
                 value={(provider.comfyuiConfig?.instances || [provider.baseUrl || '']).filter(Boolean).join('\n')}
-                onChange={(e) => updateAdvancedProviderNested(provider.id, 'comfyuiConfig', {
-                  instances: parseAdvancedProviderModelText(e.target.value),
+                onValueChange={(value) => updateAdvancedProviderNested(provider.id, 'comfyuiConfig', {
+                  instances: parseAdvancedProviderModelText(value),
                 })}
+                editorKind="lines"
+                mono
                 className={textareaCls}
                 placeholder={guide?.baseUrlPlaceholder || 'http://127.0.0.1:8188'}
               />
@@ -909,25 +1516,206 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               </label>
             </div>
             <label className="space-y-1 block">
-              <span className={`text-[11px] ${labelCls}`}>工作流 JSON（从 ComfyUI 导出的 API 格式）</span>
-              <textarea
-                value={comfyDraft.workflowJson ?? (comfyWorkflow.workflowJson ? JSON.stringify(comfyWorkflow.workflowJson, null, 2) : '')}
-                onChange={(e) => updateComfyWorkflowJson(e.target.value)}
+              <div className="flex items-center justify-between gap-2">
+                <span className={`text-[11px] ${labelCls}`}>工作流 JSON（从 ComfyUI 导出的 API 格式）</span>
+                <label
+                  className={
+                    isPixel
+                      ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0 cursor-pointer inline-flex items-center gap-1'
+                      : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0 cursor-pointer inline-flex items-center gap-1'
+                  }
+                  title="上传 ComfyUI API Workflow JSON 并自动映射"
+                >
+                  <FileUp size={12} /> 上传 JSON
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleComfyWorkflowFile(file);
+                      e.currentTarget.value = '';
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={applyComfySampleWorkflow}
+                  className={
+                    isPixel
+                      ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0'
+                      : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0 inline-flex items-center gap-1'
+                  }
+                  title="填入一个可学习的基础文生图 API Workflow 样例"
+                >
+                  <Plus size={12} /> 载入样例
+                </button>
+              </div>
+              <PromptTextarea
+                title="ComfyUI Workflow JSON"
+                value={comfyWorkflowRaw}
+                onValueChange={updateComfyWorkflowJson}
+                editorKind="json"
+                mono
                 className={`${textareaCls} min-h-[140px]`}
                 placeholder='粘贴 ComfyUI API workflow JSON，例如 {"1":{"class_type":"CLIPTextEncode","inputs":{"text":""}}}'
               />
               <p className={`text-[11px] ${hintCls}`}>不是普通前端 workflow 文件，需要在 ComfyUI 开启 dev mode 后导出的 API workflow。</p>
             </label>
             <label className="space-y-1 block">
-              <span className={`text-[11px] ${labelCls}`}>参数映射 JSON（可选，高级用户）</span>
-              <textarea
-                value={comfyDraft.fields ?? JSON.stringify(comfyWorkflow.fields || [], null, 2)}
-                onChange={(e) => updateComfyFields(e.target.value)}
+              <span className={`text-[11px] ${labelCls}`}>自动映射排除规则（可选）</span>
+              <PromptTextarea
+                title="ComfyUI 自动映射排除规则"
+                value={comfyExcludeRulesRaw}
+                onValueChange={updateComfyExcludeRules}
+                editorKind="lines"
+                mono
+                className={`${textareaCls} min-h-[72px]`}
+                placeholder={'每行一个：seed、steps、class:KSampler、CLIPTextEncode.text、#86.batch_size'}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => appendComfyExcludeRules(['seed', 'steps', 'cfg', 'sampler_name', 'scheduler', 'denoise'])}
+                  className={isPixel ? 'px-btn text-[11px] px-2 py-1' : 'rounded border px-2 py-1 text-[11px]'}
+                >
+                  排除采样器参数
+                </button>
+                <button
+                  type="button"
+                  onClick={() => appendComfyExcludeRules(['model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name'])}
+                  className={isPixel ? 'px-btn text-[11px] px-2 py-1' : 'rounded border px-2 py-1 text-[11px]'}
+                >
+                  排除模型加载
+                </button>
+                <button
+                  type="button"
+                  onClick={() => appendComfyExcludeRules(['width', 'height', 'batch_size'])}
+                  className={isPixel ? 'px-btn text-[11px] px-2 py-1' : 'rounded border px-2 py-1 text-[11px]'}
+                >
+                  排除尺寸批量
+                </button>
+                <span className={`text-[10px] ${hintCls}`}>
+                  当前 {comfyExcludeRules.length} 条规则，已排除 {comfyExcludedFieldCount} 个自动识别字段。
+                </span>
+              </div>
+              <p className={`text-[11px] ${hintCls}`}>
+                支持 source/字段名/节点类名/节点编号，例如 source:cfg、field:width、class:KSampler、node:86、#86.width。
+              </p>
+            </label>
+            <div className={guideBoxCls}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className={`text-xs font-black ${labelCls}`}>自动识别结果</div>
+                  <p className={`mt-1 ${hintCls}`}>
+                    已识别 {comfyAnalysis.fields.length} 个可映射字段，排除后保留 {comfyFilteredAnalysisFields.length} 个，图片输入 {comfyAnalysis.imageInputCount} 个，输出节点 {comfyAnalysis.outputCount} 个。
+                  </p>
+                  {comfyAnalysis.warnings.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {comfyAnalysis.warnings.slice(0, 3).map((warning, index) => (
+                        <p key={`${provider.id}-comfy-warning-${index}`} className="text-[10px] text-amber-400">{warning}</p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 grid grid-cols-1 gap-1">
+                    {comfyImportChecklist.map((item) => (
+                      <div
+                        key={`${provider.id}-comfy-check-${item.id}`}
+                        className="rounded border px-2 py-1 text-[10px]"
+                        style={{
+                          borderColor: item.level === 'ok' ? 'rgba(34,197,94,0.38)' : item.level === 'warn' ? 'rgba(245,158,11,0.42)' : 'var(--t8-border)',
+                          color: item.level === 'ok' ? '#22c55e' : item.level === 'warn' ? '#f59e0b' : undefined,
+                        }}
+                      >
+                        <b>{item.label}</b> · {item.detail}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={applyComfyAutoMapping}
+                  className={
+                    isPixel
+                      ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0'
+                      : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0'
+                  }
+                >
+                  自动映射
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className={`text-xs font-black ${labelCls}`}>参数映射</div>
+              {comfyMappedFields.length > 0 ? (
+                <div className="space-y-1.5">
+                  {comfyMappedFields.map((field, index) => {
+                    const detected = comfyAnalysis.fields.find((item) => item.nodeId === field.nodeId && item.fieldName === field.fieldName);
+                    const isFixed = String(field.source || '') === 'fixed';
+                    return (
+                      <div
+                        key={`${field.nodeId}-${field.fieldName}-${index}`}
+                        className={isPixel ? 't8-api-settings-section border p-2 space-y-2' : 't8-api-settings-section rounded border p-2 space-y-2'}
+                      >
+                        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_180px_32px] gap-2 items-end">
+                          <div className="min-w-0">
+                            <div className={`text-[11px] font-bold truncate ${labelCls}`} title={detected?.label || `${field.nodeId}.${field.fieldName}`}>
+                              {detected?.label || `节点 #${field.nodeId} · ${field.fieldName}`}
+                            </div>
+                            <div className={`text-[10px] truncate ${hintCls}`}>
+                              {detected?.classType || 'Custom'} / {field.nodeId}.{field.fieldName}
+                            </div>
+                          </div>
+                          <label className="space-y-1">
+                            <span className={`text-[10px] ${hintCls}`}>来源</span>
+                            <select
+                              value={(field.source || field.fieldName || 'fixed') as string}
+                              onChange={(e) => updateComfyField(index, { source: e.target.value })}
+                              className={fieldInputCls}
+                            >
+                              {COMFY_FIELD_SOURCE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeComfyField(index)}
+                            className={isPixel ? 'px-btn text-[11px] px-2 py-1' : 'rounded border px-2 py-1 text-[11px]'}
+                            title="移除此映射"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                        {isFixed && (
+                          <input
+                            value={String(field.value ?? '')}
+                            onChange={(e) => updateComfyField(index, { value: e.target.value })}
+                            className={fieldInputCls}
+                            placeholder="固定写入这个 ComfyUI 字段的值"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className={`text-[11px] ${hintCls}`}>粘贴 API Workflow 后会自动生成映射；也可以在下面高级 JSON 中手动填写。</p>
+              )}
+            </div>
+            <details className="space-y-2">
+              <summary className={`cursor-pointer text-[11px] font-bold ${labelCls}`}>高级：直接编辑 fields JSON</summary>
+              <PromptTextarea
+                title="ComfyUI fields JSON"
+                value={comfyDraft.fields ?? JSON.stringify(comfyMappedFields, null, 2)}
+                onValueChange={updateComfyFields}
+                editorKind="json"
+                mono
                 className={textareaCls}
                 placeholder='[{"nodeId":"1","fieldName":"text","source":"prompt"}]'
               />
-              <p className={`text-[11px] ${hintCls}`}>用于把节点 prompt、参考图等写入指定 ComfyUI 节点字段；不填时后端会尝试按常见字段自动写入。</p>
-            </label>
+              <p className={`text-[11px] ${hintCls}`}>用于兼容复杂工作流。普通用户建议使用上方映射表。</p>
+            </details>
           </AdvancedProviderFormBlock>
         )}
 
@@ -998,27 +1786,36 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
               <label className="space-y-1 min-w-0">
                 <span className={`text-[11px] ${labelCls}`}>图像模型（一行一个）</span>
-                <textarea
+                <PromptTextarea
+                  title={`${provider.label || protocolLabel} 图像模型`}
                   value={stringifyAdvancedProviderModels(provider.imageModels)}
-                  onChange={(e) => updateAdvancedProvider(provider.id, { imageModels: parseAdvancedProviderModelText(e.target.value) })}
+                  onValueChange={(value) => updateAdvancedProvider(provider.id, { imageModels: parseAdvancedProviderModelText(value) })}
+                  editorKind="lines"
+                  mono
                   className={textareaCls}
                   placeholder="例如 gpt-image-1"
                 />
               </label>
               <label className="space-y-1 min-w-0">
                 <span className={`text-[11px] ${labelCls}`}>视频模型（一行一个）</span>
-                <textarea
+                <PromptTextarea
+                  title={`${provider.label || protocolLabel} 视频模型`}
                   value={stringifyAdvancedProviderModels(provider.videoModels)}
-                  onChange={(e) => updateAdvancedProvider(provider.id, { videoModels: parseAdvancedProviderModelText(e.target.value) })}
+                  onValueChange={(value) => updateAdvancedProvider(provider.id, { videoModels: parseAdvancedProviderModelText(value) })}
+                  editorKind="lines"
+                  mono
                   className={textareaCls}
                   placeholder={isJimeng ? '例如 seedance2.0fast_vip' : '例如 video-model-name'}
                 />
               </label>
               <label className="space-y-1 min-w-0">
                 <span className={`text-[11px] ${labelCls}`}>聊天模型（一行一个）</span>
-                <textarea
+                <PromptTextarea
+                  title={`${provider.label || protocolLabel} 聊天模型`}
                   value={stringifyAdvancedProviderModels(provider.chatModels)}
-                  onChange={(e) => updateAdvancedProvider(provider.id, { chatModels: parseAdvancedProviderModelText(e.target.value) })}
+                  onValueChange={(value) => updateAdvancedProvider(provider.id, { chatModels: parseAdvancedProviderModelText(value) })}
+                  editorKind="lines"
+                  mono
                   className={textareaCls}
                   placeholder={isJimeng ? '即梦 CLI 通常不用填写' : '例如 gpt-4o-mini'}
                 />
@@ -1033,7 +1830,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             labelClassName={labelCls}
             hintClassName={hintCls}
             title="4. ModelScope LoRA（可选）"
-            note={`为 ModelScope 图像模型绑定 LoRA。图像节点会按当前外部模型自动筛选；当前启用 ${enabledModelscopeLoraCount}/${modelscopeLoras.length}。`}
+            note={`为 ModelScope 图像模型绑定 LoRA。图像节点会按当前外部模型自动筛选；多个 LoRA 的官方权重总和必须为 1.00，节点内会显示总权重并限制超额；当前启用 ${enabledModelscopeLoraCount}/${modelscopeLoras.length}。`}
           >
             <div className="flex flex-wrap gap-2">
               <button
@@ -1102,12 +1899,12 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                           </select>
                         </label>
                         <label className="space-y-1 min-w-0">
-                          <span className={`text-[11px] ${labelCls}`}>强度</span>
+                          <span className={`text-[11px] ${labelCls}`} title="作为图像节点选中该 LoRA 时的默认权重；节点内会按官方总和 1.00 限制多 LoRA 权重。">默认权重</span>
                           <input
                             type="number"
                             min={0}
-                            max={2}
-                            step={0.05}
+                            max={1}
+                            step={0.01}
                             value={strength}
                             onChange={(e) => updateModelscopeLora(index, { strength: e.target.value })}
                             className={fieldInputCls}
@@ -1231,8 +2028,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       <div
         className={
           isPixel
-            ? `t8-api-settings-modal w-full ${advancedOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 px-card overflow-hidden flex flex-col max-h-[90vh]`
-            : `t8-api-settings-modal w-full ${advancedOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border`
+            ? `t8-api-settings-modal w-full ${advancedOpen || cloudUploadOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 px-card overflow-hidden flex flex-col max-h-[90vh]`
+            : `t8-api-settings-modal w-full ${advancedOpen || cloudUploadOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border`
         }
       >
         {/* 头部 */}
@@ -1399,6 +2196,88 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                     </div>
                     <div className="min-w-0">
                       {activeAdvancedProvider && renderAdvancedProviderForm(activeAdvancedProvider)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 云端上传目标：素材右键上传到 OSS/COS/网盘 */}
+          <div className="t8-api-settings-divider pt-3 border-t">
+            <button
+              type="button"
+              onClick={() => setCloudUploadOpen((v) => !v)}
+              aria-expanded={cloudUploadOpen}
+              data-open={cloudUploadOpen}
+              className={
+                isPixel
+                  ? 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 px-btn'
+                  : 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition'
+              }
+            >
+              <CloudUpload size={14} className="t8-api-settings-icon" />
+              <span className="text-xs font-bold shrink-0">云端上传目标【可选】</span>
+              <span className={`hidden sm:inline text-[11px] ${hintCls}`}>素材右键上传到对象存储或网盘，不影响主流程</span>
+              <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
+                <span
+                  className="t8-api-settings-badge px-1.5 py-0.5 text-[10px] rounded border"
+                  data-tone={cloudSummary.enabledCount > 0 ? 'success' : 'muted'}
+                >
+                  已启用 {cloudSummary.enabledCount}/{cloudSummary.totalCount || 4}
+                </span>
+                <span className={`text-[10px] ${hintCls}`}>已配置 {cloudSummary.configuredCount}</span>
+              </span>
+              <span className={`flex items-center gap-1 text-[11px] ${hintCls}`}>
+                {cloudUploadOpen ? '收起' : '展开'}
+                {cloudUploadOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </span>
+            </button>
+            {!cloudUploadOpen && (
+              <div className={`text-[11px] mt-2 ${hintCls}`}>
+                未启用时右键菜单不会出现云端上传目标；已启用后可把图像 / 视频 / 音频复制到外部存储。
+              </div>
+            )}
+            {cloudUploadOpen && (
+              <div className="mt-3 space-y-3">
+                <div className={`text-[11px] leading-relaxed ${hintCls}`}>
+                  这里用于外部归档与分享。第一版腾讯云 COS 和阿里云 OSS 支持真实上传；百度网盘和夸克网盘先保留配置位，等稳定授权或 CLI 方案接入后会复用同一个入口。
+                  {cloudSummary.defaultLabel ? ` 当前默认目标：${cloudSummary.defaultLabel}。` : ''}
+                </div>
+                {cloudUploadTargetsInput.length === 0 ? (
+                  <div className={`text-xs ${hintCls}`}>后端尚未返回云端上传目标，请先保存或刷新设置。</div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)] gap-3 items-start">
+                    <div className={`space-y-2 min-w-0 ${isPixel ? '' : 'lg:sticky lg:top-0'}`}>
+                      {cloudUploadTargetsInput.map((target) => (
+                        <button
+                          key={target.id}
+                          type="button"
+                          onClick={() => setActiveCloudTargetId(target.id)}
+                          data-active={activeCloudTarget?.id === target.id}
+                          data-enabled={!!target.enabled}
+                          className={
+                            isPixel
+                              ? 't8-api-settings-provider-card w-full !block text-left px-2 py-2 px-btn'
+                              : 't8-api-settings-provider-card w-full block text-left px-2 py-2 rounded-md border text-xs transition'
+                          }
+                        >
+                          <div className="flex items-center gap-2 min-w-0 w-full">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${target.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
+                            <span className="font-bold min-w-0 truncate">{target.label || CLOUD_UPLOAD_LABELS[target.provider] || target.id}</span>
+                            <span className={`ml-auto text-[10px] shrink-0 ${target.enabled ? 'text-emerald-500' : hintCls}`}>
+                              {target.enabled ? '已启用' : '未启用'}
+                            </span>
+                          </div>
+                          <div className={`mt-1 text-[10px] leading-snug ${hintCls}`}>
+                            {CLOUD_UPLOAD_LABELS[target.provider] || target.provider}
+                            {target.isDefault ? ' · 默认' : ''}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="min-w-0">
+                      {activeCloudTarget && renderCloudTargetForm(activeCloudTarget)}
                     </div>
                   </div>
                 )}

@@ -26,6 +26,7 @@ import * as LucideIcons from 'lucide-react';
 import { useCanvasStore } from '../stores/canvas';
 import { useThemeStore } from '../stores/theme';
 import { useShortcutStore } from '../stores/shortcuts';
+import { trackAchievementEvent } from '../stores/achievements';
 import { getTemplateMode, resolveThemeTemplate } from '../theme/defaultTemplates';
 import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
@@ -39,7 +40,15 @@ import {
   rectOf,
   type Rect as PlacementRect,
 } from '../utils/nodePlacement';
-import { createOutputDataFromItems, createUploadDataFromItems, fileNameFromUrl, getMediaItemsFromData, type MediaItem, type MediaKind } from '../utils/mediaCollection';
+import {
+  createOutputDataFromItems,
+  createUploadDataFromItems,
+  createUploadReplacementData,
+  fileNameFromUrl,
+  getMediaItemsFromData,
+  type MediaItem,
+  type MediaKind,
+} from '../utils/mediaCollection';
 import { markCanvasNodesDeleted } from '../utils/deletedNodeRegistry';
 import {
   bucketSendableMaterials,
@@ -69,6 +78,7 @@ import {
 } from '../utils/nodeSerialIds';
 import { resolveConnectionByNodeSerialId } from '../utils/connectByNodeSerialId';
 import { formatShortcutList, matchesAnyShortcut } from '../utils/keyboardShortcuts';
+import { applyNodeAlignment, type NodeAlignAction } from '../utils/nodeAlign';
 import {
   collectMaterialSetBucketsFromData,
   isMaterialSetKind,
@@ -90,45 +100,6 @@ import SendMaterialsModal from './SendMaterialsModal';
 import { useCanvasHistory } from '../hooks/useCanvasHistory';
 import type { CanvasTemplate } from '../config/canvasTemplates';
 import PlaceholderNode from './nodes/PlaceholderNode';
-import TextNode from './nodes/TextNode';
-import ImageNode from './nodes/ImageNode';
-import LLMNode from './nodes/LLMNode';
-import VideoNode from './nodes/VideoNode';
-import SeedanceNode from './nodes/SeedanceNode';
-import AudioNode from './nodes/AudioNode';
-import RunningHubNode from './nodes/RunningHubNode';
-import RhConfigNode from './nodes/RhConfigNode';
-import RHToolsNode from './nodes/RHToolsNode';
-import RHToolboxNode from './nodes/RHToolboxNode';
-import ResizeNode from './nodes/ResizeNode';
-import UpscaleNode from './nodes/UpscaleNode';
-import GridCropNode from './nodes/GridCropNode';
-import GridEditorNode from './nodes/GridEditorNode';
-import CombineNode from './nodes/CombineNode';
-import RemoveBgNode from './nodes/RemoveBgNode';
-import ImageCompareNode from './nodes/ImageCompareNode';
-import ToolboxParamNode from './nodes/ToolboxParamNode';
-import PortraitMasterNode from './nodes/PortraitMasterNode';
-import PoseMasterNode from './nodes/PoseMasterNode';
-import IdeaNode from './nodes/IdeaNode';
-import BpNode from './nodes/BpNode';
-import RelayNode from './nodes/RelayNode';
-import RemoveAiWatermarkNode from './nodes/RemoveAiWatermarkNode';
-import VideoOutputNode from './nodes/VideoOutputNode';
-import PortraitMetadataNode from './nodes/PortraitMetadataNode';
-import StoryboardGridNode from './nodes/StoryboardGridNode';
-import PresetImageNode from './nodes/PresetImageNode';
-import DrawingBoardNode from './nodes/DrawingBoardNode';
-import BrowserNode from './nodes/BrowserNode';
-import FrameExtractorNode from './nodes/FrameExtractorNode';
-import FramePairNode from './nodes/FramePairNode';
-import LoopNode from './nodes/LoopNode';
-import PickFromSetNode from './nodes/PickFromSetNode';
-import TextSplitNode from './nodes/TextSplitNode';
-import MaterialSetNode from './nodes/MaterialSetNode';
-import UploadNode from './nodes/UploadNode';
-import OutputNode from './nodes/OutputNode';
-import GroupBoxNode from './nodes/GroupBoxNode';
 import DeletableEdge from './edges/DeletableEdge';
 import { NODE_REGISTRY } from '../config/nodeRegistry';
 import type { NodeType, NodeMeta } from '../types/canvas';
@@ -143,15 +114,65 @@ import {
   type PortType,
 } from '../config/portTypes';
 
-const RHToolboxMakerNode = import.meta.env?.DEV
-  ? lazy(() => import('./nodes/RHToolboxMakerNode'))
-  : PlaceholderNode;
+function lazyCanvasNode(load: () => Promise<any>, displayName: string): ComponentType<any> {
+  const LazyNode = lazy(load);
+  const WrappedNode = (props: any) => (
+    <Suspense fallback={<PlaceholderNode {...props} />}>
+      <LazyNode {...props} />
+    </Suspense>
+  );
+  WrappedNode.displayName = `LazyCanvasNode(${displayName})`;
+  return WrappedNode;
+}
 
-const RHToolboxMakerDevNode = (props: any) => import.meta.env?.DEV ? (
-  <Suspense fallback={<PlaceholderNode {...props} />}>
-    <RHToolboxMakerNode {...props} />
-  </Suspense>
-) : <PlaceholderNode {...props} />;
+const TextNode = lazyCanvasNode(() => import('./nodes/TextNode'), 'TextNode');
+const ImageNode = lazyCanvasNode(() => import('./nodes/ImageNode'), 'ImageNode');
+const LLMNode = lazyCanvasNode(() => import('./nodes/LLMNode'), 'LLMNode');
+const VideoNode = lazyCanvasNode(() => import('./nodes/VideoNode'), 'VideoNode');
+const SeedanceNode = lazyCanvasNode(() => import('./nodes/SeedanceNode'), 'SeedanceNode');
+const AudioNode = lazyCanvasNode(() => import('./nodes/AudioNode'), 'AudioNode');
+const RunningHubNode = lazyCanvasNode(() => import('./nodes/RunningHubNode'), 'RunningHubNode');
+const RhConfigNode = lazyCanvasNode(() => import('./nodes/RhConfigNode'), 'RhConfigNode');
+const RHToolsNode = lazyCanvasNode(() => import('./nodes/RHToolsNode'), 'RHToolsNode');
+const RHToolboxNode = lazyCanvasNode(() => import('./nodes/RHToolboxNode'), 'RHToolboxNode');
+const ComfyUIStoreNode = lazyCanvasNode(() => import('./nodes/ComfyUIStoreNode'), 'ComfyUIStoreNode');
+const ComfyUIAppMakerNode = lazyCanvasNode(() => import('./nodes/ComfyUIAppMakerNode'), 'ComfyUIAppMakerNode');
+const ResizeNode = lazyCanvasNode(() => import('./nodes/ResizeNode'), 'ResizeNode');
+const UpscaleNode = lazyCanvasNode(() => import('./nodes/UpscaleNode'), 'UpscaleNode');
+const GridCropNode = lazyCanvasNode(() => import('./nodes/GridCropNode'), 'GridCropNode');
+const GridEditorNode = lazyCanvasNode(() => import('./nodes/GridEditorNode'), 'GridEditorNode');
+const CombineNode = lazyCanvasNode(() => import('./nodes/CombineNode'), 'CombineNode');
+const RemoveBgNode = lazyCanvasNode(() => import('./nodes/RemoveBgNode'), 'RemoveBgNode');
+const ImageCompareNode = lazyCanvasNode(() => import('./nodes/ImageCompareNode'), 'ImageCompareNode');
+const ToolboxParamNode = lazyCanvasNode(() => import('./nodes/ToolboxParamNode'), 'ToolboxParamNode');
+const PortraitMasterNode = lazyCanvasNode(() => import('./nodes/PortraitMasterNode'), 'PortraitMasterNode');
+const PoseMasterNode = lazyCanvasNode(() => import('./nodes/PoseMasterNode'), 'PoseMasterNode');
+const Panorama3DNode = lazyCanvasNode(() => import('./nodes/Panorama3DNode'), 'Panorama3DNode');
+const AggregateParserNode = lazyCanvasNode(() => import('./nodes/AggregateParserNode'), 'AggregateParserNode');
+const TopazImageUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazImageUpscaleNode'), 'TopazImageUpscaleNode');
+const TopazVideoUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazVideoUpscaleNode'), 'TopazVideoUpscaleNode');
+const IdeaNode = lazyCanvasNode(() => import('./nodes/IdeaNode'), 'IdeaNode');
+const BpNode = lazyCanvasNode(() => import('./nodes/BpNode'), 'BpNode');
+const RelayNode = lazyCanvasNode(() => import('./nodes/RelayNode'), 'RelayNode');
+const RemoveAiWatermarkNode = lazyCanvasNode(() => import('./nodes/RemoveAiWatermarkNode'), 'RemoveAiWatermarkNode');
+const VideoOutputNode = lazyCanvasNode(() => import('./nodes/VideoOutputNode'), 'VideoOutputNode');
+const PortraitMetadataNode = lazyCanvasNode(() => import('./nodes/PortraitMetadataNode'), 'PortraitMetadataNode');
+const StoryboardGridNode = lazyCanvasNode(() => import('./nodes/StoryboardGridNode'), 'StoryboardGridNode');
+const PresetImageNode = lazyCanvasNode(() => import('./nodes/PresetImageNode'), 'PresetImageNode');
+const DrawingBoardNode = lazyCanvasNode(() => import('./nodes/DrawingBoardNode'), 'DrawingBoardNode');
+const BrowserNode = lazyCanvasNode(() => import('./nodes/BrowserNode'), 'BrowserNode');
+const FrameExtractorNode = lazyCanvasNode(() => import('./nodes/FrameExtractorNode'), 'FrameExtractorNode');
+const FramePairNode = lazyCanvasNode(() => import('./nodes/FramePairNode'), 'FramePairNode');
+const LoopNode = lazyCanvasNode(() => import('./nodes/LoopNode'), 'LoopNode');
+const PickFromSetNode = lazyCanvasNode(() => import('./nodes/PickFromSetNode'), 'PickFromSetNode');
+const TextSplitNode = lazyCanvasNode(() => import('./nodes/TextSplitNode'), 'TextSplitNode');
+const MaterialSetNode = lazyCanvasNode(() => import('./nodes/MaterialSetNode'), 'MaterialSetNode');
+const UploadNode = lazyCanvasNode(() => import('./nodes/UploadNode'), 'UploadNode');
+const OutputNode = lazyCanvasNode(() => import('./nodes/OutputNode'), 'OutputNode');
+const GroupBoxNode = lazyCanvasNode(() => import('./nodes/GroupBoxNode'), 'GroupBoxNode');
+const RHToolboxMakerNode = import.meta.env?.DEV
+  ? lazyCanvasNode(() => import('./nodes/RHToolboxMakerNode'), 'RHToolboxMakerNode')
+  : PlaceholderNode;
 
 // Phase 4 阶段:全部 24 个节点均已实现业务逻辑
 const SPECIFIC_NODES: Record<string, any> = {
@@ -169,7 +190,9 @@ const SPECIFIC_NODES: Record<string, any> = {
   // RH 工具节点：内置启动器 + 应用运行面板（v1.2.10+）
   'rh-tools': RHToolsNode,
   'rh-toolbox': RHToolboxNode,
-  ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerDevNode } : {}),
+  ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerNode } : {}),
+  'comfyui-store': ComfyUIStoreNode,
+  'comfyui-app-maker': ComfyUIAppMakerNode,
   // Special (5)
   'multi-angle-3d': PresetImageNode,
   'panorama-720': PresetImageNode,
@@ -205,6 +228,10 @@ const SPECIFIC_NODES: Record<string, any> = {
   'multi-angle-visual': ToolboxParamNode,
   'portrait-master': PortraitMasterNode,
   'pose-master': PoseMasterNode,
+  'aggregate-parser': AggregateParserNode,
+  'topaz-image-upscale': TopazImageUpscaleNode,
+  'topaz-video-upscale': TopazVideoUpscaleNode,
+  'panorama-3d': Panorama3DNode,
   // Input (1) - 上传素材
   upload: UploadNode,
   // Output (1) - 输出素材(文本/图像/视频/音频 预览 + 文本双击编辑)
@@ -362,6 +389,63 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     poseCustomText: '',
     prompt: '',
   },
+  'aggregate-parser': {
+    aggregateParserInput: '',
+    aggregateParserMode: 'download',
+    aggregateParserModeUserSet: false,
+    aggregateParserProxy: '',
+    aggregateParserCookie: '',
+    aggregateParserAcceptedCompliance: false,
+    aggregateParserPreferUpstream: true,
+    aggregateParserResult: null,
+    aggregateParserMedia: [],
+    prompt: '',
+    outputText: '',
+    textSegments: [],
+    imageUrl: '',
+    imageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    audioUrl: '',
+    audioUrls: [],
+    status: 'idle',
+  },
+  'topaz-image-upscale': {
+    topazGigapixelPath: '',
+    topazGigapixelModel: 'std',
+    topazGigapixelScale: 2,
+    topazGigapixelEnableSettings: true,
+    topazGigapixelDenoise: 1,
+    topazGigapixelSharpen: 1,
+    topazGigapixelCompression: 67,
+    topazGigapixelFineDetail: 50,
+    topazGigapixelPreDownscaling: 75,
+    topazGigapixelShowAdvanced: false,
+    imageUrl: '',
+    imageUrls: [],
+    urls: [],
+    status: 'idle',
+    error: '',
+  },
+  'topaz-video-upscale': {
+    topazVideoPath: '',
+    topazVideoEnableUpscale: true,
+    topazVideoUpscaleModel: 'iris-3',
+    topazVideoUpscaleFactor: 2,
+    topazVideoCompression: 1,
+    topazVideoBlend: 0,
+    topazVideoEnableInterpolation: false,
+    topazVideoInputFps: 24,
+    topazVideoInterpolationMultiplier: 2,
+    topazVideoInterpolationModel: 'apo-8',
+    topazVideoUseGpu: true,
+    topazVideoPreserveAudio: true,
+    topazVideoShowAdvanced: false,
+    videoUrl: '',
+    videoUrls: [],
+    status: 'idle',
+    error: '',
+  },
   'text-split': {
     sourceText: '',
     splitMode: 'line',
@@ -450,6 +534,32 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     outputText: '',
     error: '',
   },
+  'comfyui-store': {
+    comfyuiStoreProviderId: '',
+    comfyuiStoreCategoryId: 'all',
+    comfyuiStoreActiveAppId: '',
+    comfyuiStoreSearchQuery: '',
+    comfyuiStoreParamValues: {},
+    materialOrder: [],
+    excludedMaterialIds: [],
+    status: 'idle',
+    taskId: '',
+    imageUrl: '',
+    imageUrls: [],
+    videoUrls: [],
+    audioUrls: [],
+    outputText: '',
+    error: '',
+  },
+  'comfyui-app-maker': {
+    comfyMakerTitle: 'Anima 文生图',
+    comfyMakerAppId: 'anima-text-to-image-v1',
+    comfyMakerCategoryId: 'image',
+    comfyMakerDescription: '从 ComfyUI API Workflow 自动生成的本地应用',
+    comfyMakerWorkflowRaw: '',
+    text: '',
+    outputText: '',
+  },
   ...(import.meta.env?.DEV ? {
     'rh-toolbox-maker': {
       rhToolboxMakerTitle: '智能抠图',
@@ -495,6 +605,28 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   // 从合集获取: 默认 image + 第 1 个
   'pick-from-set': { pickKind: 'image', pickIndex: 1 },
   'image-compare': { mode: 'slider', align: 'contain', split: 50, opacity: 50, threshold: 24 },
+  'panorama-3d': {
+    panoramaRatio: 'ultrawide',
+    panoramaCustomW: 21,
+    panoramaCustomH: 9,
+    panoramaYaw: 0,
+    panoramaPitch: 0,
+    panoramaFov: 75,
+    panoramaAutoRotate: false,
+    panoramaPanelMode: 'text',
+    panoramaGenerationMode: 'text',
+    panoramaSizeLevel: '1K',
+    panoramaPrompt: '',
+    panoramaPromptFinal: '',
+    panoramaSourceUrl: '',
+    panoramaGeneratedUrl: '',
+    panoramaReferenceUrl: '',
+    panoramaGeneratedHistory: [],
+    imageUrl: '',
+    imageUrls: [],
+    urls: [],
+    status: 'idle',
+  },
   'drawing-board': { boardRatio: '16:9', boardWidth: 960, boardHeight: 540, boardElements: [], boardColor: '#111827', boardStrokeSize: 5 },
   'grid-crop': { rows: 3, cols: 3, gap: 0 },
   'grid-editor': {
@@ -529,9 +661,14 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
       device: 'auto',
       steps: 50,
       humanize: 0,
+      unsharp: 0,
       maxResolution: 0,
-      protectText: false,
-      protectFaces: false,
+      minResolution: 1024,
+      controlnetScale: 1,
+      auto: false,
+      adaptivePolish: false,
+      restoreFaces: false,
+      restoreFacesWeight: 0.5,
       keepStandardMetadata: true,
       noVisible: false,
     },
@@ -545,19 +682,23 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
-  'rh-tools', 'rh-toolbox',
+  'rh-tools', 'rh-toolbox', 'comfyui-store',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
   // v1.2.8 工具节点 (循环器 / 从合集获取)
   'loop', 'pick-from-set',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
-  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master',
+  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser',
+  'topaz-image-upscale', 'topaz-video-upscale',
   'remove-ai-watermark',
 ]);
 
 // 网格吸附步长 / 对齐阈值(世界坐标)
 const SNAP_GRID: [number, number] = [20, 20];
+const EDGE_MOTION_HEAVY_EDGE_COUNT = 36;
+const EDGE_MOTION_RELEASE_DELAY_MS = 160;
 const ALIGN_THRESHOLD = 6;
 
 interface SendNodeSpec {
@@ -995,6 +1136,19 @@ function hasFileTransfer(dataTransfer: DataTransfer | null | undefined): boolean
   return Array.from(dataTransfer?.types || []).includes('Files');
 }
 
+function findUploadNodeIdFromTarget(target: EventTarget | Element | null | undefined): string {
+  if (typeof Element === 'undefined') return '';
+  if (!(target instanceof Element)) return '';
+  const el = target.closest('[data-upload-node-id]') as HTMLElement | null;
+  return String(el?.dataset?.uploadNodeId || '').trim();
+}
+
+function chooseUploadReplacementKind(existingKind: any, buckets: Record<MediaKind, File[]>, firstKind: MediaKind | null): MediaKind | null {
+  const current = (['image', 'video', 'audio'] as MediaKind[]).includes(existingKind) ? existingKind as MediaKind : null;
+  if (current && buckets[current].length > 0) return current;
+  return firstKind;
+}
+
 function isTextEditingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   const tag = el?.tagName?.toLowerCase();
@@ -1092,6 +1246,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const isEva = visualStyle === 'eva';
   const isYyh = visualStyle === 'yyh';
   const isSlamdunk = visualStyle === 'slamdunk';
+  const isSoccer = visualStyle === 'soccer-hero';
+  const isDragonBall = visualStyle === 'dragon-ball';
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
   const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -1101,8 +1257,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const saveTimersByCanvasRef = useRef<Map<string, number>>(new Map());
   const pendingSaveByCanvasRef = useRef<Map<string, { nodes: Node[]; edges: Edge[]; snapshot: string; nextNodeSerialId: number }>>(new Map());
   const lastSavedByCanvasRef = useRef<Map<string, string>>(new Map());
+  const lastSavedNodeCountByCanvasRef = useRef<Map<string, number>>(new Map());
   const nextNodeSerialIdRef = useRef(1);
   const allowEmptySaveCanvasIdsRef = useRef<Set<string>>(new Set());
+  const edgeMotionReleaseTimerRef = useRef<number | null>(null);
+  const [viewportMoving, setViewportMoving] = useState(false);
+  const [nodeDragging, setNodeDragging] = useState(false);
+  const [dragSaveTick, setDragSaveTick] = useState(0);
+  const lastDone = useRunBusStore((s) => s.lastDone);
+  const lastAchievementDoneTsRef = useRef(0);
 
   // 选中节点 / 剪贴板
   const [selectedCount, setSelectedCount] = useState(0);
@@ -1147,6 +1310,30 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setConnectionPanMode(false);
   }, [setConnectionPanMode]);
 
+  const clearEdgeMotionReleaseTimer = useCallback(() => {
+    if (edgeMotionReleaseTimerRef.current) {
+      window.clearTimeout(edgeMotionReleaseTimerRef.current);
+      edgeMotionReleaseTimerRef.current = null;
+    }
+  }, []);
+
+  const releaseEdgeMotionSoon = useCallback((setter: (value: boolean) => void) => {
+    clearEdgeMotionReleaseTimer();
+    edgeMotionReleaseTimerRef.current = window.setTimeout(() => {
+      setter(false);
+      edgeMotionReleaseTimerRef.current = null;
+    }, EDGE_MOTION_RELEASE_DELAY_MS);
+  }, [clearEdgeMotionReleaseTimer]);
+
+  const handleViewportMoveStart = useCallback(() => {
+    clearEdgeMotionReleaseTimer();
+    setViewportMoving(true);
+  }, [clearEdgeMotionReleaseTimer]);
+
+  const handleViewportMoveEnd = useCallback(() => {
+    releaseEdgeMotionSoon(setViewportMoving);
+  }, [releaseEdgeMotionSoon]);
+
   // ===== SHIFT+拖拽 Handle 批量移线 =====
   // 按住 SHIFT 从节点入口(target handle)拖出，可一次性把所有入边移到另一个节点的入口。
   // 同理也支持从 source handle SHIFT+拖拽移动所有出边。
@@ -1165,6 +1352,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+
+  useEffect(() => {
+    if (!lastDone?.ok || !lastDone.ts || lastAchievementDoneTsRef.current === lastDone.ts) return;
+    lastAchievementDoneTsRef.current = lastDone.ts;
+    const node = nodesRef.current.find((item) => item.id === lastDone.id);
+    const nodeType = String(node?.type || 'unknown');
+    trackAchievementEvent({ type: 'node.run_success', theme: visualStyle, nodeType });
+    if (nodeType === 'panorama-3d') {
+      trackAchievementEvent({ type: 'panorama.generated', theme: visualStyle, nodeType });
+    } else if (nodeType === 'aggregate-parser') {
+      trackAchievementEvent({ type: 'parsehub.resolved', theme: visualStyle, nodeType });
+    }
+  }, [lastDone, visualStyle]);
 
   const assignActiveNodeSerials = useCallback((incomingNodes: Node[], existingNodes?: Node[]) => {
     const result = assignFreshNodeSerials(incomingNodes, existingNodes || nodesRef.current, nextNodeSerialIdRef.current);
@@ -1308,20 +1508,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         const fixedNs = normalized.nodes;
         setNodes(fixedNs);
         setEdges(es);
-        const loadedSnapshot = JSON.stringify({
-          nodes: fixedNsBeforeSerials,
+        const baselineNodes = normalized.changed ? fixedNsBeforeSerials : fixedNs;
+        const baselineNextNodeSerialId = normalized.changed
+          ? savedNextNodeSerialId || 1
+          : normalized.nextNodeSerialId;
+        lastSavedByCanvasRef.current.set(requestedCanvasId, JSON.stringify({
+          nodes: baselineNodes,
           edges: es,
-          nextNodeSerialId: savedNextNodeSerialId || 1,
-        });
-        const normalizedSnapshot = JSON.stringify({
-          nodes: fixedNs,
-          edges: es,
-          nextNodeSerialId: normalized.nextNodeSerialId,
-        });
-        lastSavedByCanvasRef.current.set(
-          requestedCanvasId,
-          normalized.changed || normalizedSnapshot !== loadedSnapshot ? loadedSnapshot : normalizedSnapshot,
-        );
+          nextNodeSerialId: baselineNextNodeSerialId,
+        }));
+        lastSavedNodeCountByCanvasRef.current.set(requestedCanvasId, baselineNodes.length);
         allowEmptySaveCanvasIdsRef.current.delete(requestedCanvasId);
         histReset({ nodes: fixedNs, edges: es });
         setLoadedCanvasId(requestedCanvasId);
@@ -1349,8 +1545,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
       saveTimersByCanvasRef.current.clear();
       pendingSaveByCanvasRef.current.clear();
+      if (edgeMotionReleaseTimerRef.current) {
+        window.clearTimeout(edgeMotionReleaseTimerRef.current);
+        edgeMotionReleaseTimerRef.current = null;
+      }
     };
-  }, []);
+  }, [assignActiveNodeSerials, releaseEdgeMotionSoon]);
 
   useEffect(() => {
     if (!activeId || !loaded || loadedCanvasId !== activeId) return;
@@ -1393,6 +1593,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   // 自动保存(防抖 800ms,防空数据覆盖)
   useEffect(() => {
     if (!activeId || !loaded || loadedCanvasId !== activeId) return;
+    if (isDraggingRef.current) return;
     // 过滤 SHIFT 批量移线拖拽过程中的 phantom 节点与重定向边(不作为持久化快照)
     const persistNodes = nodes.filter((n) => n.id !== BULK_PHANTOM_ID);
     const persistEdges = edges.filter(
@@ -1403,12 +1604,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const canvasIdForSave = activeId;
     const previousSnapshot = lastSavedByCanvasRef.current.get(canvasIdForSave) || '';
     if (snapshot === previousSnapshot) return;
-    let previousNodeCount = 0;
-    try {
-      previousNodeCount = JSON.parse(previousSnapshot || '{}')?.nodes?.length || 0;
-    } catch {
-      previousNodeCount = 0;
-    }
+    const previousNodeCount = lastSavedNodeCountByCanvasRef.current.get(canvasIdForSave) || 0;
     const allowEmptySave = allowEmptySaveCanvasIdsRef.current.has(canvasIdForSave);
     if (persistNodes.length === 0 && previousNodeCount > 0 && !allowEmptySave) {
       // 防止空数据覆盖
@@ -1431,6 +1627,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         });
         if (allowEmptySave) allowEmptySaveCanvasIdsRef.current.delete(canvasIdForSave);
         lastSavedByCanvasRef.current.set(canvasIdForSave, snapshot);
+        lastSavedNodeCountByCanvasRef.current.set(canvasIdForSave, persistNodes.length);
         if (pendingSaveByCanvasRef.current.get(canvasIdForSave)?.snapshot === snapshot) {
           pendingSaveByCanvasRef.current.delete(canvasIdForSave);
         }
@@ -1450,7 +1647,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
     }, 800);
     saveTimersByCanvasRef.current.set(canvasIdForSave, timer);
-  }, [nodes, edges, activeId, loaded, loadedCanvasId, getViewport]);
+  }, [nodes, edges, activeId, loaded, loadedCanvasId, getViewport, dragSaveTick]);
 
   // 添加节点(供 Sidebar 调用) —— 默认落在当前视口中心
   // 可选 atScreen 传入屏幕坐标，节点会落在该点(用于右键画布空白区添加)
@@ -1494,8 +1691,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         data: { ...(INITIAL_DATA[type] || {}), ...(options?.data || {}) },
       };
       setNodes((prev) => [...prev, ...assignActiveNodeSerials([newNode], prev)]);
+      trackAchievementEvent({ type: 'node.created', theme: visualStyle, nodeType: type });
     },
-    [screenToFlowPosition, nodes, getViewport, setCenter, assignActiveNodeSerials]
+    [screenToFlowPosition, nodes, getViewport, setCenter, assignActiveNodeSerials, visualStyle]
   );
 
   const createUploadNodesFromFiles = useCallback(
@@ -1587,6 +1785,74 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       return true;
     },
     [screenToFlowPosition, assignActiveNodeSerials]
+  );
+
+  const replaceUploadNodeFromFiles = useCallback(
+    async (nodeId: string, rawFiles: File[]) => {
+      const target = nodesRef.current.find((node) => node.id === nodeId && node.type === 'upload');
+      if (!target) return false;
+
+      const seenFiles = new Set<string>();
+      const buckets: Record<MediaKind, File[]> = { image: [], video: [], audio: [] };
+      let firstKind: MediaKind | null = null;
+      let skipped = 0;
+      rawFiles.forEach((file) => {
+        const kind = inferCanvasMediaKind(file);
+        if (!kind) {
+          skipped += 1;
+          return;
+        }
+        const key = canvasMediaFileKey(file);
+        if (seenFiles.has(key)) return;
+        seenFiles.add(key);
+        if (!firstKind) firstKind = kind;
+        buckets[kind].push(file);
+      });
+
+      const kind = chooseUploadReplacementKind((target.data as any)?.uploadType, buckets, firstKind);
+      if (!kind) return false;
+      const accepted = buckets[kind];
+      if (accepted.length === 0) return false;
+      const supportedCount = buckets.image.length + buckets.video.length + buckets.audio.length;
+      const skippedDifferentKind = Math.max(0, supportedCount - accepted.length);
+
+      const items: MediaItem[] = [];
+      const failures: string[] = [];
+      for (let i = 0; i < accepted.length; i += 1) {
+        const file = accepted[i];
+        try {
+          items.push(await uploadCanvasMediaFile(file, kind, i));
+        } catch (err: any) {
+          failures.push(`${file.name || kind}: ${err?.message || '上传失败'}`);
+        }
+      }
+
+      if (items.length === 0) {
+        if (failures.length > 0) alert(`素材覆盖失败:\n${failures.slice(0, 5).join('\n')}`);
+        return true;
+      }
+
+      const replacement = createUploadReplacementData(kind, items);
+      setNodes((prev) =>
+        prev.map((node) => {
+          if (node.id !== nodeId) return { ...node, selected: false };
+          return {
+            ...node,
+            selected: true,
+            data: {
+              ...(node.data || {}),
+              ...replacement,
+            },
+          };
+        })
+      );
+      const notices: string[] = [];
+      if (skippedDifferentKind > 0 || skipped > 0) notices.push(`跳过 ${skippedDifferentKind + skipped} 个非${kind === 'image' ? '图像' : kind === 'video' ? '视频' : '音频'}素材`);
+      if (failures.length > 0) notices.push(...failures.slice(0, 4));
+      if (notices.length > 0) alert(`已覆盖上传素材节点，但有部分素材未使用:\n${notices.join('\n')}`);
+      return true;
+    },
+    []
   );
 
   const getMaterialSetMergeCandidate = useCallback((ids: string[]): { kind: MaterialSetKind; items: MaterialSetItem[] } | null => {
@@ -1997,6 +2263,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         if (!result.success) throw new Error(result.error || '保存工作流失败');
         window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
         const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
+        if (!duplicate) trackAchievementEvent({ type: 'workflow.saved', kind: 'workflow', category: 'workflow' });
         logBus.success(duplicate ? `资源库已有相同工作流：${manifest.title}` : `已保存工作流：${manifest.title}`, '资源库');
         return true;
       } catch (e: any) {
@@ -2033,7 +2300,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           sourceNodeId: items[0].sourceNodeId,
           sourceCanvasId: items[0].sourceCanvasId || activeId || undefined,
         });
-        if (result.success) saved += 1;
+        if (result.success) {
+          saved += 1;
+          const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
+          if (!duplicate) trackAchievementEvent({ type: 'resource.saved', kind, category: 'send-material' });
+        }
         else failures.push(result.error || `${PORT_LABEL[kind]}入库失败`);
         continue;
       }
@@ -2045,7 +2316,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         sourceNodeId: items[0]?.sourceNodeId,
         sourceCanvasId: items[0]?.sourceCanvasId || activeId || undefined,
       });
-      if (result.success) saved += 1;
+      if (result.success) {
+        saved += 1;
+        const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
+        if (!duplicate) trackAchievementEvent({ type: 'resource.saved', kind: `${kind}-set`, category: 'send-material-set' });
+      }
       else failures.push(result.error || `${PORT_LABEL[kind]}素材集入库失败`);
     }
     window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
@@ -2319,8 +2594,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               if (state.lastDone && state.lastDone.id === id) finish();
               if (cancelRunRef.current) finish();
             });
-            // 安全超时 5 分钟(轮询任务可能较长)
-            const timer = window.setTimeout(finish, 5 * 60 * 1000);
+            // 安全超时 60 分钟，避免图像/视频/SD2.0/音频长轮询被批量运行提前截断。
+            const timer = window.setTimeout(finish, 60 * 60 * 1000);
             triggerRun(id, 'batch');
           });
           setBatchProgress(order.length, i + 1);
@@ -2368,6 +2643,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   // 最终效果: 原节点留在原位(保留连线和数据), 新复制节点在拖放位置
   const onNodeDragStart = useCallback(
     (e: React.MouseEvent | MouseEvent, node: Node) => {
+      clearEdgeMotionReleaseTimer();
+      isDraggingRef.current = true;
+      setNodeDragging(true);
       altDragCloneRef.current = null;
       if (!e.altKey) return;
       // ALT 按下: 确定被拖动的节点集合
@@ -2402,7 +2680,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }));
       altDragCloneRef.current = { placeholderIds };
     },
-    [nodes]
+    [clearEdgeMotionReleaseTimer, nodes]
   );
 
   // ===== 节点组(GroupBox) =====
@@ -2500,6 +2778,28 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const handleCancelRun = useCallback(() => {
     cancelRunRef.current = true;
     useRunBusStore.getState().cancelAll();
+  }, []);
+
+  const handleAlignSelection = useCallback((action: NodeAlignAction, ids?: string[]) => {
+    const targetIds = (ids && ids.length > 0)
+      ? ids
+      : nodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    if (targetIds.length === 0) {
+      logBus.warn('请先选择要对齐的节点', '对齐');
+      return;
+    }
+    const result = applyNodeAlignment(nodesRef.current, targetIds, action, {
+      grid: SNAP_GRID,
+      gridGap: 48,
+      alignGap: 32,
+    });
+    if (!result.changed) {
+      logBus.info('选区已经足够整齐，未移动节点', '对齐');
+      return;
+    }
+    setGuides({ vertical: [], horizontal: [] });
+    setNodes(result.nodes);
+    logBus.success(`已整理 ${result.movedIds.length} 个节点`, '对齐');
   }, []);
 
   // ===== 智能对齐辅助线 =====
@@ -2629,6 +2929,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
 
   const onNodeDragStop = useCallback((_e: any, node: Node) => {
+    isDraggingRef.current = false;
+    setDragSaveTick((tick) => tick + 1);
+    releaseEdgeMotionSoon(setNodeDragging);
     setGuides({ vertical: [], horizontal: [] });
 
     // ===== ALT+拖动结束: ID 互换 =====
@@ -4265,6 +4568,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       if (document.querySelector('.img-edit-overlay')) return;
       const files = collectCanvasMediaFiles(e.clipboardData);
       if (files.length === 0) return;
+      const pointerTarget = lastCanvasPointerRef.current
+        ? document.elementFromPoint(lastCanvasPointerRef.current.x, lastCanvasPointerRef.current.y)
+        : null;
+      const uploadTargetNodeId =
+        findUploadNodeIdFromTarget(e.target) ||
+        findUploadNodeIdFromTarget(pointerTarget);
       if (internalPasteTimerRef.current) {
         window.clearTimeout(internalPasteTimerRef.current);
         internalPasteTimerRef.current = null;
@@ -4272,17 +4581,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const signature = files
         .map(canvasMediaFileKey)
         .join('||');
+      const actionSignature = `${uploadTargetNodeId || 'new-upload-node'}::${signature}`;
       const now = Date.now();
       const last = lastExternalMediaPasteRef.current;
       e.preventDefault();
       e.stopPropagation();
-      if (last?.signature === signature && now - last.at < EXTERNAL_MEDIA_PASTE_DEDUPE_MS) return;
-      lastExternalMediaPasteRef.current = { signature, at: now };
+      if (last?.signature === actionSignature && now - last.at < EXTERNAL_MEDIA_PASTE_DEDUPE_MS) return;
+      lastExternalMediaPasteRef.current = { signature: actionSignature, at: now };
+      if (uploadTargetNodeId) {
+        void replaceUploadNodeFromFiles(uploadTargetNodeId, files);
+        return;
+      }
       void createUploadNodesFromFiles(files);
     };
     window.addEventListener('paste', onPaste, true);
     return () => window.removeEventListener('paste', onPaste, true);
-  }, [activeId, createUploadNodesFromFiles]);
+  }, [activeId, createUploadNodesFromFiles, replaceUploadNodeFromFiles]);
 
   const focusNearestNodeToViewport = useCallback(() => {
     if (!loaded || loadedCanvasId !== activeId) return;
@@ -4463,6 +4777,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
+  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall;
+  const heavyEdgeMotion = isDecorativeEdgeVisual && edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
+  const edgeMotionReduced = isDecorativeEdgeVisual && (heavyEdgeMotion || viewportMoving || nodeDragging);
+  const heavyCanvasSurface = nodes.length >= 96 || edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
   const guideColor = themeTokens.edgeSelected;
   const edgeStroke = themeTokens.edge;
   const dotColor = themeTokens.gridDot;
@@ -4488,6 +4806,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     [edgeStroke, isPixel]
   );
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    if (!isDecorativeEdgeVisual) {
+      root.removeAttribute('data-t8-edge-motion');
+      root.removeAttribute('data-t8-edge-load');
+      return;
+    }
+    root.setAttribute('data-t8-edge-motion', edgeMotionReduced ? 'reduced' : 'full');
+    root.setAttribute('data-t8-edge-load', heavyEdgeMotion ? 'heavy' : 'normal');
+    return () => {
+      root.removeAttribute('data-t8-edge-motion');
+      root.removeAttribute('data-t8-edge-load');
+    };
+  }, [edgeMotionReduced, heavyEdgeMotion, isDecorativeEdgeVisual]);
+
   if (!activeId) {
     return (
       <div
@@ -4505,8 +4839,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   return (
     <div
-      className={`t8-canvas-shell flex-1 relative${connectionPanModeActive ? ' connection-pan-mode-active' : ''}`}
+      className={`t8-canvas-shell flex-1 relative${connectionPanModeActive ? ' connection-pan-mode-active' : ''}${edgeMotionReduced ? ' t8-edge-motion-reduced' : ''}${viewportMoving ? ' t8-viewport-moving' : ''}${nodeDragging ? ' t8-node-dragging' : ''}`}
       data-theme-visual={visualStyle}
+      data-edge-motion={edgeMotionReduced ? 'reduced' : isDecorativeEdgeVisual ? 'full' : undefined}
+      data-edge-load={heavyEdgeMotion ? 'heavy' : undefined}
       style={{ background: bgColor }}
       onContextMenuCapture={onCanvasContextMenuCapture}
       onMouseMove={handleCanvasPointerMove}
@@ -4532,6 +4868,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         batchDone={batchDone}
         snapEnabled={snapEnabled}
         onToggleSnap={() => setSnapEnabled((v) => !v)}
+        onAlignSelection={handleAlignSelection}
       />
       <TerminalPanel />
       {connectionPanModeActive && (
@@ -4562,6 +4899,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        onMoveStart={handleViewportMoveStart}
+        onMoveEnd={handleViewportMoveEnd}
         onSelectionContextMenu={onSelectionContextMenu}
         onNodeContextMenu={onNodeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
@@ -4698,8 +5037,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
             setCenter(position.x, position.y, { zoom, duration: 400 });
           }}
           style={{
-            width: isOp ? 144 : isNaruto ? 182 : isEva ? 258 : isYyh ? 224 : isSlamdunk ? 214 : undefined,
-            height: isOp ? 144 : isNaruto ? 122 : isEva ? 172 : isYyh ? 144 : isSlamdunk ? 128 : undefined,
+            width: isOp ? 144 : isNaruto ? 182 : isEva ? 258 : isYyh ? 224 : isSlamdunk ? 214 : isSoccer ? 224 : isDragonBall ? 192 : undefined,
+            height: isOp ? 144 : isNaruto ? 122 : isEva ? 172 : isYyh ? 144 : isSlamdunk ? 128 : isSoccer ? 136 : isDragonBall ? 192 : undefined,
             background: isOp
               ? themeTokens.panelBg
               : isNaruto
@@ -4709,6 +5048,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               : isYyh
                 ? themeTokens.panelBg
               : isSlamdunk
+                ? themeTokens.panelBg
+              : isSoccer
+                ? themeTokens.panelBg
+              : isDragonBall
                 ? themeTokens.panelBg
               : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
             border: isOp
@@ -4721,10 +5064,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                   ? `2px solid ${themeTokens.accent}`
               : isSlamdunk
                   ? `3px solid ${themeTokens.textMain}`
+              : isSoccer
+                  ? `3px solid ${themeTokens.textMain}`
+              : isDragonBall
+                  ? `3px solid ${themeTokens.warning}`
                 : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-            borderRadius: isOp ? 999 : isNaruto ? '18px 18px 12px 12px' : isEva ? 8 : isYyh ? 12 : isSlamdunk ? 10 : 8,
-            right: isOp ? 24 : isNaruto ? 24 : isEva ? 24 : isYyh ? 24 : isSlamdunk ? 24 : undefined,
-            bottom: isOp ? 42 : isNaruto ? 40 : isEva ? 24 : isYyh ? 28 : isSlamdunk ? 32 : undefined,
+            borderRadius: isOp ? 999 : isNaruto ? '18px 18px 12px 12px' : isEva ? 8 : isYyh ? 12 : isSlamdunk ? 10 : isSoccer ? 12 : isDragonBall ? 999 : 8,
+            right: isOp ? 24 : isNaruto ? 24 : isEva ? 24 : isYyh ? 24 : isSlamdunk ? 24 : isSoccer ? 24 : isDragonBall ? 28 : undefined,
+            bottom: isOp ? 42 : isNaruto ? 40 : isEva ? 24 : isYyh ? 28 : isSlamdunk ? 32 : isSoccer ? 32 : isDragonBall ? 34 : undefined,
             boxShadow: isOp
               ? `0 0 0 7px ${themeTokens.warning}, 5px 5px 0 ${themeTokens.textMain}`
               : isNaruto
@@ -4735,12 +5082,17 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                   ? `0 0 0 4px ${themeTokens.panelBgElevated}, 0 0 0 6px ${themeTokens.borderStrong}, 0 18px 46px rgba(0,0,0,.46), inset 0 0 34px ${themeTokens.secondary}22`
               : isSlamdunk
                   ? `0 0 0 5px ${themeTokens.secondary}, 5px 5px 0 ${themeTokens.textMain}, 0 18px 46px rgba(0,0,0,.28)`
+              : isSoccer
+                  ? `0 0 0 5px ${themeTokens.secondary}, 5px 5px 0 ${themeTokens.textMain}, 0 18px 46px rgba(0,0,0,.24)`
+              : isDragonBall
+                  ? `0 0 0 5px ${themeTokens.secondary}, 5px 5px 0 ${themeTokens.textMain}, 0 18px 46px rgba(0,0,0,.28), inset 0 0 34px ${themeTokens.warning}33`
               : undefined,
             cursor: 'pointer',
-            overflow: isOp || isNaruto || isEva || isYyh || isSlamdunk ? 'hidden' : undefined,
+            overflow: isOp || isNaruto || isEva || isYyh || isSlamdunk || isSoccer || isDragonBall ? 'hidden' : undefined,
+            display: (viewportMoving || nodeDragging) && heavyCanvasSurface ? 'none' : undefined,
           }}
-          maskColor={isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isEva ? 'rgba(156,255,0,.18)' : isYyh ? 'rgba(67,247,255,.16)' : isSlamdunk ? 'rgba(240,123,34,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
-          nodeColor={() => (isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isEva ? themeTokens.danger : isYyh ? themeTokens.success : isSlamdunk ? themeTokens.accent : isDark ? '#a1a1aa' : '#52525b')}
+          maskColor={isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isEva ? 'rgba(156,255,0,.18)' : isYyh ? 'rgba(67,247,255,.16)' : isSlamdunk ? 'rgba(240,123,34,.22)' : isSoccer ? 'rgba(18,107,216,.22)' : isDragonBall ? 'rgba(255,176,0,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
+          nodeColor={() => (isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isEva ? themeTokens.danger : isYyh ? themeTokens.success : isSlamdunk ? themeTokens.accent : isSoccer ? themeTokens.accent : isDragonBall ? themeTokens.warning : isDark ? '#a1a1aa' : '#52525b')}
         />
         {/* 选中可执行节点时的浮动操作栏 (执行 / 中止 / 关闭) */}
         <NodeActionBar />
@@ -4907,6 +5259,30 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               ? `${sendableCount}素材`
               : `${sendNodeCount}节点`;
         const menuItemCls = 't8-context-menu__item';
+        const alignMiniBtnCls = 't8-context-menu__item justify-center text-[11px] !px-2 !py-1.5';
+        const alignButton = (
+          action: NodeAlignAction,
+          label: string,
+          Icon: ComponentType<{ size?: number }>,
+          minCount = 2,
+        ) => {
+          const disabled = ids.length < minCount;
+          return (
+            <button
+              key={action}
+              className={alignMiniBtnCls}
+              disabled={disabled}
+              title={disabled ? `至少选择 ${minCount} 个节点` : label}
+              onClick={() => {
+                closeContextMenu();
+                handleAlignSelection(action, ids);
+              }}
+            >
+              <Icon size={12} />
+              <span>{label}</span>
+            </button>
+          );
+        };
         return (
           <>
             {/* 遮罩层 */}
@@ -4935,6 +5311,26 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                 <span className="text-[10px] font-normal opacity-60">
                   可执行 {exeCount}
                 </span>
+              </div>
+              <div className="px-2 py-2">
+                <div className="mb-1 flex items-center gap-1 text-[10px] font-bold opacity-65">
+                  <LucideIcons.LayoutGrid size={11} />
+                  <span>对齐 / 整理</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {alignButton('align-left', '左', LucideIcons.AlignStartVertical)}
+                  {alignButton('align-center-x', '水平中', LucideIcons.AlignCenterVertical)}
+                  {alignButton('align-right', '右', LucideIcons.AlignEndVertical)}
+                  {alignButton('align-top', '上', LucideIcons.AlignStartHorizontal)}
+                  {alignButton('align-center-y', '垂直中', LucideIcons.AlignCenterHorizontal)}
+                  {alignButton('align-bottom', '下', LucideIcons.AlignEndHorizontal)}
+                </div>
+                <div className="mt-1 grid grid-cols-2 gap-1">
+                  {alignButton('distribute-x', '水平等距', LucideIcons.AlignHorizontalSpaceBetween, 3)}
+                  {alignButton('distribute-y', '垂直等距', LucideIcons.AlignVerticalSpaceBetween, 3)}
+                  {alignButton('snap-grid', '吸附网格', LucideIcons.Magnet, 1)}
+                  {alignButton('arrange-grid', '整理网格', LucideIcons.Grid3x3, 2)}
+                </div>
               </div>
               <button
                 className={menuItemCls}

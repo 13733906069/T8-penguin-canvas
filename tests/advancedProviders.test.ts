@@ -248,7 +248,12 @@ test('normalizeAdvancedProviders preserves ComfyUI workflow json and exposed fie
             id: 'workflow-1',
             name: 'Flux',
             workflowJson,
-            fields: [{ nodeId: '1', fieldName: 'text', source: 'prompt' }],
+            fields: [
+              { nodeId: '1', fieldName: 'text', source: 'prompt', value: 'old prompt' },
+              { nodeId: '2', fieldName: 'secret', source: 'fixed', value: 'keep me' },
+              { nodeId: '3', fieldName: 'legacy', value: 'legacy fixed' },
+            ],
+            excludeRules: ['seed', 'class:KSampler', '#86.batch_size'],
           },
         ],
       },
@@ -258,5 +263,10 @@ test('normalizeAdvancedProviders preserves ComfyUI workflow json and exposed fie
   const workflow = providers.find((item: any) => item.id === 'comfyui')?.comfyuiConfig?.workflows?.[0];
 
   assert.deepEqual(workflow?.workflowJson, workflowJson);
-  assert.deepEqual(workflow?.fields, [{ nodeId: '1', fieldName: 'text', source: 'prompt' }]);
+  assert.deepEqual(workflow?.fields, [
+    { nodeId: '1', fieldName: 'text', source: 'prompt' },
+    { nodeId: '2', fieldName: 'secret', source: 'fixed', value: 'keep me' },
+    { nodeId: '3', fieldName: 'legacy', source: 'fixed', value: 'legacy fixed' },
+  ]);
+  assert.deepEqual(workflow?.excludeRules, ['seed', 'class:KSampler', '#86.batch_size']);
 });

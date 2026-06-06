@@ -5,8 +5,7 @@
 //   1. 检查 dist_electron/win-unpacked/resources/backend-enc/*.t8c 是否存在
 //   2. 检查 frontend/index.html 是否到位
 //   3. 强制移除任何意外混入的明文 backend/src/*.js (双保险)
-//   4. 检查充值私有配置/密钥没有混入用户分发包
-//   5. 输出最终产物清单
+//   4. 输出最终产物清单
 // ============================================================================
 'use strict';
 
@@ -14,6 +13,11 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+const PACKAGE_JSON = require(path.join(ROOT, 'package.json'));
+const APP_VERSION = PACKAGE_JSON.version;
+const PRODUCT_NAME = PACKAGE_JSON.build && PACKAGE_JSON.build.productName
+  ? PACKAGE_JSON.build.productName
+  : 'T8-PenguinCanvas';
 const UNPACKED = path.join(ROOT, 'dist_electron', 'win-unpacked');
 const RES = path.join(UNPACKED, 'resources');
 let missingCount = 0;
@@ -111,63 +115,11 @@ function isSmallTextFile(p) {
   }
 }
 
-function checkNoRechargeSecrets() {
-  const rechargeSource = path.join(ROOT, 'backend', 'src', 'routes', 'recharge.js');
-  if (fs.existsSync(rechargeSource)) {
-    const src = fs.readFileSync(rechargeSource, 'utf-8');
-    if (/RECHARGE_DEFAULT_ENC\s*=\s*['"`]ZZENC1/.test(src)) {
-      failSecurity('source contains legacy RECHARGE_DEFAULT_ENC encrypted payload:', rechargeSource);
-    }
-    if (!/RECHARGE_DEFAULT_ENC\s*=\s*['"`]\s*['"`]/.test(src)) {
-      failSecurity('source RECHARGE_DEFAULT_ENC must stay an empty string before packaging:', rechargeSource);
-    }
-  }
-
-  const forbiddenFiles = [
-    path.join(RES, 'data', 'recharge.private.json'),
-    path.join(RES, 'recharge.private.json'),
-    path.join(RES, 'app', 'data', 'recharge.private.json'),
-    path.join(RES, 'app.asar.unpacked', 'data', 'recharge.private.json'),
-  ];
-  for (const p of forbiddenFiles) {
-    if (fs.existsSync(p)) {
-      failSecurity('private recharge config must never be shipped:', p);
-    }
-  }
-
-  const patterns = [
-    {
-      name: 'non-empty AGENT_HMAC_KEY JSON value',
-      re: /"AGENT_HMAC_KEY"\s*:\s*"[A-Za-z0-9+/_=-]{16,}"/,
-    },
-    {
-      name: 'non-empty DULUPAY_KEY JSON value',
-      re: /"DULUPAY_KEY"\s*:\s*"[A-Za-z0-9+/_=-]{16,}"/,
-    },
-    {
-      name: 'RECHARGE_AGENT_HMAC_KEY assignment',
-      re: /RECHARGE_AGENT_HMAC_KEY\s*=\s*['"]?[A-Za-z0-9+/_=-]{16,}/,
-    },
-    {
-      name: 'legacy encrypted recharge default',
-      re: /RECHARGE_DEFAULT_ENC\s*=\s*['"`]ZZENC1\\?n[A-Za-z0-9+/=]{20,}/,
-    },
-  ];
-
-  for (const p of walkFiles(RES).filter(isSmallTextFile)) {
-    const text = fs.readFileSync(p, 'utf-8');
-    for (const pat of patterns) {
-      if (pat.re.test(text)) {
-        failSecurity(`possible recharge secret in packaged text file (${pat.name}):`, p);
-      }
-    }
-  }
-
-  console.log('  ✅ recharge private config / HMAC not present in packaged resources');
-}
-
 function checkAiWatermarkRuntime() {
   const runtimeRoot = path.join(RES, 'tools', 'remove-ai-watermarks');
+  const archiveRoot = path.join(RES, 'tools', 'runtime-archives');
+  const archive = path.join(archiveRoot, 'remove-ai-watermarks-runtime.zip');
+  const archiveManifest = path.join(archiveRoot, 'runtime-archives-manifest.json');
   const required = process.env.T8_REQUIRE_AI_WATERMARK_RUNTIME === '1';
   const candidates = [
     path.join(runtimeRoot, 'remove-ai-watermarks.exe'),
@@ -184,10 +136,95 @@ function checkAiWatermarkRuntime() {
     else console.log('  ⚠️  optional runtime-manifest.json not found');
     return;
   }
+  if (fs.existsSync(archive)) {
+    ok(archive);
+    if (fs.existsSync(archiveManifest)) ok(archiveManifest);
+    else {
+      missingCount += 1;
+      bad(archiveManifest);
+    }
+    return;
+  }
   const message = 'remove-ai-watermarks sidecar runtime not bundled; packaged app will require PATH/env installed CLI';
   if (required) failSecurity(message, runtimeRoot);
   console.log('  ⚠️ ', message);
   console.log('     Set T8_REQUIRE_AI_WATERMARK_RUNTIME=1 for user-release builds that must be offline/self-contained.');
+}
+
+function checkFfmpegRuntime() {
+  const runtimeRoot = path.join(RES, 'tools', 'ffmpeg');
+  const binary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const ffmpeg = path.join(runtimeRoot, binary);
+  if (!fs.existsSync(ffmpeg)) {
+    missingCount += 1;
+    bad(ffmpeg);
+    return;
+  }
+  ok(ffmpeg);
+}
+
+function checkParseHubRuntime() {
+  const bridge = path.join(RES, 'tools', 'parsehub-bridge', 'parsehub_bridge.py');
+  const libsRoot = path.join(RES, 'tools', 'parsehub-pythonlibs');
+  const parsehubPkg = path.join(libsRoot, 'parsehub');
+  const archiveRoot = path.join(RES, 'tools', 'runtime-archives');
+  const archive = path.join(archiveRoot, 'parsehub-pythonlibs.zip');
+  const archiveManifest = path.join(archiveRoot, 'runtime-archives-manifest.json');
+  const strict = process.env.T8_REQUIRE_PARSEHUB_RUNTIME === '1';
+
+  checkFile(bridge);
+  if (fs.existsSync(parsehubPkg)) {
+    ok(parsehubPkg);
+    return;
+  }
+
+  if (fs.existsSync(archive)) {
+    ok(archive);
+    if (fs.existsSync(archiveManifest)) ok(archiveManifest);
+    else {
+      missingCount += 1;
+      bad(archiveManifest);
+    }
+    return;
+  }
+
+  const message = 'ParseHub python dependencies not bundled; aggregate parser will require T8_PARSEHUB_LIB_PATHS or system/site installed parsehub';
+  if (strict) failSecurity(message, libsRoot);
+  console.log('  ⚠️ ', message);
+  console.log('     Refresh with: tools\\remove-ai-watermarks-runtime\\python\\python.exe -m pip install --upgrade --target tools\\parsehub-pythonlibs .\\ParseHub, then npm run prepack:runtimes');
+}
+
+function checkUpdateArtifacts() {
+  const distDir = path.join(ROOT, 'dist_electron');
+  const installerName = `${PRODUCT_NAME}-Setup-${APP_VERSION}.exe`;
+  const installer = path.join(distDir, installerName);
+  const blockmap = path.join(distDir, `${installerName}.blockmap`);
+  const latest = path.join(distDir, 'latest.yml');
+  const strict = process.env.T8_REQUIRE_UPDATE_ARTIFACTS === '1';
+  const hasAnyArtifact = fs.existsSync(installer) || fs.existsSync(blockmap) || fs.existsSync(latest);
+
+  if (!hasAnyArtifact && !strict) {
+    console.log('  ⚠️  NSIS update artifacts not present; skipping installer/latest.yml checks for dir build');
+    return;
+  }
+
+  checkFile(installer);
+  checkFile(blockmap);
+  checkFile(latest);
+
+  if (fs.existsSync(latest)) {
+    const text = fs.readFileSync(latest, 'utf-8');
+    if (!new RegExp(`version:\\s*${APP_VERSION.replace(/\./g, '\\.')}`).test(text)) {
+      missingCount += 1;
+      console.error(`  ❌ latest.yml version mismatch, expected ${APP_VERSION}`);
+    } else {
+      ok(latest);
+    }
+    if (!text.includes(installerName)) {
+      missingCount += 1;
+      console.error(`  ❌ latest.yml does not reference ${installerName}`);
+    }
+  }
 }
 
 function checkNoRhToolboxMaker() {
@@ -236,26 +273,37 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'routes', 'externalProviders.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'files.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'imageOps.t8c'));
-  checkFile(path.join(RES, 'backend-enc', 'routes', 'recharge.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'resources.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'themes.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'eagle.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'aiWatermark.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'cloudUploads.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'parseHub.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'achievements.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'topaz.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'achievements', 'store.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'settings.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'uploader.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'registry.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'mediaResolver.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'adapters.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'openaiCompatible.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'providers', 'llmMedia.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'modelscope.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'volcengine.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'comfyui.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'jimengCli.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'tools', 'aiWatermark', 'runner.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'tools', 'aiWatermark', 'media.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'tools', 'topaz', 'runner.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'duckPayload.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'utils', 'parseHubBridge.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'utils', 'runtimeArchive.t8c'));
 
   console.log('\n[2] 前端 dist:');
   checkFile(path.join(RES, 'frontend', 'index.html'));
   checkFile(path.join(RES, 'frontend', 'assets'));
+  checkFile(path.join(RES, 'shared', 'achievementManifest.json'));
   checkFrontendAsset('classic-one-summer-day-', '.mp3');
   checkFrontendAsset('pixel-theme-of-sss-', '.mp3');
   checkFrontendAsset('op-battle-scars-', '.mp3');
@@ -266,20 +314,27 @@ function main() {
   checkFrontendAsset('yyh-unbalanced-kiss-piano-', '.mp3');
   checkFrontendAsset('yyh-hidden-tonight-', '.mp3');
   checkFrontendAsset('slamdunk-kimi-ga-suki-', '.mp3');
+  checkFrontendAsset('soccer-tsubasa-burning-hero-', '.mid');
+  checkFrontendAsset('dragonball-makafushigi-adventure-', '.mp3');
 
   console.log('\n[3] 清除可能混入的明文后端源码:');
   nukePlainBackend();
-
-  console.log('\n[4] 充值密钥分发安全检查:');
-  checkNoRechargeSecrets();
-
-  console.log('\n[5] 去AI水印 sidecar runtime:');
+  console.log('\n[4] 去AI水印 sidecar runtime:');
   checkAiWatermarkRuntime();
 
-  console.log('\n[6] RH工具箱制作器分发检查:');
+  console.log('\n[5] ffmpeg sidecar runtime:');
+  checkFfmpegRuntime();
+
+  console.log('\n[6] ParseHub bridge/runtime:');
+  checkParseHubRuntime();
+
+  console.log('\n[7] RH工具箱制作器分发检查:');
   checkNoRhToolboxMaker();
 
-  console.log('\n[7] resources/ 完整结构:');
+  console.log('\n[8] GitHub 自动更新资产:');
+  checkUpdateArtifacts();
+
+  console.log('\n[9] resources/ 完整结构:');
   listDir(RES);
 
   if (missingCount > 0) {
