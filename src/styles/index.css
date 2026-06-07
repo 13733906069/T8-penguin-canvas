@@ -2066,3 +2066,15 @@ html[data-theme-style="pixel"] .t8-achievement-tabs button.is-active {
     width: calc(100vw - 12px);
   }
 }
+
+/* ========== 国漫模型抽屉动画 ========== */
+@keyframes t8-slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

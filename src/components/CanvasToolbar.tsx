@@ -27,6 +27,7 @@ import {
   AlignHorizontalSpaceBetween,
   AlignVerticalSpaceBetween,
   Grid3x3,
+  Palette,
 } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useLogStore } from '../stores/logs';
@@ -68,6 +69,7 @@ interface CanvasToolbarProps {
   snapEnabled: boolean;
   onToggleSnap: () => void;
   onAlignSelection: (action: NodeAlignAction) => void;
+  onOpenGuomanModels?: () => void;
 }
 
 export default function CanvasToolbar({
@@ -92,6 +94,7 @@ export default function CanvasToolbar({
   snapEnabled,
   onToggleSnap,
   onAlignSelection,
+  onOpenGuomanModels,
 }: CanvasToolbarProps) {
   const { theme, style } = useThemeStore();
   const isDark = theme === 'dark';
@@ -532,6 +535,17 @@ export default function CanvasToolbar({
         >
           <HelpCircle size={16} />
         </button>
+
+        {/* 国漫模型 */}
+        {onOpenGuomanModels && (
+          <button
+            className={baseBtn}
+            onClick={onOpenGuomanModels}
+            title="国漫模型"
+          >
+            <Palette size={15} />
+          </button>
+        )}
 
         {/* 终端 */}
         <button

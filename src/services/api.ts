@@ -764,3 +764,46 @@ export function importAchievements(data: AchievementProfile | Record<string, any
     body: JSON.stringify({ data }),
   });
 }
+
+// ========== 国漫模型 ==========
+
+/** 国漫模型（精简字段） */
+export interface GuomanModel {
+  id: string;
+  resourceName: string;
+  resourceType: string;
+  thumbnailUrl: string;
+  posterUrl: string;
+  version: string;
+  imageSize?: string;
+  createTime?: string;
+  owner?: { name: string } | null;
+  versions?: {
+    id: string;
+    version: string;
+    baseModel?: string;
+    triggerWords?: string | null;
+    desc?: string | null;
+  }[];
+}
+
+/** 国漫模型分页响应 */
+export interface GuomanModelsPage {
+  records: GuomanModel[];
+  total: number;
+  page: number;
+  size: number;
+  totalPages: number;
+}
+
+/**
+ * 获取国漫模型列表（分页）
+ * @param page 页码（从 1 开始）
+ * @param size 每页数量（默认 30）
+ * @param search 搜索关键词（默认 "AI清风"）
+ */
+export function getGuomanModels(page = 1, size = 30, search?: string) {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (search) params.set('search', search);
+  return safeRequest<GuomanModelsPage>(`${BASE}/guoman-models?${params}`);
+}

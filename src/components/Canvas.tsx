@@ -1229,9 +1229,10 @@ function getReactFlowHandleInfo(target: EventTarget | null): {
 interface CanvasInnerProps {
   onAddNodeRef?: React.MutableRefObject<AddNodeFn | null>;
   onInsertWorkflowRef?: React.MutableRefObject<InsertWorkflowFn | null>;
+  onOpenGuomanModels?: () => void;
 }
 
-function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
+function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: CanvasInnerProps) {
   const { activeId, canvases, loadCanvases, setActive } = useCanvasStore();
   const { theme, style, templateId, customTemplates } = useThemeStore();
   const shortcuts = useShortcutStore((s) => s.shortcuts);
@@ -4869,6 +4870,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         snapEnabled={snapEnabled}
         onToggleSnap={() => setSnapEnabled((v) => !v)}
         onAlignSelection={handleAlignSelection}
+        onOpenGuomanModels={onOpenGuomanModels}
       />
       <TerminalPanel />
       {connectionPanModeActive && (
@@ -5543,6 +5545,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 interface CanvasProps {
   onAddNodeRef?: React.MutableRefObject<AddNodeFn | null>;
   onInsertWorkflowRef?: React.MutableRefObject<InsertWorkflowFn | null>;
+  onOpenGuomanModels?: () => void;
 }
 
 export default function Canvas(props: CanvasProps) {

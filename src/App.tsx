@@ -27,6 +27,7 @@ const Canvas = lazy(() => import('./components/Canvas'));
 const ApiSettingsModal = lazy(() => import('./components/ApiSettings'));
 const ResourceLibraryDrawer = lazy(() => import('./components/ResourceLibraryDrawer'));
 const ThemeTemplateManager = lazy(() => import('./components/ThemeTemplateManager'));
+const GuomanModelDrawer = lazy(() => import('./components/GuomanModelDrawer'));
 
 // vite.config 注入的编译期常量（与 package.json 同步），勿硬编码 v1.x.x
 declare const __APP_VERSION__: string;
@@ -130,6 +131,7 @@ function App() {
   const [backendStatus, setBackendStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resourceOpen, setResourceOpen] = useState(false);
+  const [guomanOpen, setGuomanOpen] = useState(false);
   const [themeManagerOpen, setThemeManagerOpen] = useState(false);
   // 「在线画布」推广浮层开关 + 容器 ref(用于点击外部关闭)
   const [cloudOpen, setCloudOpen] = useState(false);
@@ -242,7 +244,7 @@ function App() {
   }, [aixOpen]);
 
   useEffect(() => {
-    const hasOpenTopSurface = cloudOpen || videoOpen || zhenOpen || appOpen || aixOpen || resourceOpen;
+    const hasOpenTopSurface = cloudOpen || videoOpen || zhenOpen || appOpen || aixOpen || resourceOpen || guomanOpen;
     if (!hasOpenTopSurface) return;
 
     const onDocPointerDown = (e: PointerEvent) => {
@@ -251,6 +253,7 @@ function App() {
       if (
         target.closest('.t8-topbar') ||
         target.closest('.resource-library-drawer') ||
+        target.closest('[data-guoman-drawer]') ||
         target.closest('[data-canvas-floating-ui]') ||
         target.closest('.react-flow__node') ||
         target.closest('.react-flow__edge') ||
@@ -267,13 +270,14 @@ function App() {
       setAppOpen(false);
       setAixOpen(false);
       setResourceOpen(false);
+      setGuomanOpen(false);
     };
 
     document.addEventListener('pointerdown', onDocPointerDown, true);
     return () => {
       document.removeEventListener('pointerdown', onDocPointerDown, true);
     };
-  }, [cloudOpen, videoOpen, zhenOpen, appOpen, aixOpen, resourceOpen]);
+  }, [cloudOpen, videoOpen, zhenOpen, appOpen, aixOpen, resourceOpen, guomanOpen]);
 
   const handleCopyWx = async () => {
     try {
@@ -1310,7 +1314,7 @@ function App() {
         <Sidebar onAddNode={handleAddNode} />
         <ErrorBoundary fallbackTitle="画布渲染出错了，已被错误边界捕获">
           <Suspense fallback={<InfiniteCanvasBootLoading />}>
-            <Canvas onAddNodeRef={addNodeRef} onInsertWorkflowRef={insertWorkflowRef} />
+            <Canvas onAddNodeRef={addNodeRef} onInsertWorkflowRef={insertWorkflowRef} onOpenGuomanModels={() => setGuomanOpen(true)} />
           </Suspense>
         </ErrorBoundary>
       </div>
@@ -1328,6 +1332,10 @@ function App() {
             onInsertMaterial={handleInsertResource}
           />
         )}
+        <GuomanModelDrawer
+          open={guomanOpen}
+          onClose={() => setGuomanOpen(false)}
+        />
       </Suspense>
       <MaterialContextMenu />
       <AchievementDrawer />
