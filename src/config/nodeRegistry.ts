@@ -10,6 +10,10 @@ const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV ? [
  * 图标使用 lucide-react 名称(运行时由 Sidebar 动态查找)
  */
 export const NODE_REGISTRY: NodeMeta[] = [
+  // ========== 国漫角色制作 ==========
+  { type: 'guoman-char-1', label: '国漫角色 1', category: 'guoman', description: '国漫角色制作节点 1（待定义）', icon: 'Palette', color: 'orange' },
+  { type: 'guoman-char-2', label: '国漫角色 2', category: 'guoman', description: '国漫角色制作节点 2（待定义）', icon: 'Wand2', color: 'violet' },
+
   // ========== Input 素材资源(3) ==========
   { type: 'upload', label: '上传素材', category: 'input', description: '图像 / 视频 / 音频 三合一上传(自适应输出端口)', icon: 'Upload', color: 'emerald' },
   { type: 'material-set', label: '素材集', category: 'input', description: '把多个同类型文本 / 图像 / 视频 / 音频打包成可排序素材集，可直接传给生成与 RH 节点', icon: 'Images', color: 'teal' },
@@ -91,6 +95,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
 
 // 按分类分组,便于 Sidebar 渲染 (在这里过滤 hidden 节点 —— 它们仍在 NODE_REGISTRY 中保证节点类型注册)
 export const NODE_GROUPS: Record<string, { label: string; nodes: NodeMeta[] }> = {
+  guoman: { label: '国漫角色制作', nodes: NODE_REGISTRY.filter((n) => n.category === 'guoman' && !n.hidden) },
   input: { label: '素材资源', nodes: NODE_REGISTRY.filter((n) => n.category === 'input' && !n.hidden) },
   core: { label: '核心节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'core' && !n.hidden) },
   rh: { label: 'RH', nodes: NODE_REGISTRY.filter((n) => n.category === 'rh' && !n.hidden) },

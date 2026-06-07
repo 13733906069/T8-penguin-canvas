@@ -160,6 +160,8 @@ const PortraitMetadataNode = lazyCanvasNode(() => import('./nodes/PortraitMetada
 const StoryboardGridNode = lazyCanvasNode(() => import('./nodes/StoryboardGridNode'), 'StoryboardGridNode');
 const PresetImageNode = lazyCanvasNode(() => import('./nodes/PresetImageNode'), 'PresetImageNode');
 const DrawingBoardNode = lazyCanvasNode(() => import('./nodes/DrawingBoardNode'), 'DrawingBoardNode');
+const GuomanCharNode1 = lazyCanvasNode(() => import('./nodes/GuomanCharNode1'), 'GuomanCharNode1');
+const GuomanCharNode2 = lazyCanvasNode(() => import('./nodes/GuomanCharNode2'), 'GuomanCharNode2');
 const BrowserNode = lazyCanvasNode(() => import('./nodes/BrowserNode'), 'BrowserNode');
 const FrameExtractorNode = lazyCanvasNode(() => import('./nodes/FrameExtractorNode'), 'FrameExtractorNode');
 const FramePairNode = lazyCanvasNode(() => import('./nodes/FramePairNode'), 'FramePairNode');
@@ -193,6 +195,9 @@ const SPECIFIC_NODES: Record<string, any> = {
   ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerNode } : {}),
   'comfyui-store': ComfyUIStoreNode,
   'comfyui-app-maker': ComfyUIAppMakerNode,
+  // 国漫角色制作
+  'guoman-char-1': GuomanCharNode1,
+  'guoman-char-2': GuomanCharNode2,
   // Special (5)
   'multi-angle-3d': PresetImageNode,
   'panorama-720': PresetImageNode,
