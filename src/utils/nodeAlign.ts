@@ -1,4 +1,4 @@
-import type { Node } from '@xyflow/react';
+import type { Edge, Node } from '@xyflow/react';
 
 export type NodeAlignAction =
   | 'align-left'
@@ -16,6 +16,7 @@ export interface NodeAlignOptions {
   grid?: [number, number];
   gridGap?: number;
   alignGap?: number;
+  edges?: Array<Pick<Edge, 'source' | 'target'>>;
 }
 
 export interface NodeAlignResult {
@@ -207,23 +208,85 @@ function distributeOnAxis(
   return next;
 }
 
+function compareByVisualOrder(a: Node, b: Node, rectById: Map<string, Rect>): number {
+  const ar = rectById.get(a.id)!;
+  const br = rectById.get(b.id)!;
+  const dy = ar.y - br.y;
+  if (Math.abs(dy) > 24) return dy;
+  return ar.x - br.x;
+}
+
+function sortForArrangeGrid(
+  selected: Node[],
+  rectById: Map<string, Rect>,
+  edges: Array<Pick<Edge, 'source' | 'target'>> = [],
+): Node[] {
+  const visualOrder = [...selected].sort((a, b) => compareByVisualOrder(a, b, rectById));
+  if (selected.length < 2 || edges.length === 0) return visualOrder;
+
+  const selectedIds = new Set(selected.map((node) => node.id));
+  const nodeById = new Map(selected.map((node) => [node.id, node] as const));
+  const visualIndex = new Map(visualOrder.map((node, index) => [node.id, index] as const));
+  const indegree = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  for (const node of selected) {
+    indegree.set(node.id, 0);
+    outgoing.set(node.id, []);
+  }
+
+  let relatedEdgeCount = 0;
+  for (const edge of edges) {
+    const source = edge.source;
+    const target = edge.target;
+    if (!source || !target || source === target) continue;
+    if (!selectedIds.has(source) || !selectedIds.has(target)) continue;
+    outgoing.get(source)!.push(target);
+    indegree.set(target, (indegree.get(target) || 0) + 1);
+    relatedEdgeCount += 1;
+  }
+  if (relatedEdgeCount === 0) return visualOrder;
+
+  const compareByVisualIndex = (a: string, b: string) => {
+    return (visualIndex.get(a) ?? Number.MAX_SAFE_INTEGER) - (visualIndex.get(b) ?? Number.MAX_SAFE_INTEGER);
+  };
+  const queue = [...selectedIds].filter((id) => (indegree.get(id) || 0) === 0).sort(compareByVisualIndex);
+  const orderedIds: string[] = [];
+  const seen = new Set<string>();
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    orderedIds.push(id);
+    const nextIds = [...(outgoing.get(id) || [])].sort(compareByVisualIndex);
+    for (const targetId of nextIds) {
+      const nextDegree = Math.max(0, (indegree.get(targetId) || 0) - 1);
+      indegree.set(targetId, nextDegree);
+      if (nextDegree === 0) {
+        queue.push(targetId);
+        queue.sort(compareByVisualIndex);
+      }
+    }
+  }
+
+  for (const node of visualOrder) {
+    if (!seen.has(node.id)) orderedIds.push(node.id);
+  }
+  return orderedIds.map((id) => nodeById.get(id)).filter(Boolean) as Node[];
+}
+
 function arrangeGrid(
   selected: Node[],
   rectById: Map<string, Rect>,
   gap: number,
+  edges: Array<Pick<Edge, 'source' | 'target'>> = [],
 ): Map<string, { x: number; y: number }> {
   const next = new Map<string, { x: number; y: number }>();
   if (selected.length < 2) return next;
   const rects = selected.map((node) => rectById.get(node.id)!);
   const bounds = selectionBounds(rects);
   if (!bounds) return next;
-  const sorted = [...selected].sort((a, b) => {
-    const ar = rectById.get(a.id)!;
-    const br = rectById.get(b.id)!;
-    const dy = ar.y - br.y;
-    if (Math.abs(dy) > 24) return dy;
-    return ar.x - br.x;
-  });
+  const sorted = sortForArrangeGrid(selected, rectById, edges);
   const cols = Math.max(1, Math.ceil(Math.sqrt(sorted.length)));
   const maxW = Math.max(...rects.map((rect) => rect.w));
   const maxH = Math.max(...rects.map((rect) => rect.h));
@@ -287,7 +350,7 @@ export function applyNodeAlignment(
   } else if (action === 'distribute-y') {
     desired = distributeOnAxis(selected, rectById, 'y', alignGap);
   } else if (action === 'arrange-grid') {
-    desired = arrangeGrid(selected, rectById, Math.max(0, options.gridGap ?? DEFAULT_GRID_GAP));
+    desired = arrangeGrid(selected, rectById, Math.max(0, options.gridGap ?? DEFAULT_GRID_GAP), options.edges);
   } else {
     const packsVertically =
       action === 'align-left' ||

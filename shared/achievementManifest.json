@@ -326,6 +326,176 @@
           "description": "在七龙珠风格下成功生成一次 3D 全景。",
           "rarity": "gold",
           "condition": { "type": "counter", "metric": "panoramasGenerated", "count": 1 }
+        },
+        {
+          "idSuffix": "radar-first",
+          "title": "雷达第一响",
+          "description": "在七龙珠风格下通过龙珠雷达收集任意一颗龙珠。",
+          "rarity": "bronze",
+          "condition": { "type": "counter", "metric": "dragonBallsCollected", "count": 1 }
+        },
+        {
+          "idSuffix": "seven-stars",
+          "title": "七星归位",
+          "description": "在七龙珠风格下集齐 1 星到 7 星龙珠。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "dragonBallSetsCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "shenron-mode",
+          "title": "神龙降临",
+          "description": "集齐七颗龙珠后开启神龙模式。",
+          "rarity": "hidden",
+          "condition": { "type": "hidden", "kind": "dragon-ball-shenron", "mode": "enabled", "count": 1 }
+        }
+      ]
+    },
+    {
+      "style": "saint-seiya",
+      "label": "圣斗士风格",
+      "shortLabel": "圣斗士",
+      "accent": "#f8c84a",
+      "featured": [
+        {
+          "idSuffix": "bronze-awakening",
+          "title": "青铜觉醒",
+          "description": "在圣斗士风格下获得第一件圣衣。",
+          "rarity": "bronze",
+          "condition": { "type": "counter", "metric": "saintSeiyaClothsCollected", "count": 1 }
+        },
+        {
+          "idSuffix": "silver-trial",
+          "title": "白银试炼",
+          "description": "在圣斗士风格下首次击败白银圣斗士。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "saintSeiyaSilverWins", "count": 1 }
+        },
+        {
+          "idSuffix": "gold-gate",
+          "title": "黄金之门",
+          "description": "在圣斗士风格下获得第一件黄金圣衣。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "saintSeiyaGoldClothsCollected", "count": 1 }
+        },
+        {
+          "idSuffix": "twelve-temples",
+          "title": "十二宫突破",
+          "description": "集齐 12 件黄金圣衣。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "saintSeiyaGoldCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "athena-return",
+          "title": "雅典娜归来",
+          "description": "救出雅典娜并开启冥界篇。",
+          "rarity": "hidden",
+          "condition": { "type": "hidden", "kind": "saint-seiya-hades", "mode": "enabled", "count": 1 }
+        },
+        {
+          "idSuffix": "cosmo-burn",
+          "title": "小宇宙燃烧",
+          "description": "在圣斗士风格下首次使用小宇宙爆发。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "saintSeiyaCosmoBursts", "count": 1 }
+        },
+        {
+          "idSuffix": "hundred-saints",
+          "title": "百战圣斗士",
+          "description": "在圣斗士风格下累计赢得 30 场圣斗士试炼。",
+          "rarity": "master",
+          "condition": { "type": "counter", "metric": "saintSeiyaBattlesWon", "count": 30 }
+        },
+        {
+          "idSuffix": "hades-gate",
+          "title": "冥界入口",
+          "description": "冥界篇开启后完成一次战斗。",
+          "rarity": "hidden",
+          "condition": { "type": "hidden", "kind": "saint-seiya-hades", "mode": "used", "count": 1 }
+        }
+      ]
+    },
+    {
+      "style": "tetris",
+      "label": "俄罗斯方块主题",
+      "shortLabel": "方块",
+      "accent": "#16c6d9",
+      "featured": [
+        {
+          "idSuffix": "first-drop",
+          "title": "第一块落下",
+          "description": "在俄罗斯方块主题下开始第一局小游戏。",
+          "rarity": "bronze",
+          "condition": { "type": "counter", "metric": "tetrisGamesStarted", "count": 1 }
+        },
+        {
+          "idSuffix": "tetris-clear",
+          "title": "四行清屏",
+          "description": "在俄罗斯方块主题小游戏里完成一次四消。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "tetrisTetrises", "count": 1 }
+        },
+        {
+          "idSuffix": "level-10",
+          "title": "十级冲刺",
+          "description": "在俄罗斯方块主题小游戏里达到 Lv10。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "tetrisLevel10Reached", "count": 1 }
+        },
+        {
+          "idSuffix": "level-50",
+          "title": "半百高压",
+          "description": "在俄罗斯方块主题小游戏里达到 Lv50。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "tetrisLevel50Reached", "count": 1 }
+        },
+        {
+          "idSuffix": "chapter-one",
+          "title": "第一章完工",
+          "description": "完成俄罗斯方块主题小游戏的第一个 5 级章节。",
+          "rarity": "bronze",
+          "condition": { "type": "counter", "metric": "tetrisChaptersCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "chapter-five",
+          "title": "五章连跑",
+          "description": "累计完成 5 个俄罗斯方块章节。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "tetrisChaptersCompleted", "count": 5 }
+        },
+        {
+          "idSuffix": "chapter-50",
+          "title": "Lv50 章节通关",
+          "description": "完成 Lv50 的高压章节。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "tetrisChapter50Completed", "count": 1 }
+        },
+        {
+          "idSuffix": "clean-lv30",
+          "title": "纯手感通过",
+          "description": "不使用清底行完成 Lv30 章节挑战。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "tetrisCleanLv30Completed", "count": 1 }
+        },
+        {
+          "idSuffix": "finale",
+          "title": "终章堆栈大师",
+          "description": "完成 Lv99 终章。",
+          "rarity": "master",
+          "condition": { "type": "counter", "metric": "tetrisFinaleCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "matrix-cinema",
+          "title": "隐藏影片墙",
+          "description": "通关俄罗斯方块 Lv99 彩蛋终章，开启隐藏奖励影片墙。",
+          "rarity": "hidden",
+          "condition": { "type": "counter", "metric": "tetrisFinaleCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "hundred-lines",
+          "title": "百行堆栈",
+          "description": "在俄罗斯方块主题小游戏里累计清除 100 行。",
+          "rarity": "master",
+          "condition": { "type": "counter", "metric": "tetrisLinesCleared", "count": 100 }
         }
       ]
     }
@@ -337,6 +507,7 @@
       "title": "科技风奖励影片",
       "unlockAchievementId": "tech-time-10h",
       "lockedText": "待解锁",
+      "unlockedText": "科技风隐藏奖励影片已解锁，可播放",
       "unavailableText": "影片素材待提供"
     },
     {
@@ -345,6 +516,7 @@
       "title": "RH 隐藏奖励影片",
       "unlockAchievementId": "rh-duck-decoded",
       "lockedText": "待解锁",
+      "unlockedText": "RH 隐藏奖励影片已解锁，可播放",
       "unavailableText": "影片素材待提供"
     },
     {
@@ -353,14 +525,34 @@
       "title": "幽游隐藏奖励影片",
       "unlockAchievementId": "yyh-portrait-output",
       "lockedText": "待解锁",
+      "unlockedText": "幽游隐藏奖励影片已解锁，可播放",
       "unavailableText": "影片素材待提供"
     },
     {
       "id": "film-dragon-ball-01",
       "theme": "dragon-ball",
       "title": "七龙珠奖励影片",
-      "unlockAchievementId": "dragon-ball-shenron-pano",
+      "unlockAchievementId": "dragon-ball-shenron-mode",
       "lockedText": "待解锁",
+      "unlockedText": "龙珠隐藏奖励影片已解锁，可播放",
+      "unavailableText": "影片素材待提供"
+    },
+    {
+      "id": "film-saint-seiya-01",
+      "theme": "saint-seiya",
+      "title": "圣斗士奖励影片",
+      "unlockAchievementId": "saint-seiya-athena-return",
+      "lockedText": "待解锁",
+      "unlockedText": "圣斗士奖励影片已解锁，可播放",
+      "unavailableText": "影片素材待提供"
+    },
+    {
+      "id": "film-tetris-01",
+      "theme": "tetris",
+      "title": "俄罗斯方块隐藏奖励影片",
+      "unlockAchievementId": "tetris-matrix-cinema",
+      "lockedText": "通关彩蛋终章后解锁",
+      "unlockedText": "俄罗斯方块隐藏奖励影片已解锁，可播放",
       "unavailableText": "影片素材待提供"
     }
   ]

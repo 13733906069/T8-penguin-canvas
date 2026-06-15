@@ -11,7 +11,8 @@ const comfyAppsSource = fs.readFileSync(path.join(root, 'src/utils/comfyuiApps.t
 
 test('ImageNode exposes ComfyUI prompt and image mapped fields in the ComfyUI panel', () => {
   assert.match(imageNodeSource, /canonicalizeComfyFieldsByWorkflow/);
-  assert.match(imageNodeSource, /COMFY_NODE_FIELD_SOURCES[\s\S]*'prompt'[\s\S]*'positive'[\s\S]*'negative'[\s\S]*'image1'/);
+  assert.match(imageNodeSource, /COMFY_NODE_FIELD_SOURCES[\s\S]*'prompt'[\s\S]*'positive'[\s\S]*'negative'/);
+  assert.match(imageNodeSource, /COMFY_MEDIA_SOURCE_RE/);
   assert.match(imageNodeSource, /source === 'prompt' \|\| source === 'positive'/);
   assert.match(imageNodeSource, /title="ComfyUI 输入素材 · 上游\+本地"/);
   assert.match(imageNodeSource, /negativePrompt: externalNegativePrompt \|\| undefined/);
@@ -25,6 +26,10 @@ test('ImageNode hides default image prompt and reference UI when ComfyUI is sele
 test('ComfyUI source labels include positive prompt and media inputs', () => {
   assert.match(comfyAppsSource, /positive: '正向 Prompt'/);
   assert.match(comfyAppsSource, /image1: '图片输入 1'/);
+  assert.match(comfyAppsSource, /image6: '图片输入 6'/);
   assert.match(comfyAppsSource, /video1: '视频输入 1'/);
+  assert.match(comfyAppsSource, /video3: '视频输入 3'/);
   assert.match(comfyAppsSource, /audio1: '音频输入 1'/);
+  assert.match(comfyAppsSource, /audio3: '音频输入 3'/);
+  assert.match(comfyAppsSource, /control_net_name: 'ControlNet'/);
 });

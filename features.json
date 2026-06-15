@@ -1,7 +1,1648 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.0.6",
-  "lastUpdated": "2026-06-05-source-v206-readme-advanced-api-comfyui",
+  "version": "2.2.4",
+  "lastUpdated": "2026-06-15-source-release-v224",
+  "sourceReleaseV224": {
+    "version": "2.2.4",
+    "status": "source-only",
+    "date": "2026-06-15",
+    "description": "v2.2.4 GitHub 源码版：收口创作台背景层、RH 工具箱图像能力中间层、AI 去水印停止/CUDA 兼容、上传/输出素材媒体元信息和 ComfyUI 应用制作器稳定性；本次只推公开源码，不打包 Electron，不发布 GitHub Release / latest.yml 自动更新资产。",
+    "highlights": [
+      "新增创作台背景层：左侧控制轨进入编辑，支持从资源库放置图片、透明度、边框、等比缩放、旋转、层级和持久化，背景位于节点下方不挡创作。",
+      "RH 工具箱升级为可调度图像能力中间层：上传素材和输出素材图像节点在 Edit 旁新增抠图按钮，调用 RH 高清抠图并输出新素材。",
+      "新增 RH 图像能力预设和批处理服务：内置 cutout/upscale/expand 预设位，默认串行、每张最多 3 次尝试、支持取消和部分成功输出，后续高清化/扩图可复用同一入口。",
+      "AI 去水印节点补齐停止能力；追加隐形处理时可中止长任务，选择 CUDA 但随包 PyTorch 为 CPU-only 时会回退/提示兼容原因，避免用户被长堆栈卡住。",
+      "上传素材和输出素材节点新增媒体元信息展示：图片显示分辨率，视频显示分辨率和时长，音频显示时长，保持紧凑节点布局。",
+      "ComfyUI 应用制作器继续修复控件手势边界和参数映射稳定性，降低点击标签无响应、参数被改乱等问题。",
+      "公开版本同步到 2.2.4：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.4.md 同步；本次不打包 Electron，不发布 GitHub Release。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.2.4.md",
+      "backend/src/routes/aiWatermark.js",
+      "backend/src/routes/canvas.js",
+      "backend/src/tools/aiWatermark/runner.js",
+      "src/components/Canvas.tsx",
+      "src/components/CreativeDeskLayer.tsx",
+      "src/components/MediaMetadataBadge.tsx",
+      "src/components/RhImageCapabilityButton.tsx",
+      "src/components/nodes/ComfyUIAppMakerNode.tsx",
+      "src/components/nodes/ComfyUIStoreNode.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/RemoveAiWatermarkNode.tsx",
+      "src/components/nodes/UploadNode.tsx",
+      "src/services/aiWatermark.ts",
+      "src/services/rhToolboxCapabilities.ts",
+      "src/types/canvas.ts",
+      "src/utils/comfyuiApps.ts",
+      "src/utils/creativeDesk.ts",
+      "src/utils/mediaMetadata.ts",
+      "src/utils/rhToolboxCapabilities.ts",
+      "src/styles/index.css",
+      "tests/aiWatermarkRunner.test.ts",
+      "tests/canvasMouseInteractions.test.ts",
+      "tests/comfyuiAppNodes.test.ts",
+      "tests/comfyuiProvider.test.ts",
+      "tests/creativeDesk.test.ts",
+      "tests/mediaMetadataDisplay.test.ts",
+      "tests/rhToolbox.test.ts",
+      "tests/updateMdRegressions.test.ts"
+    ],
+    "sourceOnly": {
+      "githubPush": true,
+      "electronPackaging": false,
+      "githubRelease": false,
+      "blockedCommands": [
+        "npm run dist:release",
+        "npm run dist",
+        "npm run release:github",
+        "npm run release:verify"
+      ]
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录、comfyui-anima-t8/** 参考 clone 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "本次不生成安装包、blockmap、latest.yml，也不创建或更新 GitHub Release。"
+    ],
+    "verification": [
+      "node --test tests\\rhToolbox.test.ts tests\\creativeDesk.test.ts tests\\mediaMetadataDisplay.test.ts tests\\canvasMouseInteractions.test.ts tests\\aiWatermarkRunner.test.ts tests\\comfyuiAppNodes.test.ts tests\\comfyuiProvider.test.ts tests\\updateMdRegressions.test.ts",
+      "npm run type-check",
+      "npm run rh-toolbox:check",
+      "npm run public:check",
+      "npm run build",
+      "git diff --check",
+      "浏览器本地预览冒烟：http://localhost:4175/ 页面正常挂载，控制台无 error"
+    ]
+  },
+  "sourceReleaseV223": {
+    "version": "2.2.3",
+    "status": "source-only",
+    "date": "2026-06-15",
+    "description": "v2.2.3 GitHub 源码版：继续收口动漫标签大师 Danbooru / Gelbooru 在线图库体验，本次只推公开源码，不打包 Electron，不发布 GitHub Release / latest.yml 自动更新资产。",
+    "highlights": [
+      "动漫标签大师在线源保持 provider/source 模型，分类只保留画师 / Artist、作品 IP / Copyright、角色 IP / Character、General / Meta，不再把 Danbooru / Gelbooru 混进分类。",
+      "修复在线结果被前端通用搜索按名称重排的问题，Danbooru / Gelbooru 列表保留后端按 post_count 返回的热门顺序。",
+      "补齐在线搜索回车触发、分页、返回标签列表、分类搜索不串回画师、搜索默认空值、紧凑搜索按钮和按钮文字居中。",
+      "Gelbooru 未登录兜底继续使用公开 autocomplete / HTML，候选集合按 post_count 降序整理；预览失败不再显示误导性占位图，并保留 3 次预览重试。",
+      "在线卡片和弹层收口长文本溢出、预览小眼睛、100% 悬停预览、标签输出只保留 Tags / Prompt 两行。",
+      "公开版本同步到 2.2.3：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.3.md 同步；本次不打包 Electron，不发布 GitHub Release。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.2.3.md",
+      "src/data/animeTagMasterManifest.ts",
+      "src/utils/animeTagMaster.ts",
+      "src/components/nodes/AnimeTagMasterNode.tsx",
+      "src/styles/index.css",
+      "backend/src/routes/animeTags.js",
+      "tests/animeTagMaster.test.ts"
+    ],
+    "sourceOnly": {
+      "githubPush": true,
+      "electronPackaging": false,
+      "githubRelease": false,
+      "blockedCommands": [
+        "npm run dist:release",
+        "npm run dist",
+        "npm run release:github",
+        "npm run release:verify"
+      ]
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录、comfyui-anima-t8/** 参考 clone 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "本次不生成安装包、blockmap、latest.yml，也不创建或更新 GitHub Release。"
+    ],
+    "verification": [
+      "node --test tests\\animeTagMaster.test.ts",
+      "node -c backend\\src\\routes\\animeTags.js",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
+  "animeTagMasterOnlineGalleryV223Dev": {
+    "version": "2.2.3-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-14",
+    "description": "动漫标签大师在线图库二次重构：Danbooru / Gelbooru 不再作为分类，在线源改为 provider/source；在线分类新增 provider-aware General / Meta，Danbooru 实际请求 meta，Gelbooru / Galbooru 实际请求 general。",
+    "highlights": [
+      "移除 ANIME_TAG_MASTER_CATEGORIES 中的 在线图库 Danbooru / 在线图库 Gelbooru，节点分类下拉不再被站点名称污染。",
+      "新增在线 tag 分类浏览：画师 / Artist、作品 IP / Copyright、角色 IP / Character、General / Meta，并支持搜索、字母筛选、刷新和分页。",
+      "新增 /api/anime-tags/tags、/api/anime-tags/tags/refresh、/api/anime-tags/posts，支持先分页浏览 tag，再点进 tag 分页查看作品图片、提示词和来源链接。",
+      "Danbooru 使用站点可接受的产品 UA，避免 Node fetch 触发 Cloudflare 403；Gelbooru 未配置 user_id/api_key 时直接走公开 autocomplete / HTML 兜底，并正确识别 autocomplete 的 category 字段，避免节点加载空白。",
+      "节点顶部来源选择 Danbooru / Gelbooru 时同步在线 provider；真实本地接口已验证 Danbooru tag/post、Gelbooru tag/post 均返回非空。",
+      "保留旧 /api/anime-tags/search 兼容入口，但前端在线图库面板优先使用新的 tag/post 分层加载。"
+    ],
+    "sourceFiles": [
+      "roadmap.md",
+      "skill.md",
+      "features.json",
+      "src/data/animeTagMasterManifest.ts",
+      "src/utils/animeTagMaster.ts",
+      "src/components/nodes/AnimeTagMasterNode.tsx",
+      "src/styles/index.css",
+      "backend/src/routes/animeTags.js",
+      "tests/animeTagMaster.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\animeTagMaster.test.ts",
+      "node -c backend\\src\\routes\\animeTags.js",
+      "npm run type-check",
+      "npm run build",
+      "git diff --check"
+    ]
+  },
+  "electronReleaseV222": {
+    "version": "2.2.2",
+    "status": "electron-release",
+    "date": "2026-06-14",
+    "description": "v2.2.2 Electron 自动更新发布：在 v2.2.1 源码版基础上把维护者已封装的 RH 工具箱真实 AI 应用纳入用户包，并补齐打包前 manifest preflight、打包后前端 bundle 标记检查、动漫标签大师在线预览与艺术风格短提示词修复。",
+    "highlights": [
+      "RH 工具箱从禁用模板升级为正式内置 5 个 RunningHub AI 应用：高清抠图、图案提取V10、Bernini 图生视频+音效、bernini 图像编辑、Bernini 文生视频+音效，用户包不再依赖开发态制作器 localStorage。",
+      "新增 scripts/check-rh-toolbox-release.cjs 与 npm run rh-toolbox:check，发布前校验 manifest 非空、真实启用工具、分类、输入 / 输出映射、select 选项、危险 token 和 hash。",
+      "npm run dist:release 在 build + encrypt 前强制执行 RH 工具箱发布清单检查；electron/_post_build.cjs 在打包后继续扫描制作器泄漏，并确认前端产物包含 5 个 RH 工具及 WebAppId 标记。",
+      "动漫标签大师在线图库继续收口 Danbooru / Gelbooru / Galbooru 懒加载预览、分类结构和节点内滚动展示；艺术风格大师输出风格提示词带名称前缀。",
+      "保留 v2.2.1 的资源库、任务完成提示音、输出素材持久化、图像裁切比例、Codex / 生图工作台输入预览和俄罗斯方块主题修复。",
+      "公开版本同步到 2.2.2：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.2.md 同步；本次生成 Electron 安装包、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.2.2.md",
+      "scripts/check-rh-toolbox-release.cjs",
+      "scripts/dist-release.cjs",
+      "electron/_post_build.cjs",
+      "src/data/rhToolboxManifest.ts",
+      "tests/rhToolbox.test.ts"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.2.2.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.2.2.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.2.2 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器仍为本机开发工具，不进入公开源码和公开打包产物；用户包只读取 src/data/rhToolboxManifest.ts 中的发布 manifest。",
+      "发布 manifest 只包含 WebApp ID、分类、字段映射、默认参数和输出协议，不包含 RunningHub API Key、curl、localStorage 草稿或制作器源码。"
+    ],
+    "verification": [
+      "node --test tests\\artistStyleMaster.test.ts tests\\animeTagMaster.test.ts tests\\resourceLibraryPanorama.test.ts tests\\rhToolbox.test.ts tests\\taskCompletionSound.test.ts tests\\taskCompletionSoundRoute.test.ts tests\\nodeAlign.test.ts tests\\imageCropAspect.test.ts tests\\outputMaterialPersistence.test.ts tests\\textNodeResize.test.ts tests\\canvasCenterShortcut.test.ts tests\\themeRegistry.test.ts tests\\apiSettingsTheme.test.ts",
+      "node -c backend\\src\\routes\\animeTags.js",
+      "node -c scripts\\check-rh-toolbox-release.cjs",
+      "node -c electron\\_post_build.cjs",
+      "npm run rh-toolbox:check",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check",
+      "npm run dist:release"
+    ]
+  },
+  "sourceReleaseV221": {
+    "version": "2.2.1",
+    "status": "source-only",
+    "date": "2026-06-14",
+    "description": "v2.2.1 GitHub 源码版：继续收口灵感之源、资源库、工具节点、Codex / 生图工作台、RH 工具箱、图像裁切、任务提示音和画布快捷体验；本次不打包 Electron，不发布 GitHub Release 自动更新资产。",
+    "highlights": [
+      "艺术风格大师补齐素材右键保存风格、自定义图片上传、分类 / 流派筛选与节点内滚轮浏览，输出风格提示词 / 图片可稳定生成对应 OutputNode；风格提示词收敛为单行「风格提示词, Use this as a visual style reference...」格式，避免输出冗长元信息。",
+      "新增并完善动漫标签大师节点，按 comfyui-anima-t8 思路懒加载 Danbooru / Gelbooru 等图库，支持标签 / 图像输出、自定义分类、导入导出和素材右键保存。",
+      "资源库分类新增 / 重命名 / 删除恢复可用，任务完成提示音支持设置页上传自定义音频，顶部快捷栏新增输出素材持久化开关。",
+      "画布交互修复 Home 键回到画布中心、文本节点长文缩放溢出、对齐 / 整理顺序颠倒、图像编辑裁切比例默认撑满和俄罗斯方块主题节点顶部残影。",
+      "RH 工具箱每次读取 NodeList 都以当前 WebAppId 为准，不再混入上一次应用字段；修复 fieldType: TEXT 被误判为 Prompt 导致 aspect_ratio / quality 等 LIST 下拉为空的问题，制作器保存和旧工具节点运行时都会补齐 select 选项；用户节点隐藏调试映射块但保持参数映射完整。",
+      "Codex CLI Agent 简约模式和 Codex 生图工作台继续补齐上游图片预览、排序、删除和图像模式 / LLM 模式边界；模型帮助新增 gpt-image-2-vip 注意事项。",
+      "公开版本同步到 2.2.1：package.json、package-lock.json、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.1.md 同步；本次只推 GitHub 源码。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.2.1.md"
+    ],
+    "sourceOnly": {
+      "githubPush": true,
+      "electronPackaging": false,
+      "githubRelease": false,
+      "blockedCommands": [
+        "npm run dist:release",
+        "npm run dist",
+        "npm run release:github",
+        "npm run release:verify"
+      ]
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码。",
+      "真实 Grok OAuth 私有调用、New API 分组令牌等私有能力继续通过本机 ignored local-private 扩展 / 加密链路处理。"
+    ],
+    "verification": [
+      "node --test tests\\artistStyleMaster.test.ts tests\\animeTagMaster.test.ts tests\\resourceLibraryPanorama.test.ts tests\\rhToolbox.test.ts tests\\taskCompletionSound.test.ts tests\\taskCompletionSoundRoute.test.ts tests\\nodeAlign.test.ts tests\\imageCropAspect.test.ts tests\\outputMaterialPersistence.test.ts tests\\textNodeResize.test.ts tests\\canvasCenterShortcut.test.ts tests\\themeRegistry.test.ts tests\\apiSettingsTheme.test.ts",
+      "node -c backend\\src\\routes\\animeTags.js",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
+  "sourceReleaseV220": {
+    "version": "2.2.0",
+    "status": "source-only",
+    "date": "2026-06-14",
+    "description": "v2.2.0 GitHub 源码版：收口灵感之源艺术风格大师、批量素材去黑/白/透明边、Codex CLI Agent 与 Codex 生图工作台输入预览和输出链路、俄罗斯方块主题大屏/拖动残影/难度曲线；本次不打包 Electron，不发布 GitHub Release 自动更新资产。",
+    "highlights": [
+      "左侧新增「灵感之源」分类和「艺术风格大师」节点，迁移 qiaomu 艺术家风格库，支持搜索、流派/分类筛选、lightbox、方向键切换、复制画家提示词、自定义风格和导入导出。",
+      "艺术风格大师节点输出按钮可直接生成风格提示词或风格图片 OutputNode；节点缩略图改为内部滚轮浏览，长分类和长画家名不再撑出节点；自定义风格支持本地上传图片并保存到用户库。",
+      "批量素材处理优先修复去除边框能力：支持黑边、白边、透明边和自动检测，支持自动裁切、手动像素与 gap 类滑动调整，并在结果中显示裁掉像素。",
+      "Codex CLI Agent 简约模式和 Codex 生图工作台补齐上游图像预览、排序和删除，修复简约模式图像输出误落文本的问题，并保留创作台素材区原有逻辑。",
+      "俄罗斯方块主题继续修复节点拖动顶部残影、大屏游戏模式布局、关卡速度和技能消耗曲线，同时保留隐藏奖励影片与通关过场。",
+      "公开版本同步到 2.2.0：package.json、package-lock.json、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.0.md 同步；本次只推 GitHub 源码。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.2.0.md"
+    ],
+    "sourceOnly": {
+      "githubPush": true,
+      "electronPackaging": false,
+      "githubRelease": false,
+      "blockedCommands": [
+        "npm run dist:release",
+        "npm run dist",
+        "npm run release:github",
+        "npm run release:verify"
+      ]
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码。",
+      "真实 Grok OAuth 私有调用、New API 分组令牌等私有能力继续通过本机 ignored local-private 扩展 / 加密链路处理。"
+    ],
+    "verification": [
+      "node --test tests\\artistStyleMaster.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\themeRegistry.test.ts tests\\updateMdRegressions.test.ts",
+      "node -c backend\\src\\routes\\imageOps.js",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
+  "electronReleaseV219": {
+    "version": "2.1.9",
+    "status": "electron-release",
+    "date": "2026-06-13",
+    "description": "v2.1.9 Electron 自动更新发布：在 v2.1.8 源码版基础上继续收口俄罗斯方块主题、Codex / Grok Agent、FAL 超市新增模型、隐藏奖励影片和多主题可读性，并重新打包安装包、blockmap 与 latest.yml。",
+    "highlights": [
+      "俄罗斯方块主题新增大屏游戏模式、99 关通关 10 秒仪式感过场、隐藏奖励影片解锁提示、开发检查点、平滑速度 / 技能消耗曲线、Guard 随机清障、新形状和独立颜色。",
+      "Tetris / RH / 幽游白书 / 龙珠 / 科技风隐藏奖励影片以加密 .t8media 随桌面端分发，成就完成后可在影片馆播放。",
+      "Codex CLI Agent 稳定简约模式和创作台：LLM / IMG 双模式、默认模型切换、IMG 默认 imagegen Skill、创作台会话记忆、模板 / Skill / 参考素材注入、产物库删除 / 清空 / 批量删除、文本复制和自动滚动。",
+      "Codex 生图工作台继续保留队列、公共图库、模板 / 片段工具、参数快捷 Chip、历史记录和输出素材衔接。",
+      "Grok Agent 修复视频任务链路：SSE 轮询不再误判中止，视频轮询延长到 15 分钟，状态错误带出 request id 和最后状态；优先新版 /v1/videos/{request_id} 查询，并补齐编辑 / 延长入口。",
+      "FAL 超市新增 Bernini R、Luma Ray / Uni、BRIA、Nemotron ASR、Pixelcut 等模型入口，参数、分类、输入输出和测试覆盖同步更新。",
+      "继续修复批量素材处理、AI 消除水印、上传 / 输出素材预览、主题侧边栏、Codex / Grok 创作台深浅色可读性和输出发布链路。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.9.md"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.1.9.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.1.9.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.1.9 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码和公开打包产物。",
+      "真实 Grok OAuth 私有调用、New API 分组令牌等私有能力继续通过本机 ignored local-private 扩展 / 加密链路处理。"
+    ],
+    "verification": [
+      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\grokOAuthAgent.test.ts tests\\grokVideo15.test.ts tests\\aiWatermarkRunner.test.ts tests\\achievements.test.ts tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts tests\\falToolbox.test.ts",
+      "node -c backend\\src\\routes\\codexCli.js",
+      "node -c backend\\src\\utils\\codexCliRunner.js",
+      "node -c backend\\src\\routes\\grokOAuth.js",
+      "node -c backend\\src\\routes\\aiWatermark.js",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check",
+      "npm run dist:release"
+    ]
+  },
+  "sourceReleaseV218": {
+    "version": "2.1.8",
+    "status": "source-only",
+    "date": "2026-06-13",
+    "description": "v2.1.8 GitHub 源码版：收口俄罗斯方块主题、批量素材处理、Codex CLI Agent / Codex 生图工作台、Grok Agent 视频修复、AI 消除水印升级和多主题可读性修复；本次不打包 Electron，不发布 GitHub Release 自动更新资产。",
+    "highlights": [
+      "俄罗斯方块主题补齐 Korobeiniki 默认音乐、方块化画布/节点/连线/小地图和 10x20 小游戏体验，关卡、障碍、技能、存档和视觉反馈持续增强。",
+      "工具箱新增批量素材处理节点，覆盖多文件/文件夹导入、批量改名、去黑边、抠图、扩图、高清放大、格式转换和打开输出文件夹。",
+      "Codex CLI Agent 支持简约模式和创作台：LLM/IMG 双模式、Skill 调用、项目 Skill、模板工坊、产物库、参考素材可视化、流式对话、文本复制、产物发布和深色主题可读性修复。",
+      "Codex 生图工作台节点面向 imagegen 流程，提供队列、公共图库、模板/片段工具、参数快捷 Chip、批量历史和画布输出衔接。",
+      "Grok Agent 修复视频任务轮询、模式高亮、产物库删除/清空/批量删除和深色主题可读性；视频节点补齐 grok-1.5-video-6s/10s/15s 的 Zhenzhen New size 参数。",
+      "AI 消除水印跟进 remove-ai-watermarks 新版能力，补齐前端节点、后端路由和本地 runtime 文档；同时修复素材拖动、预览、侧边栏主题可读性和输出产物链路。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.8.md"
+    ],
+    "sourceOnly": {
+      "githubPush": true,
+      "electronPackaging": false,
+      "githubRelease": false,
+      "latestYml": false,
+      "note": "按用户要求只推 GitHub 源码，不运行 npm run dist:release，不打包 Electron，不创建或更新 GitHub Release。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码和公开打包产物。",
+      "真实 Grok OAuth 私有调用、New API 分组令牌等私有能力继续通过本机 ignored local-private 扩展 / 加密链路处理。"
+    ],
+    "verification": [
+      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\grokOAuthAgent.test.ts tests\\grokVideo15.test.ts tests\\aiWatermarkRunner.test.ts tests\\achievements.test.ts tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts",
+      "node -c backend\\src\\routes\\codexCli.js",
+      "node -c backend\\src\\utils\\codexCliRunner.js",
+      "node -c backend\\src\\routes\\grokOAuth.js",
+      "node -c backend\\src\\routes\\aiWatermark.js",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
+  "electronReleaseV217": {
+    "version": "2.1.7",
+    "status": "electron-release",
+    "date": "2026-06-11",
+    "description": "v2.1.7 Electron 自动更新发布：收口 ComfyUI Workflow 识别、排除规则备份、百度/夸克 WebDAV 上传、ComfyUI 超市端口裁切、Grok Video 默认模型显示和圣斗士主题细节修复。",
+    "highlights": [
+      "ComfyUI API Workflow 字段识别增强，前端制作器、图像节点和后端 provider 共享 prompt/image/video/audio/ControlNet/UNet/CLIP Vision/FPS/guidance 等常见字段规则。",
+      "ComfyUI 自动映射排除规则支持 JSON 导入导出，设置页和 ComfyUI 应用制作工具节点都可复用同一份规则备份。",
+      "百度网盘与夸克网盘上传补齐 WebDAV 网关方案，支持配置检查、自动建目录、PUT 上传和更明确的错误提示。",
+      "ComfyUI 超市节点外层不再裁切 React Flow 入口/出口端口，强主题下左右连接点保持可见。",
+      "视频节点 Grok Video 默认模型显示为 grok-video-3（新版1.5），后台模型映射保持 grok-video-3 不变。",
+      "圣斗士主题继续修正冥界雷达、浅/深色可读性和小地图元素位置，避免主题 UI 遮挡创作画布。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.7.md"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.1.7.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.1.7.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.1.7 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码和公开打包产物。",
+      "真实 Grok OAuth 私有调用继续通过本机 ignored local-private 扩展 / 加密链路处理，公开仓库只保留安全外壳。"
+    ],
+    "verification": [
+      "node -c backend\\src\\cloudUploads\\settings.js",
+      "node -c backend\\src\\cloudUploads\\uploader.js",
+      "node -c backend\\src\\providers\\comfyui.js",
+      "node --test tests\\cloudUploads.test.ts tests\\comfyuiProvider.test.ts tests\\comfyuiImageNode.test.ts tests\\comfyuiAppsManifest.test.ts tests\\comfyuiAppNodes.test.ts tests\\grokVideo15.test.ts tests\\modelUsageHelp.test.ts tests\\saintSeiyaBattle.test.ts tests\\achievements.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify"
+    ]
+  },
+  "tetrisCanvasTheme": {
+    "status": "implemented",
+    "date": "2026-06-11",
+    "description": "新增俄罗斯方块主题：十二套内置主题中的强识别 Tetris Canvas，包含浅色奶白彩块、深色街机霓虹、方块化节点/工具栏/小地图/连线，以及右上角可玩的 10x20 俄罗斯方块小游戏。",
+    "highlights": [
+      "新增 visualStyle=tetris、iconPack=tetromino-well、canvasPattern=tetris-stack、nodeFrame=arcade-cabinet-card 和 block-drop 合成主题音乐 preset。",
+      "TetrisPanel 挂在 CanvasToolbar 子扩展位，默认展开、可折叠，展开面板相对按钮定位 right:0，不使用 fixed 大遮罩，避免挡住 RUN 和核心工具栏。",
+      "小游戏使用纯逻辑 tetrisEngine：10x20 棋盘、7-bag、公平出块、墙踢旋转、幽灵落点、暂存、硬降、消行计分、99 级速度递增和本地最高分/局面恢复。",
+      "键盘只在 Tetris 面板 hover 或 focus 且目标不是 input/textarea/select/contenteditable 时截获方向键、空格、Shift/C、P、R；鼠标离开、窗口失焦、画布移动或节点拖动时自动暂停。",
+      "成就系统新增 tetris 主题轨道和 tetris.game_started / line_clear / tetris_clear / level_reached / game_over 摘要事件，只保存计数与等级，不保存棋盘、Prompt 或资源 URL。"
+    ],
+    "files": [
+      "src/utils/tetrisEngine.ts",
+      "src/components/TetrisPanel.tsx",
+      "src/components/TetrisThemeButton.tsx",
+      "src/styles/theme-tetris.css",
+      "src/theme/types.ts",
+      "src/theme/defaultTemplates.ts",
+      "src/components/ThemeTemplateManager.tsx",
+      "src/components/ThemeMusicToggle.tsx",
+      "src/components/Canvas.tsx",
+      "shared/achievementManifest.json",
+      "backend/src/achievements/store.js",
+      "tests/tetrisEngine.test.ts",
+      "tests/themeRegistry.test.ts",
+      "tests/achievements.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts",
+      "node --test tests\\achievements.test.ts",
+      "node -c backend\\src\\achievements\\store.js",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "batchProcessorNode": {
+    "status": "implemented",
+    "date": "2026-06-11",
+    "nodeType": "batch-processor",
+    "category": "toolbox",
+    "description": "工具箱新增“批量素材处理”节点：支持多文件、整个文件夹和上游素材批量进入节点内队列，批量执行命名归档、去除上下黑边、批量抠图、批量扩图、高清放大和格式转换；完成后只在节点内显示进度、完成反馈和失败报告，不自动生成 OutputNode，避免画布被大量素材铺满。",
+    "ports": {
+      "inputs": [
+        "image",
+        "video",
+        "audio",
+        "model3d"
+      ],
+      "outputs": []
+    },
+    "capabilities": [
+      "导入方式覆盖多文件选择、文件夹 webkitdirectory、拖拽和连接上游 image/video/audio/model3d 素材。",
+      "命名支持使用原名字，也支持改名字模板：{name}、{index}、{n}、{kind}、{folder}，并可设置起始序号、补零位数和图片输出格式。",
+      "图像批处理首版覆盖去除上下黑边、现有 remove-bg 抠图通道、扩画布到常用比例、Sharp 本地高清放大和 PNG/JPG/WEBP 转换。",
+      "视频、音频和 3D 素材首版执行批量命名归档，后续可继续扩展转码、抽帧、音量规格化、模型格式转换等批处理。",
+      "完成后可在节点左下角直接打开 output/batch 文件夹查看本次批处理结果。",
+      "节点内维护 batchProcessorItems、batchProcessorProgress 和 batchProcessorResults；不写 imageUrls/videoUrls/audioUrls/outputText，不触发画布自动外挂素材节点。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/BatchProcessorNode.tsx",
+      "src/utils/batchProcessor.ts",
+      "src/services/imageOps.ts",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/NodeActionBar.tsx",
+      "src/utils/nodePlacement.ts",
+      "backend/src/routes/imageOps.js",
+      "backend/src/routes/files.js",
+      "tests/batchProcessor.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\batchProcessor.test.ts",
+      "node -c backend\\src\\routes\\imageOps.js",
+      "node -c backend\\src\\routes\\files.js",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "codexCliCreatorAgent": {
+    "status": "implemented",
+    "date": "2026-06-12",
+    "nodeType": "codex-cli-agent",
+    "category": "codex",
+    "description": "新增 Codex CLI 创作者 Agent 节点：把本机 Codex CLI 接入画布，面向创作者提供流式对话、提示词增强、图像/视频/音频/3D 产物规划、Skill 调用、项目 Skill 创建、版本树和产物入库。",
+    "ports": {
+      "inputs": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "outputs": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "model3d"
+      ]
+    },
+    "capabilities": [
+      "简约生成模式保留一个 Prompt 输入、创作预设、Skill 选择和一键运行，适合快速生成提示词、脚本或素材方案。",
+      "Codex 创作台模式提供流式消息、运行事件、产物库、版本树、质量检查和项目 Skill 抽屉，适合连续创作与多轮修改。",
+      "后端 /api/codex-cli 封装 Codex CLI status、skills、skills/project 和 agent/stream 路由，使用 SSE 返回 turn.started、message.delta、tool.progress、artifact.completed 等事件。",
+      "运行前读取 codex features list，只有当前 CLI 明确支持的 feature 才发送 --enable，避免 plan_tool / web_search 等未知开关导致任务失败。",
+      "状态刷新成功会清理旧的 404/登录/旧 feature 错误；节点标题区提供明确拖动面，输入和按钮继续保留 nodrag。",
+      "Electron 后置检查锁住 routes/codexCli.t8c 与 utils/codexCliRunner.t8c，避免桌面包漏路由后出现 /api/codex-cli 404。",
+      "Skill 扫描覆盖 CODEX_HOME 全局 Skills、用户 .agents/skills、项目 .agents/skills 和节点工作区项目 Skills；节点内可创建当前项目专用 Skill。",
+      "产物解析覆盖文本、图片、视频、音频和 3D 模型 URL；发布后写回节点标准输出字段，也可保存到资源库。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/CodexCliAgentNode.tsx",
+      "src/services/codexCli.ts",
+      "backend/src/routes/codexCli.js",
+      "backend/src/utils/codexCliRunner.js",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/NodeActionBar.tsx",
+      "src/utils/nodePlacement.ts",
+      "electron/_post_build.cjs",
+      "tests/codexCliAgent.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\codexCliAgent.test.ts",
+      "node --test tests\\electronPackaging.test.ts",
+      "node -c backend\\src\\utils\\codexCliRunner.js",
+      "node -c backend\\src\\routes\\codexCli.js",
+      "node -c electron\\_post_build.cjs",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check"
+    ]
+  },
+  "codexImageConjureNode": {
+    "status": "implemented",
+    "date": "2026-06-12",
+    "nodeType": "codex-image-conjure",
+    "category": "codex",
+    "description": "新增 Codex 生图工作台节点：参考 ilab-gpt-conjure 的生图工作台信息架构，保留项目内 Codex CLI / imagegen 生成链路，并独立维护提示词模板、片段、公共图库和本地任务队列。",
+    "ports": {
+      "inputs": [
+        "text",
+        "image"
+      ],
+      "outputs": [
+        "image",
+        "text"
+      ]
+    },
+    "capabilities": [
+      "节点只面向 Codex CLI 生图，不暴露 OpenAI 兼容 API Provider，默认强制启用 imageGeneration 并注入 imagegen Skill。",
+      "提示词模板和片段使用独立 t8-codex-image-conjure-prompts schema，可导入 ilab webui-prompt-template-pack，也可导出备份。",
+      "公共图库读取资源库图像，可把图库图片和上游图片作为参考图传入 Codex CLI。",
+      "支持任务队列、历史记录、批数、数量、并发、停止运行、自动发布、提示词持久化和素材持久化。",
+      "模板工坊和片段工坊支持新建、保存/重命名、删除、导入和导出，创作者可以维护自己的生图语料。",
+      "完成反馈提供发布、发送画布、入库、继续改、变体和下载动作；简约节点不在完成区渲染大预览图，生成结果直接发布到标准 image/text 输出，后续由输出素材节点展示。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/CodexImageConjureNode.tsx",
+      "src/services/codexImageConjure.ts",
+      "src/utils/codexImageConjure.ts",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "src/utils/nodePlacement.ts",
+      "tests/codexImageConjure.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\codexImageConjure.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "artistStyleMasterNode": {
+    "status": "implemented",
+    "date": "2026-06-13",
+    "nodeType": "artist-style-master",
+    "category": "inspiration",
+    "description": "左侧新增「灵感之源」分类和「艺术风格大师」节点：迁移 joeseesun/qiaomu-artist-style 本地 383 个艺术家风格参考，面向设计和生图创作提供可搜索、可筛选、可管理的风格提示词与风格图片输出。",
+    "ports": {
+      "inputs": [
+        "text"
+      ],
+      "outputs": [
+        "text",
+        "image"
+      ]
+    },
+    "capabilities": [
+      "内置 qiaomu 艺术家风格清单与缩略图，支持按英文名、中文名、流派、中文流派、分类、标签和风格描述搜索。",
+      "节点保持简洁：只展示当前选中风格、搜索、流派/分类筛选、输出模式和常用缩略图；节点缩略图列表在固定高度内容器内滚轮浏览，完整图库在外部弹层打开，避免撑高节点。",
+      "图库支持缩略图网格、点击 lightbox 大图、方向键左右切换、Esc 关闭、一键复制画家名称提示词和输出风格提示词。",
+      "运行模式提供「输出风格提示词」与「输出风格图片」两种，节点内两个快捷按钮和底部运行按钮都会生成标准 OutputNode 文本或图片素材；文本只输出当前风格提示词和固定英文 visual reference 句子，图片输出同时携带 directImageUrl/imageUrl 兼容字段。",
+      "支持用户保存当前风格、新增/编辑/删除自定义风格、新增/重命名/删除分类，新增自定义风格可直接上传本地图片并保存到用户库，也可用 t8-artist-style-master@1 JSON 导入导出，便于换版本迁移。",
+      "上传素材节点和输出素材节点的图片素材支持右键「保存风格到艺术风格大师」：输出素材优先自动带出来源提示词，上传素材可手动填写；保存前必须在确认窗里修改或确认风格提示词。",
+      "节点、图库弹层和 lightbox 使用 artist-style-master 命名空间 CSS 变量，覆盖浅色/深色主题文字、按钮、输入框和边框对比度，避免主题切换后文字不可读。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/ArtistStyleMasterNode.tsx",
+      "src/components/MaterialContextMenu.tsx",
+      "src/data/artistStyleMasterManifest.ts",
+      "src/utils/artistStyleMaster.ts",
+      "public/artist-style-master/generated/*.webp",
+      "public/artist-style-master/generated/thumbs/*.webp",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "src/utils/nodePlacement.ts",
+      "src/styles/index.css",
+      "tests/artistStyleMaster.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\artistStyleMaster.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "animeTagMasterNode": {
+    "status": "implemented",
+    "date": "2026-06-14",
+    "nodeType": "anime-tag-master",
+    "category": "inspiration",
+    "description": "左侧「灵感之源」新增「动漫标签大师」节点：基于 comfyui-anima-t8 的 Danbooru / Gelbooru 在线图库懒加载思路，面向动漫创作提供标签检索、参考图浏览、自定义标签库和一键输出能力。",
+    "ports": {
+      "inputs": [
+        "text",
+        "image"
+      ],
+      "outputs": [
+        "text",
+        "image"
+      ]
+    },
+    "capabilities": [
+      "内置动漫创作常用标签库，覆盖角色人设、姿势动作、表情情绪、服装配饰、构图镜头、画风质感、光影场景、质量增强和负面排除等分类。",
+      "支持按英文标签、中文名、分类、标签、描述搜索，支持按分类和来源筛选；节点内只展示精简缩略图，完整图库通过外部弹层打开，避免节点被撑高。",
+      "Danbooru 与 Gelbooru / Galbooru 在线图库采用懒加载搜索：用户输入标签后通过 /api/anime-tags 同源代理按需拉取公开预览图，不提前打包大图库，适合后续扩展更多图库源。",
+      "Gelbooru 优先使用 DAPI；未配置 user_id/api_key 或接口拒绝时自动切到公开 HTML 兜底解析，并通过 /api/anime-tags/image 代理预览图，减少 CORS、热链和鉴权导致的空白。",
+      "运行模式提供「输出标签」和「输出图像」两种，按钮和运行动作都会生成标准 OutputNode；图像输出携带 directImageUrl/imageUrl/directImageUrls/imageUrls，便于后续节点继续接线。",
+      "图库支持点击缩略图进入 lightbox、方向键左右切换、Esc 关闭、复制标签提示词；每张卡片展示中文翻译、原始标签、分类、来源和属性信息。",
+      "支持用户新增、编辑、删除自定义动漫标签，新增/重命名/删除分类，上传本地参考图保存到自定义库，并用 t8-anime-tag-master@1 JSON 导入导出迁移。",
+      "上传素材节点和输出素材节点的图片素材支持右键「保存动漫标签到动漫标签大师」：自动带出来源提示词时也必须经过确认弹窗，用户可手动修改名称、分类、标签、提示词和负面提示词后保存。",
+      "节点、图库弹层和 lightbox 使用 anime-tag-master 命名空间 CSS 变量，覆盖浅色/深色主题文字、按钮、输入框和边框对比度。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/AnimeTagMasterNode.tsx",
+      "src/components/MaterialContextMenu.tsx",
+      "src/data/animeTagMasterManifest.ts",
+      "src/utils/animeTagMaster.ts",
+      "backend/src/routes/animeTags.js",
+      "backend/src/server.js",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "src/utils/nodePlacement.ts",
+      "src/styles/index.css",
+      "tests/animeTagMaster.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\animeTagMaster.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "comfyuiExcludeRulesBackup": {
+    "status": "implemented",
+    "date": "2026-06-11",
+    "description": "ComfyUI 自动映射排除规则支持 JSON 导入导出，覆盖设置页面扩展 API 的 ComfyUI 设置和 ComfyUI 应用制作工具节点。",
+    "highlights": [
+      "排除采样器参数、排除模型加载、排除尺寸批量等规则可以一键导出为 t8-comfyui-field-exclude-rules JSON。",
+      "导入兼容新 JSON、旧数组、纯文本规则和常见字段名，用户换版本或换设备时不用重新手填。",
+      "导入后会立即重新计算自动映射字段，设置页与制作工具节点使用同一套解析规则。"
+    ],
+    "files": [
+      "src/utils/comfyuiWorkflow.ts",
+      "src/components/ApiSettings.tsx",
+      "src/components/nodes/ComfyUIAppMakerNode.tsx",
+      "tests/comfyuiProvider.test.ts",
+      "tests/comfyuiAppsManifest.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\comfyuiProvider.test.ts tests\\comfyuiAppsManifest.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "comfyuiWorkflowRecognition": {
+    "status": "implemented",
+    "date": "2026-06-11",
+    "description": "本地 ComfyUI API Workflow 自动识别增强：从少数标准节点扩展到通用自定义节点字段，保证制作器、设置页和后端提交使用同一套映射规则。",
+    "highlights": [
+      "自动识别 prompt / positive_prompt / negative_prompt / caption / instruction 等文本字段，仍优先通过 sampler 连接修正正负 Prompt。",
+      "自动识别 image / mask / reference_image / control_image / image_path 等图片输入，并支持 image1 之后的更多编号；视频和音频输入同样支持 videoN / audioN。",
+      "补齐 ControlNet、UNet、CLIP Vision、Style Model、Upscale Model、帧率、帧数、FPS、guidance、shift、strength、weight 等常见自定义节点参数。",
+      "ComfyUI 应用制作器会把新识别到的非媒体参数暴露为可调用户参数；图像节点 ComfyUI 面板同步显示这些字段。",
+      "后端 ComfyUI provider 使用同等识别规则，即使保存的 workflow 没有 fields 映射，也能在提交前自动 patch 自定义字段。"
+    ],
+    "files": [
+      "src/utils/comfyuiWorkflow.ts",
+      "src/utils/comfyuiApps.ts",
+      "src/components/nodes/ImageNode.tsx",
+      "backend/src/providers/comfyui.js",
+      "tests/comfyuiProvider.test.ts",
+      "tests/comfyuiImageNode.test.ts",
+      "tests/comfyuiAppsManifest.test.ts"
+    ],
+    "verification": [
+      "node -c backend\\src\\providers\\comfyui.js",
+      "node --test tests\\comfyuiProvider.test.ts tests\\comfyuiImageNode.test.ts tests\\comfyuiAppsManifest.test.ts",
+      "npm run type-check"
+    ]
+  },
+  "netdiskWebdavUpload": {
+    "status": "implemented",
+    "date": "2026-06-11",
+    "description": "云端上传目标补齐百度网盘与夸克网盘真实上传：公开版走 WebDAV 网关方案，复用素材右键上传入口，不依赖不稳定 Cookie 抓包接口。",
+    "highlights": [
+      "百度网盘 / 夸克网盘设置页从预留字段改为 WebDAV 地址、用户名、密码/令牌、网盘目录和公共域名配置，并补充 Alist / CloudDrive2 / rclone 使用说明。",
+      "后端新增 WebDAV 自动建目录、PUT 文件上传、配置检查临时写入并删除测试文件，保证检查能验证真实写入权限。",
+      "云上传错误分类新增 WebDAV 认证、Endpoint、目录冲突、空间不足等可执行中文提示；右键菜单继续按启用目标显示。",
+      "云端上传摘要将 COS、OSS、百度 WebDAV、夸克 WebDAV 四类目标都计入 supportedUploadCount。"
+    ],
+    "files": [
+      "backend/src/cloudUploads/settings.js",
+      "backend/src/cloudUploads/uploader.js",
+      "src/components/ApiSettings.tsx",
+      "src/types/canvas.ts",
+      "tests/cloudUploads.test.ts"
+    ],
+    "verification": [
+      "node -c backend\\src\\cloudUploads\\settings.js",
+      "node -c backend\\src\\cloudUploads\\uploader.js",
+      "node --test tests\\cloudUploads.test.ts"
+    ]
+  },
+  "electronReleaseV216": {
+    "version": "2.1.6",
+    "status": "electron-release",
+    "date": "2026-06-11",
+    "description": "v2.1.6 Electron 自动更新发布：打包 v2.1.5 源码能力并补齐 Grok OAuth Agent 快捷生成、Fal 超市状态徽章、RH RED 上传模式持久化、圣斗士冥界雷达与 GPT Image 2 尺寸快捷模型等热修。",
+    "highlights": [
+      "Grok OAuth Agent 小节点可在不打开 Grok 创作台的情况下简易生成，文本 / 图像 / 视频 / 音频结果统一写入 OutputNode，不再把大结果堆在节点内部。",
+      "Grok OAuth Agent 左右输入 / 输出端口样式加固，避免被节点外框裁切。",
+      "Fal 超市右上角移除“待命”徽章，超市首页保留模型能力说明和预扣 3.4 币提示。",
+      "RH 隐藏 RED 上传模式改为节点级持久化，删除素材后仍保持 RED 模式，不自动退回普通上传节点。",
+      "圣斗士冥界篇雷达 / 小地图重绘，宝箱和巡查指针固定在主题雷达框内，巡查钟盘保持居中并避免跑出地图。",
+      "GPT Image 2 新增 gpt-image-2-2K 与 gpt-image-2-4K 两个贞贞 API 快捷模型，不走 FAL，保留原 gpt-image-2 使用方式。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.6.md"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.1.6.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.1.6.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.1.6 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码和公开打包产物。",
+      "真实 Grok OAuth 私有调用继续通过本机 ignored local-private 扩展 / 加密链路处理，公开仓库只保留安全外壳。"
+    ],
+    "verification": [
+      "node --test tests\\saintSeiyaBattle.test.ts tests\\grokOAuthAgent.test.ts tests\\achievements.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify"
+    ]
+  },
+  "sourceReleaseV215": {
+    "version": "2.1.5",
+    "status": "source-only",
+    "date": "2026-06-09",
+    "description": "v2.1.5 只推 GitHub 源码，不打包 Electron，不发布 GitHub Release / latest.yml。重点收口 FAL 超市、3D 模型素材链路、RH 工具箱运行端易用性、圆盘菜单、Grok OAuth Agent 公开外壳和圣斗士主题首版。",
+    "includedPublicScope": [
+      "Fal 超市公开节点与 FAL 通用 manifest / submit / query 链路，保留现有图像、视频等节点内的 FAL 功能不删除。",
+      "3D 素材上传、3D 模型预览、OutputNode 3D 模型分区，以及自动输出到 3D 预览节点的链路。",
+      "RH 工具箱运行端首页轻量按钮、悬停说明区、Prompt/text 默认值直显、inputSchema 字段直显和本地素材输入。",
+      "Grok OAuth Agent 公开外壳和后端 hook 路由；真实 OAuth / xAI 调用仍由 local-private 私有扩展提供。",
+      "长按鼠标中键圆盘菜单与自定义入口，左下角控制栏位置收敛。",
+      "圣斗士主题增强：圣衣收集、宝箱、小地图、20-30 秒自动战斗、经验升级、冥界篇隐藏模式、10 秒过场动画和成就奖励影片大屏播放。",
+      "公开检查脚本新增制作器源码拦截，避免 RH 工具箱制作器 / FAL 应用制作工具误入公开提交。"
+    ],
+    "excludedPrivateDevScope": [
+      "不提交 src/components/nodes/RHToolboxMakerNode.tsx 的本地制作器改动。",
+      "不提交 src/components/nodes/FalToolboxMakerNode.tsx 的本地制作器源码。",
+      "不提交 src/utils/rhToolboxDeveloper.ts 或 src/utils/falToolboxDeveloper.ts 的本地制作器辅助源码；公开运行节点仅保留私有动态加载入口。",
+      "不提交 skill.md、roadmap.md、local-private/**、hermes-agent/** 或 Electron 缓存目录。",
+      "本次不运行 npm run dist:release，不生成安装包、blockmap、latest.yml，也不创建 GitHub Release。"
+    ],
+    "verification": [
+      "node --test tests\\rhToolbox.test.ts tests\\falToolbox.test.ts tests\\grokOAuthAgent.test.ts tests\\radialMenu.test.ts tests\\saintSeiyaBattle.test.ts tests\\achievements.test.ts tests\\updateMdRegressions.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check"
+    ]
+  },
+  "gptImage2ZhenzhenSizeVariants": {
+    "status": "implemented",
+    "date": "2026-06-10",
+    "description": "GPT Image 2 节点新增 gpt-image-2-2K 与 gpt-image-2-4K 两个贞贞 API 尺寸快捷模型，不走 FAL，其他用法与 gpt-image-2 保持一致。",
+    "paths": [
+      "src/providers/models.ts",
+      "src/components/nodes/ImageNode.tsx",
+      "backend/src/routes/proxy.js",
+      "tests/imageModelMapping.test.ts",
+      "features.json"
+    ],
+    "capabilities": [
+      "GPT2 具体模型下拉新增 gpt-image-2-2K 和 gpt-image-2-4K。",
+      "选择 gpt-image-2-2K / gpt-image-2-4K 时，前端自动把尺寸切换为 2K / 4K。",
+      "后端提交时把这两个别名归一为上游真实模型 gpt-image-2，并强制对应 image_size，避免误传别名给贞贞 API。",
+      "两个新选项不注册到 FAL_REGISTRY，不会走 gpt-image-2-fal 的 FAL 队列协议。",
+      "分类独立 API Key 和 New API 分组令牌仍按 gpt-image 系列匹配。"
+    ]
+  },
+  "rhToolboxMakerUsability": {
+    "status": "implemented-dev-tooling",
+    "date": "2026-06-09",
+    "description": "RH工具箱制作器升级为开发态管理台：保存后可直接显示到 RH工具箱，并支持草稿库和自定义分类管理。",
+    "paths": [
+      "src/components/nodes/RHToolboxMakerNode.tsx",
+      "src/components/nodes/RHToolboxNode.tsx",
+      "src/utils/rhToolboxDeveloper.ts",
+      "tests/rhToolbox.test.ts",
+      "features.json",
+      "skill.md"
+    ],
+    "capabilities": [
+      "制作器新增发布检查卡，明确显示是否缺 WebApp ID、启用状态、节点显示、输入映射或输出声明。",
+      "保存按钮改为“保存并显示”，保存成功后 RH工具箱节点会自动清空搜索 / 分类过滤并选中新工具。",
+      "发布检查卡内新增主保存按钮，保存结果直接显示草稿数 / 可见数，避免用户滚到底部才知道是否成功。",
+      "开发草稿事件会携带完整 manifest，并在 localStorage 写入失败时使用当前页面内存兜底，RH工具箱收到事件后优先用事件 manifest 刷新。",
+      "RH工具箱节点在开发环境会定时轻量刷新开发草稿，避免保存事件被 HMR 或旧节点实例吞掉后右侧仍无反应。",
+      "保存运行时判断改为 DEV 或页面存在 RH工具箱制作器根节点即可写入，避免制作器已显示但保存函数误判非开发环境。",
+      "制作器左右两栏改成节点内部滚动，读取 RH 字段后不会把草稿库、保存按钮和 JSON 区挤出节点外。",
+      "制作器内新增草稿库，可编辑、打开或删除已保存 RH 工具草稿。",
+      "制作器内新增自定义分类管理，可新建、重命名、删除分类，分类下拉显示名称和 ID。",
+      "RH工具箱分类改为固定大类 + 可维护小类：大类固定为图像、视频、音频、3D、文本；制作器新建的是大类下的小类。",
+      "RH工具箱首页去掉快捷接入位和 idle 待命徽章，工具改为类似 RH超市的轻量双列按钮，只显示应用名；开发环境下 hover 才显示编辑入口。",
+      "RH工具箱首页补齐和 RH超市一致的悬停说明区：鼠标移到工具按钮上时，底部显示工具名和说明 description，未悬停时显示可用工具数量提示。",
+      "RH工具箱运行页会把 inputSchema 中的 Prompt、图像、视频、音频字段直接渲染出来：文本字段支持提示词模板库、放大编辑和 @ 素材引用，媒体字段支持节点内上传或继续使用左侧上游素材。",
+      "RH工具箱 Prompt/text 字段会把工具模板里的 defaultValue 直接显示为可编辑内容，新选择工具时同步写入本地输入并作为默认发送值，用户无需重新手打默认提示词。",
+      "RH工具箱制作器移除按钮名和强调色配置，新保存工具完全跟随当前主题，不再由单个工具自定义颜色破坏画布主题。",
+      "RH工具箱默认 manifest 和 quick action 协议不再保留 quickActionLabel / ui.accent，按钮文案统一用工具标题，颜色统一由当前画布主题决定。",
+      "根因修复：RH工具箱运行页只显示 inputSchema/userParams 中声明的字段；制作器读取 RH 应用字段时会自动把图片/视频/音频字段补进素材输入，把 Prompt/文本字段补进 Prompt 区，把数字/选择/布尔字段补进用户参数，保存时也会兜底补齐。",
+      "分类管理补齐小类基础维护能力：读取已生成小类、改名、改所属大类、调整顺序、上移/下移、保存和删除。",
+      "内置模板小类 image-tools / video-tools / text-tools / audio-tools / model3d-tools 不进入制作器分类管理和 RH工具箱小类筛选；小类只由维护者手动新建，旧工具仍可在对应大类的“全部”里显示。"
+    ],
+    "devOnly": true
+  },
+  "saintSeiyaTheme": {
+    "status": "implemented-theme-redesign",
+    "date": "2026-06-09",
+    "description": "圣斗士主题重做为完整强视觉：十二宫 / 冥界篇双主题、圣域星图画布、圣衣箱节点、宝箱小地图、战斗面板、经验升级和 12 黄金圣衣解锁冥界篇。",
+    "paths": [
+      "roadmap.md",
+      "src/data/saintSeiyaCloths.ts",
+      "src/utils/saintSeiyaBattle.ts",
+      "src/stores/saintSeiyaSanctuary.ts",
+      "src/components/SaintSeiyaSanctuary.tsx",
+      "src/styles/theme-saintseiya.css",
+      "src/theme/types.ts",
+      "src/theme/defaultTemplates.ts",
+      "src/components/ThemeTemplateManager.tsx",
+      "src/components/ThemeMusicToggle.tsx",
+      "src/App.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "shared/achievementManifest.json",
+      "backend/src/achievements/store.js",
+      "tests/saintSeiyaBattle.test.ts",
+      "tests/achievements.test.ts",
+      "features.json"
+    ],
+    "capabilities": [
+      "内置主题 saint-seiya，普通模式显示圣域 / 十二宫视觉，集齐 12 件黄金圣衣后可切换冥界篇隐藏模式。",
+      "主题视觉从小面板扩展到全局：顶部栏、侧栏、画布主体、ReactFlow 背景、节点、输入框、按钮、连线、端口、控制条和小地图都会进入圣域星图 / 圣衣箱风格。",
+      "普通模式使用深蓝圣域星空、金色十二宫罗盘、青色小宇宙光效和大理石圣衣箱节点；冥界模式切换为暗紫黑日蚀、红色冥界能量和金色星座环。",
+      "新增回归测试锁住 Saint Seiya 主题必须覆盖 .t8-app-shell、.t8-sidebar、.t8-canvas-shell、react-flow__pane、react-flow__minimap 和冥界模式。",
+      "大地图每 60 秒刷新一个宝箱，宝箱 10 秒未开启消失；宝箱标记叠加在右下角 ReactFlow 小地图上，避免出现第二张小地图，并支持点击跳转。",
+      "开启宝箱需要画布中心保持 3 秒，随后进入对应青铜 / 白银 / 黄金圣斗士试炼。",
+      "圣域罗盘改成顶部可折叠横向 HUD：不再挡左下角侧栏，显示等级、经验、当前黄金宫、圣衣计数和宝箱状态。",
+      "圣域罗盘新增十二黄金宫独立进度 UI：白羊到双鱼各有独立符号、宫位、图案、特效名和解锁文案，已收集 / 下一宫 / 未解锁状态一眼可见。",
+      "战斗按 Lv1-99、HP/MP/ATK/DEF/SPD、圣衣加成、胜负经验和招式消耗自动结算；开启试炼后系统会优先释放当前最强可用招式，胜利才会获得圣衣。",
+      "战斗结算从一次性字符串升级为结构化事件队列，前端按节奏逐行播放入场、架势、攻击、格挡、反击、胜负和奖励，并同步显示 HP / 小宇宙条。",
+      "战斗数值重做为 20-30 秒自动试炼节奏：青铜 8 回合、白银 9 回合、黄金 10 回合，每回合包含小宇宙交锋和双方行动，伤害按剩余回合节奏控制，避免秒杀或瞬间刷完。",
+      "每个招式会映射独立 effectId、视觉特效家族和 WebAudio 音效 cue，覆盖流星、庐山龙气、冰结、锁链、凤凰、雷光、银河、水晶、巨角、冥界、六道、天秤兵装、赤针、黄金箭、圣剑、玫瑰和护壁。",
+      "战斗日志改为贴右侧快捷栏下方的临时浮层，仅战斗时显示；结算后显示 3、2、1 倒计时并自动隐藏，不再占用顶部圣域罗盘或画布创作空间。",
+      "获得青铜 / 白银 / 黄金圣衣会触发不同等级的解锁演出；黄金圣衣会读取对应十二宫专属视觉配置，突出每件黄金圣衣的差异。",
+      "黄金圣衣按十二宫顺序推进：白羊、金牛、双子、巨蟹、狮子、处女、天秤、天蝎、射手、山羊、水瓶、双鱼，不能跳关随机获得。",
+      "12 黄金圣衣全收集后触发十二星座黄金圣衣集结 / 雅典娜归来过场动画、开启冥界篇，并记录隐藏成就；奖励影片本地以 .t8media 加密保存，解锁后通过成就影片馆解密播放。",
+      "切换进入冥界篇会重新播放十二黄金圣衣集结 / 雅典娜归来过场，过场时长统一为 10 秒。",
+      "主题成就抽屉在圣斗士 / 冥界模式下使用专属高对比 token，修复深色、浅色和冥界浅色模式中灰白字不清楚的问题。",
+      "成就主题详情和影片馆不再内嵌小视频；点击播放会打开圣斗士大屏奖励舞台，带星图、小宇宙背景和大尺寸 video 播放器。",
+      "圣域篇默认音乐为 saint-seiya-pegasus-fantasy.mp3，冥界篇默认音乐为 saint-seiya-hades-last-holy-war.mp3；Hades 浅色模式额外加固节点、输入框、快捷栏和圣域罗盘文字对比度。",
+      "首批数据包含 5 件青铜、12 件白银、12 件黄金圣衣；黄金圣衣包含原作常用招式名。"
+    ],
+    "verification": [
+      "node --test tests\\saintSeiyaBattle.test.ts tests\\achievements.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "falToolboxPromptInputs": {
+    "status": "implemented",
+    "date": "2026-06-09",
+    "description": "修复 Fal 超市详情页只显示 Prompt:text 却没有本地输入框的问题；FAL 工具的文字输入和文字参数统一接入 Prompt 编辑器能力。",
+    "paths": [
+      "src/components/nodes/FalToolboxNode.tsx",
+      "src/services/falToolbox.ts",
+      "src/utils/falToolbox.ts",
+      "tests/falToolbox.test.ts",
+      "features.json"
+    ],
+    "capabilities": [
+      "Fal 超市工具的 text input 会渲染为节点内 Prompt 编辑区，支持提示词模板库、放大编辑和 @ 引用上游图片/视频/音频。",
+      "本地 Prompt 有内容时直接写入对应 FAL payload key；本地为空时继续使用左侧连入的上游文本，不破坏原有文本连线流程。",
+      "text/textarea 类型用户参数也改用同一套 Prompt 编辑器，负向提示词等字段可使用模板和放大编辑。",
+      "运行时保存 lastPrompt/promptResolved，方便后续输出素材右键保存到提示词模板库时带回实际提示词。"
+    ],
+    "verification": [
+      "npm run type-check",
+      "node --test tests\\falToolbox.test.ts"
+    ]
+  },
+  "fal3dMaterialPipeline": {
+    "status": "implemented",
+    "date": "2026-06-09",
+    "description": "修复 Fal 超市 3D 模型产物被输出素材当图片渲染导致图裂的问题，并把 3D 模型作为独立素材类型接入上传、输出、自动外挂和预览链路。",
+    "paths": [
+      "src/utils/mediaCollection.ts",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/types/canvas.ts",
+      "src/components/Canvas.tsx",
+      "src/components/nodes/FalToolboxNode.tsx",
+      "src/components/nodes/Model3DPreviewNode.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/UploadNode.tsx",
+      "src/components/nodes/useHasAutoOutput.ts",
+      "tests/falToolbox.test.ts",
+      "features.json"
+    ],
+    "capabilities": [
+      "新增 model3d 媒体类型，统一使用 modelUrl/modelUrls/directModelUrl/directModelUrls 字段，不再把 .glb/.gltf/.obj/.fbx/.stl/.usdz/.zip 放进图片预览。",
+      "素材资源分类新增 3D素材上传节点；3D模型预览节点也移入素材资源分类，并显示当前模型下载地址。",
+      "Fal 超市和画布自动输出识别 3D 模型后会自动创建 3D模型预览节点，普通图像/视频/音频输出链路保持不变。",
+      "OutputNode 新增 3D模型分区，可下载模型文件，也可拆分为多个 3D模型预览节点。",
+      "Model3DPreviewNode 加固错误处理，Three.js 加载、渲染和释放异常会转成友好错误，不再导致 React 节点崩溃。"
+    ],
+    "verification": [
+      "node --test tests\\falToolbox.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "grokOAuthAgentPublicShell": {
+    "status": "implemented-agent-studio",
+    "date": "2026-06-10",
+    "description": "新增独立 GROK OAuth 分类与 Grok OAuth Agent 节点，并升级为“画布小节点 + Grok 创作台”形态；公开版只包含节点 UI、类型、端口、统一事件协议、后端 hook 路由和友好错误，真实 OAuth 登录、token 刷新及 xAI/Grok 调用必须由 local-private 私有扩展提供。",
+    "paths": [
+      "backend/src/routes/grokOAuth.js",
+      "backend/src/server.js",
+      "src/services/grokOAuth.ts",
+      "src/components/nodes/GrokOAuthAgentNode.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/types/canvas.ts",
+      "tests/grokOAuthAgent.test.ts",
+      "features.json"
+    ],
+    "capabilities": [
+      "侧边栏新增 GROK OAuth 分类，包含 Grok OAuth Agent 主节点，不混入现有图像/视频/LLM/音频节点。",
+      "节点支持流式聊天、图像、视频、TTS、STT 五种模式，读取上游 text/image/video/audio 与节点内 Prompt；产物默认进入 Grok 创作台产物库，不再自动把所有结果写入 outputText/imageUrls/videoUrls/audioUrls。",
+      "画布上的节点保持小巧，只显示登录状态、素材数、消息数、产物数、打开创作台、简易生成和发布最新；完整对话、参数、素材预览和产物卡放在 createPortal 打开的 Grok 创作台中。",
+      "画布小节点新增简易 Prompt 生成区：不进入 Grok 创作台也能填写 Prompt、使用提示词模板库、放大编辑和 @ 引用素材，并支持 /image /video /audio /tts /stt。",
+      "小节点简易生成完成后不会写入 agentMessages / agentArtifacts；文本、图像、视频、音频会直接覆盖标准 outputText/imageUrls/videoUrls/audioUrls 输出字段，由右侧输出素材节点展示。",
+      "产物卡支持图像/视频/音频/文本预览、下载、复制 Prompt 和“发布到画布输出”；只有发布后才写入标准 text/image/video/audio 输出字段并触发下游 OutputNode。",
+      "Grok 创作台 Prompt 支持 Enter 直接运行、Shift+Enter 换行；运行时会使用输入框最新文本，避免刚输入后回车跑旧 prompt。",
+      "Grok 创作台新增“提示词持久化”开关，默认关闭：任务验证通过并发送后自动清空 Prompt 和 @ 引用；开启后保留输入，方便连续微调。",
+      "对话上下文默认从 12 条提升到 30 条，最大可调到 80 条；超过上下文条数的旧对话会压缩进 grokContextSummary，并作为 system 长期记忆注入后续聊天，避免硬切历史导致突然失忆。",
+      "新对话和清空全部会同步重置 grokContextSummary / grokContextCompressedCount，防止跨会话带入旧记忆。",
+      "Grok 创作台支持本地上传图片、视频、音频作为 Agent 输入，并可在素材池删除本地上传素材。",
+      "发布产物时只写入主产物 URL，同时清空 urls/generatedImages/direct* 等旧输出通道，并锁定已发布产物卡，避免点击“发布最新”后一次生成多个相同 OutputNode。",
+      "旧版本节点中已经存在的 outputText/imageUrls/videoUrls/audioUrls 会在首次打开时迁移为 agentArtifacts，并清空旧标准输出，避免老画布继续输出爆炸。",
+      "后端新增 /api/grok-oauth/status、login/start、login/poll、login/complete、logout、agent/stream、chat/stream、image、video/submit、video/status、audio/tts、audio/stt 公共路由。",
+      "agent/stream 统一输出 message.delta、tool.started、tool.progress、artifact.completed、artifact.failed、done 事件；图像、视频、TTS、STT 即使底层是一次性或轮询，也会包装为统一 Agent 事件流。",
+      "chat/stream 兼容 SSE 增量；图像/视频/音频生成结果若由私有模块返回远程 URL 或 data URL，公共路由会统一保存到输出目录后返回 /files/output 路径。",
+      "视频模式对齐 Hermes xAI 规则：默认 grok-imagine-video 走文生视频，grok-imagine-video-1.5-preview 标注为图生视频专用，缺少上游图片时前端直接给出友好提示。",
+      "修复状态刷新 effect 在清空旧错误时误 abort 视频轮询的问题，避免图生视频刚提交就显示“已中止 Grok OAuth 任务”。"
+    ],
+    "privateBoundary": [
+      "公开仓库不得加入 Grok OAuth client secret、token、cookie、会员调用细节和真实 xAI 请求代码。",
+      "真实实现应通过 local-private/extensions/backend/index.cjs 注册 grokOAuth.* hooks；Electron 打包继续沿用现有 ignored local-private 加密扩展方案。",
+      "私有模块缺失时，节点和 API 必须返回：Grok OAuth 私有模块未启用，请使用带私有模块的本地版本。"
+    ],
+    "verification": [
+      "node --test tests\\grokOAuthAgent.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "electronReleaseV214": {
+    "version": "2.1.4",
+    "status": "electron-release",
+    "date": "2026-06-08",
+    "description": "v2.1.4 Electron 自动更新发布：集中打包 Figma Bridge 可用化、云端上传连通性、Prompt/@ 媒体引用、放置栏恢复、顶部画布教程入口和 LLM 默认模型调整，并按规范创建 GitHub Release 自动更新资产。",
+    "highlights": [
+      "Figma Bridge 随后端自动启动，发送到 Figma 前会兜底确保 localhost:3845 bridge 在线；Figma 插件对本机图片改为 fetch 二进制后 figma.createImage(bytes)，避免 image failed 引用卡片。",
+      "发送素材弹窗在 Figma 按钮附近常驻插件导入路径提示：开发版 tools\\figma-bridge\\plugin\\manifest.json，打包版 resources\\tools\\figma-bridge\\plugin\\manifest.json。",
+      "腾讯云 COS / 阿里云 OSS 配置检查改为 signed GET ?location 真实连通测试，上传错误透传 Code / Message / RequestId 和签名、权限、Region、Bucket 等分类提示；设置页补充云厂商控制台入口与 SecretKey 创建提醒。",
+      "Prompt / @ 引用修复：中文输入、即梦 CLI 节点本地 Prompt、文本节点读取下游生成节点旁路图像 / 视频 / 音频素材，以及 token kind 校验全部补齐。",
+      "左下角放置栏支持从已有画布素材节点回填最近素材，空列表也保持外壳，避免刷新后看起来消失。",
+      "顶部栏新增“画布教程”入口，整理第一弹到第九弹 Bilibili / Youtube 教程；“最新应用 · RunningHub”移除“获取 RH ApiKey”快捷入口。",
+      "LLM 新建节点默认模型调整为下拉第二项 gemini-3.5-flash；旧画布已有 model 字段不被强制迁移。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.4.md"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.1.4.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.1.4.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.1.4 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "Electron 用户包可在本机 dist:release 时包含 ignored local-private 加密扩展；GitHub Source code zip/tar.gz 不包含这些源码。",
+      "发布前必须运行 npm run public:check 并检查 staged 文件列表。"
+    ],
+    "verification": [
+      "node --test tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts tests\\cloudUploads.test.ts tests\\promptEditor.test.ts tests\\apiSettingsTheme.test.ts tests\\advancedProviderFrontend.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify"
+    ]
+  },
+  "falToolboxRoadmapAndPhase1": {
+    "status": "phase-1-to-5-first-pass-implemented",
+    "date": "2026-06-08",
+    "description": "新增 FAL 工具箱分类规划与首轮实现：Fal超市作为独立节点复制现有和已核验的 FAL 模型能力，FAL应用制作工具仅开发环境可见；补 3D模型预览节点承接 model3d 输出；保留原图像/视频等节点内已有 FAL 功能，不做删除或替换。",
+    "paths": [
+      "roadmap.md",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/types/canvas.ts",
+      "src/components/Canvas.tsx",
+      "src/components/NodeActionBar.tsx",
+      "src/components/nodes/FalToolboxNode.tsx",
+      "src/components/nodes/FalToolboxMakerNode.tsx",
+      "src/components/nodes/Model3DPreviewNode.tsx",
+      "src/data/falToolboxManifest.ts",
+      "src/services/falToolbox.ts",
+      "src/utils/falToolbox.ts",
+      "src/utils/falToolboxDeveloper.ts",
+      "backend/src/routes/proxy.js",
+      "electron/_post_build.cjs",
+      "tests/falToolbox.test.ts"
+    ],
+    "constraints": [
+      "现有 /image/fal/* 与 /video/fal/* 路由继续保留。",
+      "Fal超市使用新的 /api/proxy/fal-toolbox/submit 与 /api/proxy/fal-toolbox/query。",
+      "FAL应用制作工具通过 import.meta.env.DEV 注册，并由 electron/_post_build.cjs 检查不进入用户包。",
+      "公开源码不得包含私有计费、分组令牌和不可开源实现。",
+      "Fal超市 3D 工具统一输出 modelUrls / model3d；3D模型预览内置 glb/gltf/obj/stl/fbx/usdz loader，zip 作为打包容器保留下载入口。"
+    ],
+    "capabilities": [
+      "FAL工具箱侧边栏分类包含 Fal超市、3D模型预览，以及开发环境限定的 FAL应用制作工具。",
+      "Fal超市工具目录首轮扩展到 40+ 个已核验 endpoint，覆盖 GPT/Nano/Grok/Sora/Veo、Ideogram、Krea、Recraft、Seedream、Seedance、PixVerse、HeyGen、Topaz、Lyria、Seed Speech、MiniMax Speech、Hyper3D、Hunyuan 3D、Trellis 等。",
+      "工具 manifest 支持 sourceIndex 输入映射、点路径 payload、payloadKey 和 omitValues，可表达第 1 张/第 2 张参考图、嵌套参数、server_default 不发送、自定义字段覆盖等常见 FAL schema。",
+      "Fal超市支持收藏、最近使用、分类/搜索筛选、前端轮询瞬时错误最多 3 次重试。",
+      "FAL应用制作工具支持粘贴 schema/OpenAPI 片段推断 inputSchema 和 userParams，生成开发态 localStorage 草稿，生产包由 post-build 阻止泄漏。",
+      "3D模型预览节点接 model3d 输入，支持 glb/gltf/obj/stl/fbx/usdz Three.js 预览、自动旋转、切换多模型、下载原模型和当前角度快照输出图像。"
+    ],
+    "verification": [
+      "node --test tests\\falToolbox.test.ts",
+      "node --check backend\\src\\routes\\proxy.js",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "canvasTutorialTopbarPanel": {
+    "status": "implemented",
+    "date": "2026-06-14",
+    "description": "顶部栏在“最新应用”左侧新增“画布教程”入口，按第一弹到第十二弹整理 T8 画布教程 Bilibili / Youtube 链接；“最新应用 · RunningHub”弹窗移除“获取 RH ApiKey”快捷入口，只保留 RunningHub 国内/海外站和邀请码提示。",
+    "paths": [
+      "src/App.tsx",
+      "tests/updateMdRegressions.test.ts",
+      "features.json",
+      "skill.md"
+    ],
+    "tutorials": [
+      {
+        "title": "基础功能教程第一弹1.2.3版",
+        "bilibili": "https://www.bilibili.com/video/BV18sG76AE9Y/",
+        "youtube": "https://www.youtube.com/watch?v=V8oCBhemmCQ"
+      },
+      {
+        "title": "教程第二弹（循环系统，RH超市等）",
+        "bilibili": "https://www.bilibili.com/video/BV1CVGx6kEMV/",
+        "youtube": "https://www.youtube.com/watch?v=hSpoXclezqw"
+      },
+      {
+        "title": "教程第三弹（节点回避算法，资产库，自定义主题等）",
+        "bilibili": "https://www.bilibili.com/video/BV1qeVP6kEZi/",
+        "youtube": "https://www.youtube.com/watch?v=oJUbD88kvnk"
+      },
+      {
+        "title": "教程第四弹（RH主题隐藏模式Red,素材集节点，导演节点三件套，多角度可视化，图像对比，高级版多宫格剪裁）",
+        "bilibili": "https://www.bilibili.com/video/BV1gfGm6HERH/",
+        "youtube": "https://www.youtube.com/watch?v=9Bn0BjsfwlE"
+      },
+      {
+        "title": "教程第五弹（人造人系统，灵魂画手控制系统，贞贞无限画布！火影忍者，EVA，幽游白书主题，设计师专属优化多画布及Eagle发送）",
+        "bilibili": "https://www.bilibili.com/video/BV1KhVY6MEFP/",
+        "youtube": "https://www.youtube.com/watch?v=_lmRmlPZ2y0"
+      },
+      {
+        "title": "教程第六弹（灌篮高手主题上线！新Red隐藏模式，姿势大师节点，全新交互及连线方式）",
+        "bilibili": "https://www.bilibili.com/video/BV1RjVZ69En1/",
+        "youtube": "https://www.youtube.com/watch?v=pSLqhcpmpn8"
+      },
+      {
+        "title": "教程第七弹（即梦CLI调用，Seedance2.0不卡人脸！支持modelscope免费版生成，OpenAI兼容调用，RH超市，画板功能再升级！宫格编辑！新增AI检测消除功能）",
+        "bilibili": "https://www.bilibili.com/video/BV18eVz68ENs/",
+        "youtube": "https://www.youtube.com/watch?v=PQ5rKtOZ-tM"
+      },
+      {
+        "title": "教程第八弹（本地Comfyui植入贞贞的无限画布！超简单超好用！新增足球小将主题，视频解析功能，节点对齐，即梦CLI修复多参，免费版魔搭API Lora支持，素材黏贴新模式，APIKEY导入导出功能）",
+        "bilibili": "https://www.bilibili.com/video/BV1ha7R6DES5/",
+        "youtube": "https://www.youtube.com/watch?v=LViGXsMTFhs"
+      },
+      {
+        "title": "教程第九弹（新增3D全景功能及资产库，一键自动更新功能，输入框放大按钮，修复即梦CLI的多参问题，AI去水印节点功能升级，新增聚合解析功能，可获取17个平台无水印视频，优化启动速度，优化画布加载如慢加载，支持自定义快捷键设置）",
+        "bilibili": "https://www.bilibili.com/video/BV1gSEA6GEDQ/",
+        "youtube": "https://www.youtube.com/watch?v=-nmX9oB-MX"
+      },
+      {
+        "title": "教程第十弹（3D全景功能增强，Figma联动，支持阿里云Oss及腾讯云Cos，新增放置栏，修正新香蕉的模型映射，上传素材的上限从10M到20M，新增veo-omni模型，新增提示词模板系统及增强功能，comfyui支持remote模式，新增newapi分组令牌高级模式，LLM/VISIOIN节点支持流式删除，分类独立APIKEY支持删除功能，新增画布教程模块，支持上游文本联动生成节点@模式，即梦CLI模型补全，素材支持直接拖到浏览器外文件夹）",
+        "bilibili": "https://www.bilibili.com/video/BV1N9Eg6QEHs/",
+        "youtube": "https://www.youtube.com/watch?v=zIW7PbEWQAs"
+      },
+      {
+        "title": "教程第十一弹（新增圣斗士星矢双主题，加强本地comfyui节点和参数解析，修复不支持LIST的问题，新增画布内图片素材按鼠标左右键拖动到文件夹，新增Fal超市功能，新增grok agent节点，含创作台和简易版，新增3D素材上传和预览功能）",
+        "bilibili": "https://www.bilibili.com/video/BV1gGEz6VEDA/",
+        "youtube": "https://www.youtube.com/watch?v=oRT59Qf65KY"
+      },
+      {
+        "title": "教程第十二弹（grok agent的节点修复图生视频功能，新增视频延展及视频编辑功能，新增codex cli agent节点，简约模式和创作台模式，新增Codex生图工作台节点，新增自定义快捷圆盘，FAL超市新增10多个新模型，视频节点新增3个grok video 1.5模型，解锁成就系统所有隐藏模式的奖励影片，新增俄罗斯方块主题及小游戏）",
+        "bilibili": "https://www.bilibili.com/video/BV1phJs6oE2g/",
+        "youtube": "https://www.youtube.com/watch?v=BKV8YA-kKK4"
+      }
+    ],
+    "verification": [
+      "node --test tests\\updateMdRegressions.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "figmaBridgeImportHotfix": {
+    "status": "implemented",
+    "date": "2026-06-08",
+    "description": "修复 Figma Bridge 首次使用和重复启动报错：Figma manifest 不再声明 127.0.0.1:3845，改用 Figma 接受的 localhost:3845，并补 documentAccess=dynamic-page；bridge 对 Figma 暴露的 assetUrl 固定为 localhost；bridge 重复启动遇到 EADDRINUSE 时会探测已有 T8 bridge，新版本会保留状态窗口，旧版本会提示关闭旧窗口后重启。",
+    "paths": [
+      "tools/figma-bridge/server.cjs",
+      "tools/figma-bridge/start-figma-bridge.cmd",
+      "tools/figma-bridge/plugin/manifest.json",
+      "tools/figma-bridge/plugin/code.js",
+      "tools/figma-bridge/plugin/ui.html",
+      "tools/figma-bridge/README.md",
+      "backend/src/routes/figma.js",
+      "backend/src/utils/figmaBridge.js",
+      "README.md",
+      "tests/updateMdRegressions.test.ts"
+    ],
+    "notes": [
+      "Figma 开发插件导入时 localhost:端口可用，127.0.0.1:端口会被当前 manifest 校验拒绝。",
+      "T8 Bridge 是 Figma Plugin，不是 Widget；如果导入时报 manifest.containsWidget 必须为 true，说明选到了 Widgets / Import widget from manifest，需要改用 Plugins / Import plugin from manifest。",
+      "Bridge 实际监听默认使用 127.0.0.1，避免 Windows localhost 只绑定到 IPv6；对 Figma 暴露的 assetUrl 固定使用 localhost。",
+      "如果启动脚本提示 already running 且保持状态窗口，说明新版 bridge 已经在 3845 端口运行，用户直接回 Figma 运行插件即可。",
+      "如果插件面板提示 Old bridge detected，需要关闭旧 bridge 窗口或旧 node.exe，再重新启动 start-figma-bridge.cmd。",
+      "插件主脚本使用保守语法并内置 showUI / notify 兜底；如果 Figma 没有把 ui.html 注入为 __html__，code.js 会直接使用内联完整 Bridge UI，不再停在“未绑定 UI”诊断页。",
+      "start-figma-bridge.cmd 在 node 0 退出时也会暂停显示状态，避免用户双击后窗口一闪而过；若仍红条，需要查看 DevTools Console 第一条 code.js 报错。",
+      "后端启动和 /api/figma/import 发送前都会自动确保 localhost:3845 bridge 在线，用户通常不需要手动运行 npm run figma:bridge。",
+      "发送内容弹窗会在“发送到 Figma”按钮附近常驻提示：打开 Figma 桌面软件，走 Plugins / 插件 -> Development -> Import plugin from manifest...，导入 tools\\figma-bridge\\plugin\\manifest.json；打包版插件位于应用目录 resources\\tools\\figma-bridge\\plugin\\manifest.json。",
+      "Figma 插件对 localhost/127.0.0.1 图片改用 fetch 二进制 + figma.createImage(bytes)，避免 createImageAsync(localhost) 失败后只生成 image failed 引用卡片。"
+    ]
+  },
+  "cloudUploadCosConnectivityFix": {
+    "status": "implemented",
+    "date": "2026-06-08",
+    "description": "腾讯云 COS 上传排查增强：配置检查从仅校验字段改为 signed GET ?location 真实连通测试；COS 上传签名抽为统一 V5 签名 helper，URL path 使用严格 percent-encode；COS/OSS XML 错误会提取 Code/Message/RequestId 并透传到前端提示。",
+    "notes": [
+      "COS 不需要单独填写 AppID；Bucket 名形如 t8-1312665347，其中 1312665347 已是 AppID。",
+      "腾讯云 SecretKey 只在新建密钥时显示一次，旧密钥列表只能看到 SecretId；用户找不到 SecretKey 时必须新建一组 CAM API 密钥。",
+      "密钥输入框如果误传浏览器密码点/星号，后端会当作 masked secret 保留旧值，避免覆盖真实密钥。",
+      "API 设置页 COS / OSS 配置块直接提供腾讯云 API 控制台、腾讯云对象存储、阿里云 AccessKey 控制台和阿里云 OSS 控制台入口，降低用户找入口成本。"
+    ],
+    "paths": [
+      "backend/src/cloudUploads/settings.js",
+      "backend/src/cloudUploads/uploader.js",
+      "backend/src/routes/cloudUploads.js",
+      "src/components/ApiSettings.tsx",
+      "src/components/MaterialContextMenu.tsx",
+      "src/services/api.ts",
+      "tests/cloudUploads.test.ts"
+    ],
+    "verification": [
+      "node -c backend\\src\\cloudUploads\\uploader.js",
+      "node -c backend\\src\\routes\\cloudUploads.js",
+      "node --test tests\\cloudUploads.test.ts",
+      "真实 COS signed location 连通测试：bucket=t8-1312665347, region=ap-nanjing 通过"
+    ]
+  },
+  "cloudUploadOssEndpointAuthFix": {
+    "status": "implemented",
+    "date": "2026-06-08",
+    "description": "阿里云 OSS 上传修复：Endpoint 支持 oss-cn-beijing / cn-beijing 等简写并归一为 oss-cn-beijing.aliyuncs.com；配置检查和上传统一使用 Header Authorization 签名，避免 URL Query V1 签名被 Bucket 策略拒绝。",
+    "notes": [
+      "用户在设置页填 oss-cn-beijing 或 cn-beijing 都会保存为 oss-cn-beijing.aliyuncs.com；历史设置未重新保存时上传路径也会再次归一。",
+      "阿里云 OSS 配置检查不再把 OSSAccessKeyId 写入 URL，改为 Date + Authorization 头。",
+      "真实测试使用 bucket=t8star / endpoint=oss-cn-beijing 完成 signed location 检查、上传小文件和删除测试对象；聊天里暴露过的测试 AccessKey 应尽快禁用或轮换。"
+    ],
+    "paths": [
+      "backend/src/cloudUploads/settings.js",
+      "backend/src/cloudUploads/uploader.js",
+      "tests/cloudUploads.test.ts",
+      "skill.md"
+    ],
+    "verification": [
+      "node -c backend\\src\\cloudUploads\\settings.js",
+      "node -c backend\\src\\cloudUploads\\uploader.js",
+      "node --test tests\\cloudUploads.test.ts",
+      "真实 OSS 测试：bucket=t8star, endpoint=oss-cn-beijing 配置检查、上传、删除测试对象通过"
+    ]
+  },
+  "figmaBridgeLocalTool": {
+    "status": "implemented-local-tool",
+    "date": "2026-06-08",
+    "description": "发送到 Figma 不再只预留 localhost 接口；项目内置 tools/figma-bridge 本机服务和 Figma 开发插件，用户运行 npm run figma:bridge 并在 Figma 导入 plugin/manifest.json 后即可把画布素材导入当前 Figma 文件。",
+    "paths": [
+      "tools/figma-bridge/server.cjs",
+      "tools/figma-bridge/start-figma-bridge.cmd",
+      "tools/figma-bridge/plugin/manifest.json",
+      "tools/figma-bridge/plugin/code.js",
+      "tools/figma-bridge/plugin/ui.html"
+    ],
+    "protocol": [
+      "T8 后端启动时自动拉起 localhost:3845 bridge；发送前再次兜底确保 bridge 在线。",
+      "T8 后端 POST http://127.0.0.1:3845/import 将素材放入本机队列。",
+      "Figma 插件轮询 /claim，导入图像和文本；视频 / 音频以引用卡片保留素材地址。",
+      "Bridge 通过 /asset/:jobId/:itemId 代理本机 input/output 素材，Figma 插件侧只访问 manifest 允许的 localhost:3845。"
+    ],
+    "packaging": [
+      "package.json build.extraResources 复制 tools/figma-bridge 到 Electron resources/tools/figma-bridge。",
+      "electron/_post_build.cjs 检查 bridge server、启动脚本和插件 manifest/code/ui 是否存在。"
+    ]
+  },
+  "sourceReleaseV213": {
+    "version": "2.1.3",
+    "status": "source-only",
+    "date": "2026-06-08",
+    "description": "v2.1.3 源码发布：按新版 dreamina CLI help 权威确认即梦 CLI 图像 seedream-4.7 与完整 Seedance 2.0 视频模型变体，补齐默认模型列表、旧设置迁移、后端 model_version 参数和设置页提示。本次只推 GitHub 源码，不打包 Electron，不创建或更新 GitHub Release 自动更新资产。",
+    "highlights": [
+      "已按用户提供的 curl 安装方式更新本机 dreamina CLI 到 C:\\Users\\Administrator\\bin\\dreamina.exe；新版安装包未提供单独 tools.json，安装后的 SKILL.md 明确要求以 dreamina -h / 子命令 -h 为权威来源。",
+      "dreamina text2image -h 与 image2image -h 已确认支持 model_version=4.7；即梦 CLI 图像模型新增 seedream-4.7，后端提交时会写入 --model_version=4.7。",
+      "即梦 CLI 默认图像模型补充 seedream-4.7 / seedream-4.6 / seedream-4.5 / seedream-5.0，并保留旧 jimeng-image-2k / jimeng-image-4k 兼容值。",
+      "dreamina text2video -h 与 multimodal2video -h 已确认 Seedance 2.0 支持 seedance2.0fast_vip / seedance2.0_vip / seedance2.0fast / seedance2.0；默认列表和旧空列表设置迁移已补齐。",
+      "按 CLI 帮助同步 Seedance 2.0 分辨率边界：只有 seedance2.0_vip 允许 1080p，其余 Seedance 2.0 变体提交时固定 720p，避免 CLI 参数报错。",
+      "API Key 设置页即梦 CLI 模型提示同步展示 seedream-4.7 与完整 Seedance 2.0 变体，降低用户手填模型名的成本。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.3.md"
+    ],
+    "releaseBoundary": [
+      "本次只推 GitHub 源码，不运行 npm run dist:release，不打包 Electron，不发布 GitHub Release 或 latest.yml。",
+      "公开提交继续禁止 skill.md、roadmap.md、local-private/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。"
+    ],
+    "verification": [
+      "C:\\Users\\Administrator\\bin\\dreamina.exe -h",
+      "C:\\Users\\Administrator\\bin\\dreamina.exe text2image -h",
+      "C:\\Users\\Administrator\\bin\\dreamina.exe image2image -h",
+      "C:\\Users\\Administrator\\bin\\dreamina.exe text2video -h",
+      "C:\\Users\\Administrator\\bin\\dreamina.exe multimodal2video -h",
+      "node --test tests\\advancedProviders.test.ts tests\\advancedProviderFrontend.test.ts tests\\jimengCliProvider.test.ts tests\\updateMdRegressions.test.ts",
+      "node --test tests\\*.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
+  "sourceReleaseV212": {
+    "version": "2.1.2",
+    "status": "source-only",
+    "date": "2026-06-08",
+    "description": "v2.1.2 源码发布：集中修复 update.md 中的 LLM 结果删除、@ 素材提及、文本分割提示词模板、大画布框选、组框级联删除、提示词模板分类保存、Figma 本机发送、左下角放置栏和素材外拖文件夹体验。本次按用户要求只推 GitHub 源码，不打包 Electron，不创建或更新 GitHub Release 自动更新资产。",
+    "highlights": [
+      "LLM 节点支持手动删除某条 assistant 流式结果；删除后同步刷新 outputText / text / generatedImages / imageUrls，后续生成不会让旧结果复活。",
+      "MentionPromptInput 修复 @ / 全角＠即时弹出时机；文本节点新增上游图像、视频、音频输入与素材提及预览，文本分割节点接入统一提示词模板和放大编辑器。",
+      "大画布框选结束时根据屏幕拖拽起止点重新映射 flow 矩形复核选区，降低节点很多时误选远处节点的问题。",
+      "组框右键新增“删除组和内容”，会合并 data.memberIds 与几何范围内成员节点，并清理所有相关连线。",
+      "素材右键保存到提示词模板库时可选择模板分类，也可即时新建模板分类；模板库继续支持分类新增、重命名、删除、导入导出。",
+      "发送弹窗新增“发送到 Figma”，后端 /api/figma/import 只允许 localhost 桥接，和 Eagle 一样不把本地素材发送到远端代理。",
+      "新增左下角放置栏：发送、粘贴和自动输出的素材节点会登记映射，折叠显示最近 5 个，展开显示最近 20 个；拖动放置栏卡片会移动原节点到落点，不复制节点。",
+      "图像、视频、音频素材写入 DownloadURL / text/uri-list 拖拽数据，支持从浏览器直接拖到外部文件夹。",
+      "RunningHub 上传链路补静态回归，确认 /files/input/* 上传节点素材和 /files/output/* 输出素材都支持 upload-asset 转 RH fileName。",
+      "即梦 CLI seedream 4.7 飞书文档当前环境无法打开，本次按“不猜模型名”原则仅记录阻塞，待可访问文档或明确 CLI 模型值后再补。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.2.md"
+    ],
+    "releaseBoundary": [
+      "本次只推 GitHub 源码，不运行 npm run dist:release，不打包 Electron，不发布 GitHub Release 或 latest.yml。",
+      "公开提交继续禁止 skill.md、roadmap.md、local-private/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "新增 Figma 后端路由已加入 Electron 后置加密资源检查，但本次不生成 Electron 用户包。"
+    ],
+    "verification": [
+      "node --test tests\\updateMdRegressions.test.ts tests\\promptTemplateLibrary.test.ts tests\\electronPackaging.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
+  "sourceReleaseV211": {
+    "version": "2.1.1",
+    "status": "source-only",
+    "date": "2026-06-08",
+    "description": "v2.1.1 源码发布：新增 New API 分组令牌高级模式所需的公开扩展插槽和 providerParams 透传，补齐分类独立 API Key 清空按钮，修复 Nano Banana 2 真实上游模型映射。本次按用户要求只推 GitHub 源码，不打包 Electron，不创建或更新 GitHub Release 自动更新资产。",
+    "highlights": [
+      "公开源码新增 LocalSettingsAddonSlot / LocalNodeAddonSlot 与后端 runtimeHooks，供本机 ignored 私有扩展接入 New API 分组令牌 UI 和按节点分组选择；公开仓库本身不包含私有分组令牌实现。",
+      "图像、视频、Seedance、音频节点把 providerParams 透传到后端代理，后端可通过通用 hook 解析分组令牌；普通用户不启用高级模式时仍只使用原贞贞通用 Key / 分类独立 Key。",
+      "FAL 图像和视频路线固定使用通用贞贞 API Key，不参与 New API 分组令牌，避免 fallback 模型因分组选择走错 Key。",
+      "分类独立 API Key 设置为每个系列增加清空按钮，支持保存后明确清空单个分类 Key，而不是只能覆盖或显示。",
+      "Nano Banana 2 UI 仍显示 nano-banana-2 (Flash)，真实上游提交修正为 gemini-3.1-flash-image-preview；旧画布保存的 nano-banana-2 会在前端和后端兜底归一。",
+      "后端增加无效令牌缓存失效 hook，私有分组令牌扩展可在 New API 后台删除/重建令牌后自动丢弃旧 key，避免继续复用过期缓存。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.1.md"
+    ],
+    "releaseBoundary": [
+      "本次只推 GitHub 源码，不运行 npm run dist:release，不打包 Electron，不发布 GitHub Release 或 latest.yml。",
+      "公开提交继续禁止 skill.md、roadmap.md、local-private/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "Electron 用户包如需带入 ignored local-private 分组令牌实现，必须后续重新走加密打包和 release 验证流程。"
+    ],
+    "verification": [
+      "node --test tests\\imageModelMapping.test.ts tests\\advancedProviderFrontend.test.ts tests\\apiSettingsTheme.test.ts tests\\electronPackaging.test.ts tests\\grokVideo15.test.ts tests\\localExtensionHooks.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check"
+    ]
+  },
+  "sourceReleaseV210": {
+    "version": "2.1.0",
+    "status": "source-only",
+    "date": "2026-06-07",
+    "description": "v2.1.0 源码发布：提示词模板库升级为可携带图像 / 视频 / 音频配套素材的媒体模板库，Remote ComfyUI 收口为默认关闭的高危开关，并补齐 Web + 后端 Docker 部署入口。本次按用户要求只推 GitHub 源码并合并 main，不打包 Electron，不创建或更新 GitHub Release 自动更新资产。",
+    "highlights": [
+      "提示词模板库支持从图像、视频、音频、文本、输出素材和素材集右键保存模板，自动带入原 Prompt、标题、标签、媒体类型和配套媒体引用。",
+      "模板库预览改为轻量懒加载策略，图像缩略图右上角 hover 显示小眼睛，可按 100% 查看原图细节，避免模板数量过多时首屏卡顿。",
+      "全局提示词模板服务补齐媒体附件协议、导入导出兼容和资源库保存链路，旧纯文字模板继续兼容。",
+      "Remote ComfyUI 默认保持关闭，仅允许 localhost / 127.0.0.1；可信远端地址必须通过单个 ComfyUI 配置的 allowRemote 高危开关，或后端环境变量 T8_COMFYUI_ALLOW_REMOTE / T8_COMFYUI_ALLOW_PRIVATE 显式开启。",
+      "新增 Dockerfile、docker-compose.yml 与 .dockerignore，Docker 部署只包含 Web 前端 + Express 后端，不包含 Electron；compose 默认挂载 userdata 并开启容器场景所需的远端 ComfyUI 环境变量。",
+      "ComfyUI 地址安全校验集中到 backend/src/providers/comfyuiAccess.js，registry 归一化、连接测试和真实运行共用同一策略，避免配置 UI 与后端执行分裂。",
+      "感谢 @fm9394 在 PR #11 中提供 Remote ComfyUI 与 Docker 部署方向；本版参考其目标后重新按项目安全边界实现，保留默认本机安全策略。"
+    ],
+    "prAcknowledgement": {
+      "pullRequest": "https://github.com/T8mars/T8-penguin-canvas/pull/11",
+      "author": "fm9394",
+      "note": "感谢 PR #11 对 Remote ComfyUI 与 Docker 部署方向的贡献；本次公开版本采用默认关闭的高危开关方案，兼容环境变量，不直接放开所有远端地址。"
+    },
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.0.md"
+    ],
+    "releaseBoundary": [
+      "本次只推 GitHub 源码并合并 main，不运行 npm run dist:release，不打包 Electron，不发布 GitHub Release 或 latest.yml。",
+      "公开提交继续禁止 skill.md、roadmap.md、local-private/** 和任何私有计费/支付/充值实现进入 GitHub。",
+      "Docker 产物面向 Web + 后端源码部署；Electron 自动更新包如需发布，必须后续重新走 clean public worktree 与正式 release 流程。"
+    ],
+    "verification": [
+      "node --test tests\\promptTemplateLibrary.test.ts tests\\advancedProviders.test.ts tests\\comfyuiProvider.test.ts tests\\externalProvidersRoute.test.ts tests\\dockerComposeConfig.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
+  "electronReleaseV209": {
+    "version": "2.0.9",
+    "status": "electron-release",
+    "date": "2026-06-07",
+    "description": "v2.0.9 集中发布 3D 全景导演台后续能力、Sora2 Zhenzhen API 双通道、Veo Omni 默认模型、上传与画布持久化稳定性修复，并按规范打包 Electron 自动更新版本。",
+    "highlights": [
+      "3D 全景节点继续升级导演台：多人彩色小人、100+ 动作预设、自然语言动作生成、关键帧时间轴、序列帧素材集、遮挡参考、画面关节拖拽和全屏参数台形成闭环。",
+      "视频节点 Sora2 保留原 FAL 通道，同时新增 Zhenzhen API 通道；Sora2 拥有独立分类 API Key，不再和 Veo 共用独立 Key 设置。",
+      "视频节点主分类显示名从 Veo 3.1 调整为 Veo，并把 `veo-omni-10s` 设为 Veo 分类默认具体模型；旧 Veo3.1 / Veo FAL 入口继续保留。",
+      "Veo Omni 对齐 zhenzhen `/v1/videos` multipart 协议：前端模型值为 `veo-omni-10s`，后端提交时映射为 `omni_flash-10s`，使用 `input_reference` 与 `/v1/videos/{task_id}` 查询。",
+      "上传素材接口上限对齐 20MB，并在超限时返回 413 JSON 错误，避免大 PNG 上传被误报 HTTP 500。",
+      "画布持久化增加 BOM/NUL 清洗、canvas 文件扫描兜底和原子写入，降低崩溃或死机后画布列表丢失的概率。",
+      "模型注意事项文本更新为当前图像、视频、音频、LLM 模型分组说明；公开源码继续排除 skill.md、roadmap.md、local-private/** 和私有计费/支付/充值实现。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.0.9.md"
+    ],
+    "electronRelease": {
+      "script": "npm run dist:release",
+      "assets": [
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.9.exe",
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.9.exe.blockmap",
+        "dist_electron/latest.yml"
+      ],
+      "updater": "GitHub Release v2.0.9 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "publicSafety": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、私有充值 UI/路由/API/密钥进入 GitHub。",
+      "发布前必须运行 npm run public:check 并检查 staged 文件列表。",
+      "Electron 用户包可在本机 dist:release 时包含 ignored local-private 加密扩展；GitHub Source code zip/tar.gz 不包含这些源码。"
+    ],
+    "verification": [
+      "node --test tests\\*.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify",
+      "win-unpacked 启动冒烟"
+    ]
+  },
+  "electronReleaseV208": {
+    "version": "2.0.8",
+    "status": "electron-release",
+    "date": "2026-06-06",
+    "description": "v2.0.8 聚焦火山 Seedance 2.0 任务结果解析、隐藏模式成就补记、七龙珠神龙体验与 Electron 自动更新发布稳定性，按规范打包并发布新的自动更新版本。",
+    "highlights": [
+      "火山引擎 Seedance 2.0 任务完成后兼容顶层 content、result/content、mp4_url、output_url、src/path 与 JSON 字符串里的视频 URL，修复“任务完成但没有返回视频”的误报。",
+      "补充火山 Seedance 2.0 真实最低配置冒烟：doubao-seedance-2-0-fast-260128、4s、480p、首帧图生视频可返回视频地址；日志和文档不得泄漏 API Key 或完整签名 URL。",
+      "隐藏模式成就链路继续加固：统计关闭提示、重新开启后的隐藏状态补记、七龙珠神龙与 RH 隐藏模式事件统一进入成就进度。",
+      "七龙珠神龙模式补齐隐藏音乐、普通/神龙双模式切换、神龙主题可读性和雷达倒计时/收集状态体验。",
+      "火山引擎 API 设置继续补充 Ark API Key 与模型开通提示，ModelNotOpen / 401 等错误给出更明确的中文说明。",
+      "发布继续遵守公开源码安全边界：GitHub 源码和 Source code 包不包含计费/支付/充值实现，本机 Electron 自动更新包可通过 ignored local-private 加密扩展带入本地私有能力。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.0.8.md"
+    ],
+    "electronRelease": {
+      "script": "npm run dist:release",
+      "assets": [
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.8.exe",
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.8.exe.blockmap",
+        "dist_electron/latest.yml"
+      ],
+      "updater": "GitHub Release v2.0.8 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "publicSafety": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、私有充值 UI/路由/API/密钥进入 GitHub。",
+      "发布前必须运行 npm run public:check 并检查 staged 文件列表。",
+      "Electron 用户包可在本机 dist:release 时包含 ignored local-private 加密扩展；GitHub Source code zip/tar.gz 不包含这些源码。"
+    ],
+    "verification": [
+      "node --test tests\\volcengineProvider.test.ts tests\\achievements.test.ts tests\\dragonBallRadar.test.ts tests\\advancedProviderFrontend.test.ts tests\\apiSettingsTheme.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify",
+      "win-unpacked 启动冒烟"
+    ]
+  },
+  "electronReleaseV207": {
+    "version": "2.0.7",
+    "status": "electron-release",
+    "date": "2026-06-05",
+    "description": "v2.0.7 集中发布七龙珠神龙隐藏模式过场、3D 全景机位/热点、火山引擎修复、成就仪式感与本地私有扩展拆分，并按规范打包 Electron 自动更新版本。",
+    "highlights": [
+      "七龙珠隐藏模式神龙过场改为项目内透明 PNG 资产 src/assets/theme-dragonball/shenron-dragon.png，配合雷达扫描、能量雾、光束和七龙珠聚合动画。",
+      "龙珠雷达进入顶部工具栏，支持展开/折叠；七颗龙珠收集、15 分钟单球倒计时、3 秒停留收集、特殊音效和隐藏模式成就事件保持稳定。",
+      "3D 全景节点新增观看机位书签、默认视线中心、热点导览和跨全景节点跳转；生成提示词会合并观看者站位与视线中心。",
+      "火山引擎扩展 API 对齐 Infinite-Canvas 的 Seedream / Seedance 调用路径，修复连接检测、Seedance 2.0 视频提交 404 等问题。",
+      "成就系统增强主题详情、完成度、隐藏模式仪式感和本地持久化，避免更新后累计时长丢失。",
+      "画板、提示词编辑器、宫格编辑滚轮、ModelScope 多 LoRA 总权重、Topaz / 去AI水印提示等体验继续修复。",
+      "本地私有扩展拆分完成：GitHub 公开源码不包含计费/支付/充值实现，本机开发和本机 Electron 打包可通过 ignored local-private 扩展带入。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.0.7.md"
+    ],
+    "electronRelease": {
+      "script": "npm run dist:release",
+      "assets": [
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.7.exe",
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.7.exe.blockmap",
+        "dist_electron/latest.yml"
+      ],
+      "updater": "GitHub Release v2.0.7 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "publicSafety": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、私有充值 UI/路由/API/密钥进入 GitHub。",
+      "发布前必须运行 npm run public:check 并检查 staged 文件列表。",
+      "Electron 用户包可在本机 dist:release 时包含 ignored local-private 加密扩展；GitHub Source code zip/tar.gz 不包含这些源码。"
+    ],
+    "verification": [
+      "node --test tests\\*.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify",
+      "win-unpacked 启动冒烟"
+    ]
+  },
   "sourceReleaseV206": {
     "version": "2.0.6",
     "status": "source-only",
@@ -33,6 +1674,37 @@
       "git diff --check"
     ]
   },
+  "panorama3dCameraNavigation": {
+    "version": "2.0.6-dev",
+    "status": "implemented",
+    "description": "3D 全景节点新增摄像机机位书签、生成时观看者站位/初始视线中心提示词、全景热点导览与跨 3D 全景节点跳转。",
+    "sourceFiles": [
+      "src/utils/panorama3d.ts",
+      "src/components/nodes/Panorama3DNode.tsx",
+      "src/components/Canvas.tsx",
+      "tests/panorama3d.test.ts"
+    ],
+    "dataFields": [
+      "panoramaViewerPosition",
+      "panoramaViewCenter",
+      "panoramaCameraViews",
+      "panoramaActiveCameraViewId",
+      "panoramaHotspots"
+    ],
+    "capabilities": [
+      "预设正前、左侧、右侧、背面、天顶、地面视角。",
+      "保存当前 Yaw / Pitch / FOV 为机位，支持跳转、设为默认和删除。",
+      "文生/图生全景时把观看者站位和初始视线中心合并进实际发送提示词。",
+      "热点支持保存当前中心或点击画面取点，热点可跳转当前全景视角或其他 3D 全景节点。",
+      "拖动画面期间只更新本地 Three.js 视角，松手后再落盘节点数据，降低画布拖拽卡顿风险。"
+    ],
+    "developerRule": "3D 全景的“摄像机位置”只表示单张全景贴图内的观看方向与 FOV，不要用假的 xyz 平移误导用户。后续扩展导览、热点、资源库 metadata 或导出协议时统一复用 src/utils/panorama3d.ts 的 PanoramaCameraView / PanoramaHotspot / prompt context 工具函数；拖动或自动旋转期间不要高频写 ReactFlow 节点 data。",
+    "verification": [
+      "node --test tests\\panorama3d.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
   "topazLocalUpscale": {
     "version": "2.0.5",
     "status": "implemented",
@@ -43,8 +1715,12 @@
         "label": "Topaz图像高清化",
         "category": "toolbox",
         "ports": {
-          "inputs": ["image"],
-          "outputs": ["image"]
+          "inputs": [
+            "image"
+          ],
+          "outputs": [
+            "image"
+          ]
         },
         "runtime": "用户本机已安装并登录 Topaz Gigapixel AI / Gigapixel 8；默认查找 C:\\Program Files\\Topaz Labs LLC\\Topaz Gigapixel AI\\gigapixel.exe，也可在节点内填写路径。",
         "cli": "gigapixel --scale <scale> -i <input> -o <outputDir> --dn/--sh/--cm/--fr/--pds --model <model>; std/fidelity/lowres/recovery 自动追加 --mv 2。",
@@ -55,8 +1731,12 @@
         "label": "Topaz视频高清化",
         "category": "toolbox",
         "ports": {
-          "inputs": ["video"],
-          "outputs": ["video"]
+          "inputs": [
+            "video"
+          ],
+          "outputs": [
+            "video"
+          ]
         },
         "runtime": "用户本机已安装并登录 Topaz Video AI；必须使用 Topaz Video AI 自带 ffmpeg.exe，默认目录 C:\\Program Files\\Topaz Labs LLC\\Topaz Video AI。",
         "cli": "ffmpeg -y -hide_banner -nostdin -strict 2 -hwaccel auto -i <input> -vf tvai_up=...,tvai_fi=... -c:v hevc_nvenc ...；GPU 编码失败时回退 CPU mpeg4。",
@@ -93,10 +1773,10 @@
     ]
   },
   "promptTemplateLibrary": {
-    "version": "2.0.5",
+    "version": "2.1.0",
     "status": "implemented",
     "roadmap": "roadmap.md::全局提示词模板库（参考 Infinite-Canvas）",
-    "description": "全局图像/视频提示词模板库，参考 Infinite-Canvas 模板按钮体验，面向创作者提供可检索、可管理、可导入导出、可保存资源库的高价值 Prompt 起点。",
+    "description": "全局图像/视频提示词模板库，参考 Infinite-Canvas 模板按钮体验，面向创作者提供可检索、可管理、可导入导出、可保存资源库的高价值 Prompt 起点；v2.1.0 起自定义模板可携带 image/video/audio 配套素材附件，图像、视频、音频、输出素材可右键连同原 Prompt 一起保存到模板库。",
     "topLevelKinds": [
       "image",
       "video"
@@ -155,12 +1835,14 @@
       "src/data/promptTemplateLibrary.ts",
       "src/services/promptTemplateLibrary.ts",
       "src/components/PromptTemplateLibraryModal.tsx",
+      "src/components/MaterialContextMenu.tsx",
       "src/components/PromptTextarea.tsx",
-      "src/components/nodes/MentionPromptInput.tsx"
+      "src/components/nodes/MentionPromptInput.tsx",
+      "src/components/nodes/OutputNode.tsx"
     ],
     "storage": {
       "customLibrary": "localStorage:t8-prompt-template-library-v1",
-      "resourceLibrarySave": "api.addResourceSet({ materialSetKind:'text' })，优先保存到资源库 set 分类「提示词模板」",
+      "resourceLibrarySave": "api.addResourceSet({ materialSetKind:'text' })，优先保存到资源库 set 分类「提示词模板」；若模板带 image/video/audio 附件，会把配套素材一并保存为素材集成员，并额外写入 metadata JSON 便于后续恢复。",
       "importExportSchema": "t8-prompt-template-library"
     },
     "capabilities": [
@@ -174,14 +1856,18 @@
       "替换/追加/正负向完整套用",
       "复制正向/复制正负向",
       "导入/导出我的模板 JSON",
-      "保存模板到资源库文本素材集"
+      "保存模板到资源库文本素材集",
+      "自定义模板保留 image/video/audio 轻量媒体附件协议",
+      "节点素材右键保存到提示词模板库",
+      "模板详情仅加载当前模板附件，图片附件 hover 小眼睛可 100% 查看"
     ],
     "integration": [
       "PromptTextarea 增加 promptTemplateKind 可选入口",
       "MentionPromptInput 增加 promptTemplateKind 可选入口，并保持 @ 图像/视频/音频素材引用可用",
-      "图像、视频、SD2.0、音频、LLM、3D 全景、预设图像、文本节点、RunningHub、RH 工具箱、ComfyUI 超市参数已接入"
+      "图像、视频、SD2.0、音频、LLM、3D 全景、预设图像、文本节点、RunningHub、RH 工具箱、ComfyUI 超市参数已接入",
+      "图像、视频、SD2.0、音频、LLM 和输出素材把生成 Prompt 写入 data-prompt-template-*，供右键保存模板使用"
     ],
-    "developerRule": "后续新增面向创作的 prompt 输入框时，优先使用 PromptTextarea 或 MentionPromptInput 并传入 promptTemplateKind='image' 或 'video'；配置型 JSON/列表字段不要显示模板库按钮。新增内置小类必须同步 tests/promptTemplateLibrary.test.ts，保证每个内置小类至少 100 条模板，且同类标题/正文不重复；用户可见标题不能出现 Infinite-Canvas 等上游来源前缀，也不能用 21:9、2x2、3x3 这类规格数字开头；视频模板必须写成 Seedance 可执行结构：主体与动作、场景与氛围、镜头执行、时间节奏、稳定约束，禁止只写地点、情绪、风格或“创作目标”；严禁用机械换词凑数量。",
+    "developerRule": "后续新增面向创作的 prompt 输入框时，优先使用 PromptTextarea 或 MentionPromptInput 并传入 promptTemplateKind='image' 或 'video'；配置型 JSON/列表字段不要显示模板库按钮。新增媒体素材卡片若有生成 Prompt，应补 data-prompt-template-kind/category/prompt/negative 属性，让右键保存到模板库能带走配套素材。新增内置小类必须同步 tests/promptTemplateLibrary.test.ts，保证每个内置小类至少 100 条模板，且同类标题/正文不重复；用户可见标题不能出现 Infinite-Canvas 等上游来源前缀，也不能用 21:9、2x2、3x3 这类规格数字开头；视频模板必须写成 Seedance 可执行结构：主体与动作、场景与氛围、镜头执行、时间节奏、稳定约束，禁止只写地点、情绪、风格或“创作目标”；严禁用机械换词凑数量。",
     "verification": [
       "node --test tests\\promptTemplateLibrary.test.ts",
       "node --test tests\\promptEditor.test.ts tests\\promptTemplateLibrary.test.ts",
@@ -205,7 +1891,11 @@
         "src/components/PromptExpandModal.tsx",
         "src/components/PromptTextarea.tsx"
       ],
-      "editorKinds": ["text", "json", "lines"],
+      "editorKinds": [
+        "text",
+        "json",
+        "lines"
+      ],
       "developerRule": "后续新增 prompt、workflow JSON、模型列表、排除规则、字段映射等长文本输入，必须优先使用 PromptTextarea 或 MentionPromptInput 的放大编辑能力；JSON/行列表类字段要显式传 editorKind，避免用户在窄输入框里编辑复杂配置。"
     },
     "panorama3dContract": {
@@ -213,8 +1903,14 @@
       "developerRule": "3D 全景只做轻量客户端质量提示，不阻断用户继续使用；保存资源库仍必须保留原图 URL、panorama metadata 和全景分类，接缝检测失败时要给 unknown 状态而不是报错。"
     },
     "achievementRetentionContract": {
-      "events": ["resource.saved", "workflow.saved"],
-      "ui": ["成就导入 JSON", "今日主题建议"],
+      "events": [
+        "resource.saved",
+        "workflow.saved"
+      ],
+      "ui": [
+        "成就导入 JSON",
+        "今日主题建议"
+      ],
       "developerRule": "新增留存事件只能记录非内容字段，例如 kind/category/nodeType/计数；严禁记录 prompt、短链、Cookie、完整文件名、资源 URL 或用户正文。重复保存、重复导入、重复运行导致的刷计数必须有去重或业务 guard。"
     },
     "aggregateParserAuthContract": {
@@ -314,13 +2010,14 @@
       "T8_PARSEHUB_PYTHON": "可选，覆盖聚合解析节点使用的 Python 3.12 解释器路径",
       "T8_PARSEHUB_LIB_PATHS": "可选，覆盖 ParseHub Python 依赖搜索路径；正式包首次使用会把 resources/tools/runtime-archives/parsehub-pythonlibs.zip 解压到 runtime-cache 后使用",
       "T8_RUNTIME_ARCHIVES_DIR": "可选，覆盖内置运行时归档搜索目录；默认打包为 resources/tools/runtime-archives",
-      "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache"
+      "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
+      "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.0.6",
-    "semverVersion": "2.0.6",
+    "version": "2.2.4",
+    "semverVersion": "2.2.4",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前源码版本为 v2.0.6：README 补齐扩展平台 API Key / Token 与本地 ComfyUI 配置说明，继续收口 ModelScope 多 LoRA 官方总权重、防卡顿、Topaz、主题成就和提示词模板等公开源码能力。本次按用户要求只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
-    "installer": "v2.0.6 本次只推源码，不生成 T8-PenguinCanvas-Setup-2.0.6.exe、.exe.blockmap 或 latest.yml，也不创建/更新 GitHub Release；后续需要桌面自动更新包时再按 npm run dist:release 完整流程执行。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.2.4 GitHub 源码版：收口创作台背景层、RH 工具箱图像能力中间层、AI 去水印停止/CUDA 兼容、素材媒体元信息和 ComfyUI 应用制作器稳定性；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.2.4 是 source-only 版本：本次只推 GitHub 公开源码，不生成 dist_electron/T8-PenguinCanvas-Setup-2.2.4.exe、blockmap 或 latest.yml，也不创建或更新 GitHub Release 自动更新资产。需要桌面自动更新版本时必须另行按 Electron release 流程运行 npm run dist:release。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
@@ -330,23 +2027,39 @@
         "roadmap.md",
         "skill.md",
         "backend/src/routes/recharge.js",
-        "src/components/RechargeModal.tsx",
+        "src/components/Recharge*.tsx",
         "src/private/recharge/**",
         "backend/src/private/recharge/**",
         "private/recharge/**",
-        "local-private/recharge/**",
+        "local-private/**",
         "recharge.private.*",
         "data/recharge*.json",
         "backend/data/recharge*.json"
       ],
-      "prePushScan": "每次推送前必须检查 staged 文件不包含 roadmap.md、skill.md、RechargeModal、/api/recharge、/pay、RECHARGE、DULUPAY、AGENT_HMAC 或中文充值相关实现；本地开发和打包若需要私有能力，只能通过 .gitignore 覆盖层或私有补丁恢复。"
+      "prePushScan": "每次推送前运行 npm run public:check，并检查 staged 文件不包含 roadmap.md、skill.md、私有扩展目录、私有 UI、私有路由、支付路径、密钥字段或中文充值实现；本地开发和打包若需要私有能力，只能通过 ignored local-private/extensions 扩展加载。"
+    },
+    "localPrivateExtensions": {
+      "status": "implemented-v2.1.3-source",
+      "purpose": "把本机私有计费/支付能力从已跟踪公开文件中拆出，避免每次 Git 推送都需要手动拆 hunk。",
+      "publicHooks": [
+        "backend/src/extensions/localExtensions.js 只负责发现并注册本地私有后端扩展，不包含具体业务逻辑。",
+        "vite.config.ts/js 通过 virtual:t8-local-extensions 默认映射到 src/extensions/emptyLocalExtensions.tsx；本机 ignored 扩展存在时自动映射到 local-private/extensions/frontend/index.tsx，设置 T8_ENABLE_LOCAL_PRIVATE=0 或 T8_DISABLE_LOCAL_EXTENSIONS=1 才关闭。",
+        "electron/encrypt.cjs 默认加密 backend/src；本机 ignored 后端扩展存在且未被显式禁用时，会额外加密 local-private 后端扩展到 build/backend-enc/local-private。",
+        "electron/_post_build.cjs 会在本机 ignored build hook 存在且未被显式禁用时自动运行；具体密钥与分发检查放在 ignored local-private/extensions/build/post-build.cjs。"
+      ],
+      "gitSafety": [
+        ".gitignore 统一忽略 /local-private/**，旧私有路由和私有 UI 路径仍保持忽略兜底。",
+        "scripts/check-public-clean.cjs / npm run public:check 会扫描 staged 路径和 diff，防止误提交私有文件或实现关键字。",
+        "公开文件 backend/src/config.js、backend/src/server.js、src/App.tsx、src/services/api.ts、electron/_post_build.cjs 不应再保留私有业务 diff。",
+        "v2.1.1 源码推送时继续用 scripts/check-public-clean.cjs 扫描 staged 路径和新增文本，skill.md / roadmap.md / local-private/** 不进入公开提交。"
+      ]
     },
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
       "backend/src/ 任何文件修改后必须重新 npm run encrypt 再打包",
       "main.cjs 的窗口标题 / log 窗口 / IPC version 三处版本号，以及 backend/src/config.js APP_VERSION 必须与 package.json 同步",
       "安装包必须创建桌面和开始菜单快捷方式：createDesktopShortcut=\"always\"、createStartMenuShortcut=true，installer.nsh customInstall 兜底 CreateShortCut 不得删除",
-      "_post_build.cjs 验证后端 .t8c 必存在: server/config + routes/{canvas,settings,proxy,externalProviders,files,imageOps,resources,themes,eagle,aiWatermark,cloudUploads,parseHub,achievements} + achievements/store + providers/{registry,mediaResolver,llmMedia,adapters,openaiCompatible,modelscope,volcengine,comfyui,jimengCli} + cloudUploads/{settings,uploader} + tools/aiWatermark/{runner,media} + utils/duckPayload/parseHubBridge",
+      "_post_build.cjs 验证后端 .t8c 必存在: server/config + routes/{canvas,settings,proxy,externalProviders,files,imageOps,resources,themes,eagle,figma,aiWatermark,cloudUploads,parseHub,achievements} + achievements/store + providers/{registry,mediaResolver,llmMedia,adapters,openaiCompatible,modelscope,volcengine,comfyui,jimengCli} + cloudUploads/{settings,uploader} + tools/aiWatermark/{runner,media} + utils/duckPayload/parseHubBridge",
       "_post_build.cjs 必须验证 providers/llmMedia.t8c 与 resources/tools/ffmpeg/ffmpeg.exe；LLM 视频输入默认使用内置 ffmpeg sidecar 按整段视频均匀抽取可配置数量的关键帧发送给 LLM，native-base64 / compressed-base64 模式才缩放压缩后转原生 video_url Base64，用户包不得依赖系统 PATH 自带 ffmpeg",
       "_post_build.cjs 验证 resources/frontend/index.html + assets/ 必存在",
       "_post_build.cjs 必须检查 resources/shared/achievementManifest.json；成就后端加密包会从该共享 manifest 读取规则，Electron extraResources 不能漏带 shared/achievementManifest.json",
@@ -354,6 +2067,7 @@
       "_post_build.cjs 必须检查 resources/tools/runtime-archives/remove-ai-watermarks-runtime.zip 与 runtime-archives-manifest.json；旧展开目录 resources/tools/remove-ai-watermarks 仅保留兼容，不得作为默认打包方式",
       "_post_build.cjs 必须检查 resources/tools/parsehub-bridge/parsehub_bridge.py、resources/tools/runtime-archives/parsehub-pythonlibs.zip、backend-enc/routes/parseHub.t8c、backend-enc/utils/parseHubBridge.t8c 与 backend-enc/utils/runtimeArchive.t8c；正式发布脚本设置 T8_REQUIRE_PARSEHUB_RUNTIME=1 与 T8_REQUIRE_RUNTIME_ARCHIVES=1，缺少 ParseHub 依赖归档时必须失败",
       "_post_build.cjs 必须检查 RH工具箱制作器不得进入用户包；resources/frontend 内若出现 RHToolboxMakerNode、RH工具箱制作器 或 rh-toolbox-maker，打包后置检查必须失败",
+      "dist:release 必须在 build + encrypt 前执行 npm run rh-toolbox:check；_post_build.cjs 必须确认 resources/frontend 内包含 image-cutout-v1、tuantiquv10、bernini1、berninituxiangbianji、bernini2 和对应 WebAppId，避免用户包丢失 RH 工具箱正式应用",
       "去AI水印 full runtime 不提交 Git；如需离线用户包，先把 Python/Torch/remove-ai-watermarks[gpu,detect,trustmark,lama] sidecar 放入 tools/remove-ai-watermarks-runtime，再执行 npm run prepack:runtimes 或 npm run dist；zip 归档也不提交 Git",
       "_post_build.cjs 自动清除任何意外混入的 resources/{app,backend}/src 明文目录",
       "GitHub 公开推送必须排除 roadmap.md、skill.md 与所有本地私有计费/支付/充值实现；执行 git add 前后都要用 publicReleasePolicy.prePushScan 的关键字检查 staged diff",
@@ -367,17 +2081,27 @@
     "imagePreviewPipeline": {
       "frontend": "高频节点预览统一使用 SmartImage + previewImageUrl，本地 /files/input 与 /files/output 图片接近视口后才请求 /api/files/thumbnail，原始素材 URL 保留在 data-full-src 与拖拽/下载/下游数据中。",
       "backend": "backend/src/routes/files.js 提供 GET /api/files/thumbnail?url=&size=，用 sharp 生成 webp 缩略图并缓存到 THUMBNAILS_DIR，Cache-Control=immutable；同一 target 通过 thumbnailInflight 去重，生成并发由 T8PC_THUMBNAIL_CONCURRENCY 控制，默认 2、最高 4。",
+      "upload": "POST /api/files/upload multipart 上传上限对齐到 20MB；multer 超限返回 413 JSON(code=file_too_large)，避免 10MB 以上 ComfyUI PNG 被误报为 HTTP 500。",
       "exceptions": "裁剪、去水印框选、图片编辑、图片对比等依赖原图像素或细节的视图继续使用原图。"
     },
     "edgeMotion": {
-      "themes": ["soccer-hero", "slamdunk", "dragon-ball"],
-      "policy": "强主题连线动画在视口拖动、节点拖动或边数达到阈值时写入 data-t8-edge-motion=reduced，禁用 edge path 动画、filter、运动球 SVG 或气功波流动效果；DeletableEdge 只在当前体育主题且边数较低时渲染对应运动球。"
+      "themes": [
+        "soccer-hero",
+        "slamdunk",
+        "dragon-ball",
+        "saint-seiya"
+      ],
+      "policy": "强主题连线动画统一走 scoped 规范：闲置时写入 data-t8-edge-motion=scoped，普通连线只做静态主题化；只有选中边、悬停边、或与选中节点相连的边会获得 .t8-edge-theme-active 并启用 edge path 动画、运动球 SVG 或气功波流动效果。视口拖动、节点拖动或 prefers-reduced-motion 时写入/遵守 data-t8-edge-motion=reduced，禁用所有无限动画、filter、运动球和 SVG animateMotion；当一次选中导致活跃边超过 DECORATIVE_EDGE_MOTION_LIMIT 时，只保留直接选中/悬停边动效，避免 36+ 条边一起运动。"
     },
     "startup": {
       "devStrictMode": "开发环境默认不包 React StrictMode，设置 VITE_T8_STRICT_MODE=1 可恢复双挂载诊断。",
       "appShellLazyLoad": "src/App.tsx 必须懒加载 Canvas 与非首屏弹窗/抽屉，Canvas 内 nodeTypes 通过 lazyCanvasNode 动态导入节点组件；首屏只加载外壳、侧栏、Canvas 骨架和当前画布实际出现的节点类型。",
       "viteDevWarmup": "vite.config.ts 对 react/react-dom/@xyflow/react/lucide-react/zustand 做 optimizeDeps.include，并用 server.warmup 预热 main/App/Canvas 与 Image/Upload/Output 常用节点，避免第一次打开页面才集中 transform。",
       "autosave": "节点拖动期间自动保存跳过中间帧，拖动结束后触发一次最终快照保存；加载画布时只做一次基线 JSON.stringify，旧快照节点数单独缓存，避免重复 parse/stringify 大画布。"
+    },
+    "canvasPersistence": {
+      "crashRecovery": "backend/src/routes/canvas.js 读取 JSON 时剥离 UTF-8 BOM 和 NUL；canvas_list.json 缺失或解析失败时扫描 data/canvas_*.json 兜底恢复有效画布列表，避免死机中断写入后侧栏直接显示 0。",
+      "atomicWrites": "画布列表、新建空画布、PUT 保存画布和自动保存镜像统一通过临时文件 + rename 原子写入，降低系统死机或进程崩溃导致 JSON 被 NUL 覆盖的概率。"
     },
     "developmentContract": {
       "nodes": [
@@ -390,8 +2114,8 @@
         "节点拖动、画布移动、批量选择期间不得触发昂贵副作用；会改变节点尺寸的媒体加载应有稳定容器、aspect-ratio 或 max-height，避免加载后大面积布局抖动。"
       ],
       "themes": [
-        "主题动效必须可降级：边数多、viewportMoving、nodeDragging、prefers-reduced-motion 或 data-t8-edge-motion=reduced 时，必须停用无限动画、filter、drop-shadow、运动粒子和 SVG animateMotion。",
-        "主题 CSS 不得给所有节点、所有边或大面积背景套高成本 filter/backdrop-filter/box-shadow 动画；强风格效果应放在少量静态背景层或 hover/selected 状态。",
+        "主题连线动效必须可降级且默认 scoped：普通边静态；选中边、悬停边、选中节点相关边才允许 .t8-edge-theme-active 动画、filter、drop-shadow、运动粒子和 SVG animateMotion。",
+        "主题 CSS 不得给所有节点、所有边或大面积背景套高成本 filter/backdrop-filter/box-shadow 动画；强风格效果应放在少量静态背景层或 .t8-edge-theme-active / hover / selected 状态。",
         "画布背景水印、纹理和主题地图必须 pointer-events:none、低 z-index、轻量静态化；不得覆盖图片/视频/文本预览，也不得随每帧 transform 重绘复杂滤镜。",
         "MiniMap、Controls、HUD、右键菜单和浮动条必须跟随全局变量适配主题；新增主题要在 100+ 节点、36+ 边、拖动画布、拖动节点场景检查不卡顿。",
         "主题音乐、视频背景、粒子、运动球等装饰默认静音/静态/按需启用，不能在进入画布时批量解码大媒体或创建大量动画实例。"
@@ -399,14 +2123,16 @@
       "verification": [
         "新增节点含图片预览时必须补或更新 tests/imageLoadingPerformance.test.ts，锁定 SmartImage/previewImageUrl 使用。",
         "新增重节点、弹窗或抽屉时必须补或更新 tests/imageLoadingPerformance.test.ts，锁定 App/Canvas 的 lazy 边界，避免开发环境首屏重新退化为全量模块加载。",
-        "新增主题动效必须至少在足球小将/灌篮高手/七龙珠同类压力下验证 data-t8-edge-motion=reduced 生效，并检查 prefers-reduced-motion。",
+        "新增主题动效必须至少在足球小将/灌篮高手/七龙珠同类压力下验证 data-t8-edge-motion=scoped 只让选中相关边运动，并验证 data-t8-edge-motion=reduced 与 prefers-reduced-motion 能完全停止动效。",
         "发布前至少跑 node --test tests\\imageLoadingPerformance.test.ts、npm run type-check、npm run build；若改 3D/Three.js 还要跑 tests\\panorama3d.test.ts。"
       ]
     },
     "verification": [
       "node --test tests\\imageLoadingPerformance.test.ts",
       "node --test tests\\panorama3d.test.ts",
+      "node --test tests\\canvasPersistence.test.ts",
       "node -c backend\\src\\routes\\files.js",
+      "node -c backend\\src\\routes\\canvas.js",
       "npm run type-check",
       "npm run build"
     ]
@@ -414,11 +2140,24 @@
   "achievementSystem": {
     "version": "2.0.4",
     "status": "first-stage-implemented",
-    "description": "十套系统主题独立成就、有效创作时长、隐藏模式勋章与奖励影片占位系统。奖励影片素材暂未提供，影片馆使用“待解锁 / 影片素材待提供”占位文案。",
+    "description": "十二套系统主题独立成就、有效创作时长、隐藏模式勋章与奖励影片系统。未提供素材的影片仍使用“待解锁 / 影片素材待提供”占位；已接入的圣斗士隐藏奖励以本地加密媒体解锁播放，俄罗斯方块主题记录小游戏摘要成就。",
     "manifest": {
       "sharedJson": "shared/achievementManifest.json",
       "frontendWrapper": "src/data/achievementManifest.ts",
-      "themeTracks": ["tech", "pixel", "op", "rh", "naruto", "eva", "yyh", "slamdunk", "soccer-hero", "dragon-ball"],
+      "themeTracks": [
+        "tech",
+        "pixel",
+        "op",
+        "rh",
+        "naruto",
+        "eva",
+        "yyh",
+        "slamdunk",
+        "soccer-hero",
+        "dragon-ball",
+        "saint-seiya",
+        "tetris"
+      ],
       "perThemeRules": "每个主题 5 条时长线(10m/1h/3h/10h/30h) + 3 条首批特色成就；定义由 manifest 展开，前后端共用同一 JSON，避免规则漂移。"
     },
     "storage": {
@@ -444,7 +2183,12 @@
       "hidden_mode.enabled",
       "hidden_mode.used",
       "resource.saved",
-      "workflow.saved"
+      "workflow.saved",
+      "tetris.game_started",
+      "tetris.line_clear",
+      "tetris.tetris_clear",
+      "tetris.level_reached",
+      "tetris.game_over"
     ],
     "hiddenModes": {
       "rh-duck": "NodeActionBar 长按 RUN 开启；UploadNode 鸭鸭解码成功产出时记录 used。",
@@ -483,7 +2227,7 @@
     }
   },
   "themes": {
-    "description": "主题模板体系：内置科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格十套模板 × 浅色/深色模式，由 zustand theme store 持久化，data-theme-style + data-theme-mode + data-theme-visual 注入 html 根；新增节点应使用 ThemeToken CSS 变量与通用 t8-* 样式，避免逐节点硬编码主题。",
+    "description": "主题模板体系：内置科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格 / 圣斗士风格 / 俄罗斯方块主题十二套模板 × 浅色/深色模式，由 zustand theme store 持久化，data-theme-style + data-theme-mode + data-theme-visual 注入 html 根；新增节点应使用 ThemeToken CSS 变量与通用 t8-* 样式，避免逐节点硬编码主题。",
     "templateSystem": {
       "schema": "t8-theme-template",
       "version": 2,
@@ -516,7 +2260,7 @@
         "画布背景水印必须放在 .t8-canvas-shell::before/::after 背景层，z-index:0 且 pointer-events:none；ReactFlow 节点、边、浮层和 GroupBox 内容必须盖住水印，不能让装饰穿透到素材预览或画板内容上方",
         "强风格官方主题可为 light/dark 分别提供水印资产；若深色水印包含黑底终端、警告面板或厚重贴片，浅色模式必须改用透明底线稿 / 印章 / HUD 版本，避免浅色画布出现突兀深色块",
         "框选/节点右键菜单、空白右键快速添加菜单、拖线候选菜单和选中节点右上角 RUN/关闭浮动条都属于全局主题控件，必须使用 t8-context-menu / t8-node-action-bar 语义类和 visuals.style 作为视觉判断来源，禁止仅按 legacyStyle=像素/科技分支导致 OP、火影、EVA 等主题残留白底或绿色按钮",
-        "全局菜单新增动作时必须检查 light/dark 与十套官方主题的可读性；小图标和菜单图标仍需固定尺寸，避免 OP/像素风胶囊按钮把资源库、图像对比、批量下载等入口撑大",
+        "全局菜单新增动作时必须检查 light/dark 与十二套官方主题的可读性；小图标和菜单图标仍需固定尺寸，避免 OP/像素风胶囊按钮把资源库、图像对比、批量下载等入口撑大",
         "主题动效必须接入画布 busy/reduced 状态：当 html[data-t8-edge-motion='reduced']、.t8-viewport-moving、.t8-node-dragging 或 prefers-reduced-motion 生效时，必须关闭无限边动画、filter、drop-shadow、粒子、运动球与 SVG animateMotion",
         "新增强风格主题必须做大画布性能验收：至少 100 个节点、36 条连线、拖动画布、拖动节点、MiniMap 与 Controls 可见场景；不得让装饰层、背景水印、连线动效或媒体预加载造成明显卡顿",
         "主题背景、水印和地图纹理必须优先静态化、轻量化和低成本绘制；禁止对全画布或所有边/节点持续应用高成本 backdrop-filter、blur、drop-shadow、mix-blend-mode 动画",
@@ -544,9 +2288,12 @@
           "yyh-hidden": "yyh-hidden-tonight.mp3",
           "slamdunk-style": "slamdunk-kimi-ga-suki.mp3",
           "soccer-hero-style": "soccer-tsubasa-burning-hero.mid",
-          "dragon-ball-style": "dragonball-makafushigi-adventure.mp3"
+          "dragon-ball-style": "dragonball-makafushigi-adventure.mp3",
+          "dragon-ball-shenron-hidden": "dragonball-shenron-cha-la-head-cha-la.mp3",
+          "saint-seiya-style": "saint-seiya-pegasus-fantasy.mp3",
+          "saint-seiya-hades-hidden": "saint-seiya-hades-last-holy-war.mp3"
         },
-        "rule": "主题音乐默认静音，通常只在用户主动点击播放按钮后播放；RH 鸭鸭隐藏模式会自动切换 rh-hidden-saya.mp3，幽游白书肖像大师隐藏模式会自动切换 yyh-hidden-tonight.mp3，二者都会解除静音。模板编辑器支持上传替换，导出模板可携带 data:audio/*。"
+        "rule": "主题音乐默认静音，通常只在用户主动点击播放按钮后播放；RH 鸭鸭隐藏模式会自动切换 rh-hidden-saya.mp3，幽游白书肖像大师隐藏模式会自动切换 yyh-hidden-tonight.mp3，七龙珠神龙隐藏模式会自动切换 dragonball-shenron-cha-la-head-cha-la.mp3，圣斗士冥界篇会切换到 saint-seiya-hades-last-holy-war.mp3。模板编辑器支持上传替换，导出模板可携带 data:audio/*。"
       }
     },
     "styles": {
@@ -692,7 +2439,33 @@
           "nodeFrame": "capsule-card",
           "headerMark": "DRAGON RADAR"
         },
-        "music": "dragonball-makafushigi-adventure.mp3；ThemeMusicToggle 以 URL 音频播放，ki-burst 仅作为合成兜底 preset；默认静音，用户可在主题模板中上传或填写授权音频 URL 替换，公开分发前确认音频授权边界"
+        "music": "普通模式使用 dragonball-makafushigi-adventure.mp3；神龙隐藏模式使用 dragonball-shenron-cha-la-head-cha-la.mp3；ThemeMusicToggle 以 URL 音频播放，ki-burst / shenron-aura 仅作为合成兜底 preset；默认静音，用户可在主题模板中上传或填写授权音频 URL 替换，公开分发前确认音频授权边界"
+      },
+      "saintSeiya": {
+        "label": "圣斗士风格",
+        "description": "圣斗士十二宫视觉模板：原创圣域星图、黄金圣衣宝箱、星座能量连线、圣域 / 冥界篇双模式、战斗升级与 12 黄金圣衣收集；不使用官方角色图、动画截图或 Logo。",
+        "default": false,
+        "visuals": {
+          "style": "saint-seiya",
+          "iconPack": "saint-seiya",
+          "canvasPattern": "sanctuary-zodiac",
+          "nodeFrame": "cloth-box-card",
+          "headerMark": "SANCTUARY"
+        },
+        "music": "普通模式使用 saint-seiya-pegasus-fantasy.mp3；集齐 12 黄金圣衣后解锁冥界篇并切换 saint-seiya-hades-last-holy-war.mp3；pegasus-cosmos / hades-eclipse 仅作为合成兜底 preset；默认静音，用户可在主题模板中上传或填写授权音频 URL 替换"
+      },
+      "tetris": {
+        "label": "俄罗斯方块主题",
+        "description": "Tetris Canvas 强视觉模板：浅色奶白彩块、深色街机霓虹、方块拼接节点、积木网格画布、方块化 MiniMap、scoped 方块连线，以及右上角默认展开且可折叠的 10x20 可玩俄罗斯方块小游戏。",
+        "default": false,
+        "visuals": {
+          "style": "tetris",
+          "iconPack": "tetromino-well",
+          "canvasPattern": "tetris-stack",
+          "nodeFrame": "arcade-cabinet-card",
+          "headerMark": "TETRIS STACK"
+        },
+        "music": "Block Drop Sprint 合成循环；block-drop 作为原创 WebAudio preset，默认静音，用户可在主题模板中上传或填写授权音频 URL 替换"
       }
     },
     "defaultStyle": "pixel",
@@ -710,12 +2483,12 @@
   "repository": "https://github.com/T8mars/T8-penguin-canvas",
   "aiWatermarkRuntime": {
     "upstream": "https://github.com/wiltodelta/remove-ai-watermarks",
-    "upstreamVersion": "0.8.9",
-    "upstreamCommit": "4a6cd71",
-    "upstreamLicense": "MIT",
+    "upstreamVersion": "0.11.0",
+    "upstreamCommit": "c8bc4b7",
+    "upstreamLicense": "Apache-2.0",
     "nodeType": "remove-ai-watermark",
     "category": "auxiliary",
-    "fullInstall": "remove-ai-watermarks[gpu,detect,trustmark,lama,restore]",
+    "fullInstall": "remove-ai-watermarks[gpu,detect,trustmark,lama,esrgan]",
     "runtimeResolutionOrder": [
       "T8_REMOVE_AI_WATERMARKS_RUNTIME sidecar root",
       "打包后首次运行解压缓存 %APPDATA%/t8-penguin-canvas/runtime-cache/remove-ai-watermarks",
@@ -747,9 +2520,13 @@
       "不要复制上游算法源码到 T8；通过 CLI/Python 包能力探测消费上游。",
       "上游新增 mark 时优先依赖 watermark_registry.mark_keys() 动态暴露，前端只补充显示文案或兜底。",
       "上游新增 mode/options 时扩展 runner 参数映射、节点 UI 和 tests/aiWatermarkRunner.test.ts，不破坏旧画布数据字段。",
-      "0.8.9 起 invisible 的文字/人脸保真改为 --pipeline controlnet + --restore-faces；T8 UI 不再暴露旧 protectText/protectFaces 主路径，但 runner 对 0.8.7 runtime 继续版本感知兼容旧 --protect-text / --protect-faces。",
-      "0.8.9 起 T8 透出 --auto、--adaptive-polish、--min-resolution、--controlnet-scale、--unsharp 与 GFPGAN restore-faces；auto 模式下不强行发送默认 --pipeline，让上游按内容自动选择。",
+      "0.11.0 当前可见 mark 兜底为 auto/gemini/doubao/jimeng/samsung；Samsung Galaxy AI 标记由上游 registry 动态暴露时优先使用动态结果。",
+      "0.10+ invisible 默认管线为 --pipeline controlnet；旧 default 在新版上游中等价/迁移为 --pipeline sdxl，T8 新节点默认 controlnet，旧画布 ctrlregen 继续迁移为 controlnet。",
+      "0.11.0 T8 透出 --model、--guidance-scale、--upscaler lanczos/esrgan、--min-resolution、--controlnet-scale、--unsharp、--adaptive-polish/--no-adaptive-polish；--auto 已退役，不再作为主 UI 控件发送。",
+      "上游 0.11.0 不再提供 face-restore extra；T8 不再展示 GFPGAN 脸部修复主控件。runner 仅对旧 0.8.9 runtime 继续版本感知兼容 --restore-faces，对 0.8.7 runtime 兼容 --protect-text / --protect-faces。",
+      "新增 all 模式调用上游 full pipeline：可见标记 + 隐形水印 + 元数据；缺 GPU extra 时按上游设计明确失败，避免用户误以为 SynthID 已处理。",
       "未填写 strength 时由上游按 C2PA/SynthID 来源自适应 OpenAI/Google/未知强度，T8 UI 默认留空，不再诱导用户固定 0.30。",
+      "媒体解析补齐 0.11 metadata 容器：HEIC / HEIF / JXL 归类为 image，MKA / OGA / Opus 归类为 audio，metadata-check / metadata-remove 可沿用同一素材解析入口。",
       "每次同步上游后必须重新跑 status/capability、代表性 process smoke、node --test tests/*.test.ts、npm run build 和 Electron 打包后置检查。"
     ]
   },
@@ -814,7 +2591,7 @@
   "achievementSystemRoadmap": {
     "status": "planned",
     "reference": "roadmap.md::主题成就 / 勋章 / 加密影片解锁系统路线（规划中，2026-06-04）",
-    "scope": "十套系统主题分别累计有效使用时长、隐藏模式探索、节点运行、资源库沉淀，并解锁主题勋章与影片馆内容。",
+    "scope": "十二套系统主题分别累计有效使用时长、隐藏模式探索、节点运行、资源库沉淀或主题小游戏摘要事件，并解锁主题勋章与影片馆内容。",
     "themeTracks": [
       "tech",
       "pixel",
@@ -825,7 +2602,8 @@
       "yyh",
       "slamdunk",
       "soccer-hero",
-      "dragon-ball"
+      "dragon-ball",
+      "saint-seiya"
     ],
     "dataModel": {
       "localFile": "data/achievements.json",
@@ -855,6 +2633,7 @@
     "hiddenModeHooks": [
       "RH 主题 UploadNode 鸭鸭解码隐藏模式：长按 RUN 开启，解码成功后记录 hidden_mode.used。",
       "幽游白书主题肖像大师隐藏模式：长按 RUN 开启，成功输出隐藏肖像 prompt 后记录 hidden_mode.used。",
+      "圣斗士主题集齐 12 黄金圣衣后开启冥界篇隐藏模式：切换进入冥界篇记录 hidden_mode.used。",
       "成就事件只记录类型、主题、计数和节点类型，不记录用户链接、Cookie、完整 prompt 或隐私内容。"
     ],
     "filmUnlockPlan": {
@@ -872,14 +2651,14 @@
       "本地创作回顾：用户打开成就页时生成周报，展示主题时长、产出数量、常用节点和已获勋章。"
     ],
     "acceptance": [
-      "十套主题分别累计时长，后台/无焦点/无交互不刷时长。",
+      "十二套主题分别累计时长，后台/无焦点/无交互不刷时长。",
       "每个主题至少 5 个时长成就、3 个特色成就、1 个主题大师勋章。",
       "未解锁影片无法播放；解锁后可播放、拖动进度条、继续播放和清缓存。",
       "加密影片原始素材不得进入 git、build 明文目录或 Electron resources。",
       "自动更新到带新影片的版本后，旧成就数据仍能解锁并播放新资源。"
     ]
   },
-  "totalNodes": 50,
+  "totalNodes": 51,
   "phases": {
     "phase0": {
       "label": "基础设施",
@@ -1152,14 +2931,14 @@
       ]
     },
     "phase23": {
-      "label": "API Key 设置眼睛预览修复 + 7 类分类独立 Key (gpt-image / nano-banana / mj / veo / grok / seedance / suno)",
+      "label": "API Key 设置眼睛预览修复 + 8 类分类独立 Key (gpt-image / nano-banana / mj / veo / sora2 / grok / seedance / suno)",
       "status": "complete",
       "items": [
         "问题症状 1: 打开 API Key 设置弹窗点眼睛无论如何都看不到已存 Key 明文——原 input 受控于用户输入为空且后端只返回脱敏字段时永远呢呢看不到",
         "修复 1: 新增 GET /api/settings/raw 前端调用 (services/api.ts getRawSettings)，点眼睛 且 input 为空 且 已存 同时成立时 拉一次明文填回 input;同时 useRef 缓存避免重复请求;眼睛拉出明文后不修改则不重复提交(revealed===input 跳过)",
         "修复 2: ApiSettings 重构 —— 用 inputs/shows Record 统一 10 个 Key 状态;增加弹窗 max-h-[90vh] + overflow-y-auto 防防陈类列表爆高",
-        "需求 2: 新增 7 类分类独立 Key,独立于贞贞工坊通用 Key (gpt-image 系列 / nano-banana 系列 / mj 系列 / veo 系列 / grok 系列 / seedance 系列 / suno 系列)",
-        "后端 settings.js: DEFAULT_SETTINGS 增加 7 个字段 (gptImageApiKey/nanoBananaApiKey/mjApiKey/veoApiKey/grokApiKey/seedanceApiKey/sunoApiKey),GET /api/settings 同步脱敏返回",
+        "需求 2: 新增 8 类分类独立 Key,独立于贞贞工坊通用 Key (gpt-image 系列 / nano-banana 系列 / mj 系列 / veo 系列 / sora2 系列 / grok 系列 / seedance 系列 / suno 系列)",
+        "后端 settings.js: DEFAULT_SETTINGS 增加 8 个字段 (gptImageApiKey/nanoBananaApiKey/mjApiKey/veoApiKey/soraApiKey/grokApiKey/seedanceApiKey/sunoApiKey),GET /api/settings 同步脱敏返回",
         "后端 proxy.js: 新增 pickApiKey(settings, hint) 按模型名/endpoint/路由名选择分类 key,未填时 fallback 到贞贞通用 Key;新增 applyClassifiedKey(settings, hint) 临时覆盖 settings.zhenzhenApiKey,后续原逻辑零侵入",
         "后端 router 注入点: /image · /image/submit · /image/status (可传 ?model=) · /image/fal/submit · /image/fal/query · /mj/* (三条,hint='mj') · /video/submit · /video/query · /video/fal/submit · /video/fal/query · /seedance/* (hint='seedance') · /audio/submit · /audio/query (hint='suno')",
         "前端 ApiSettings 分区展示: 上半区 三套通用 Key (贞贞/RH/LLM);下半区 分类独立 API Key (可选) · 未填时 fallback 提示“未设置 · 使用通用 Key”",
@@ -2104,7 +3883,7 @@
       "status": "complete",
       "items": [
         "API Key 设置弹窗底部在「取消」左侧新增「导入设置」和「导出设置」按钮，作为更换版本时的一键配置备份入口。",
-        "导出设置会读取 /api/settings/raw 明文配置，并生成 t8-penguin-canvas-settings JSON，覆盖贞贞工坊 / RunningHub / LLM 通用 Key、7 类分类独立 Key、文件自动保存路径、画布自动保存路径、资源库路径、主题模板路径和 Eagle 本地接口。",
+        "导出设置会读取 /api/settings/raw 明文配置，并生成 t8-penguin-canvas-settings JSON，覆盖贞贞工坊 / RunningHub / LLM 通用 Key、8 类分类独立 Key、文件自动保存路径、画布自动保存路径、资源库路径、主题模板路径和 Eagle 本地接口。",
         "导入设置只接受白名单字段，自动跳过空值、未知字段和 ****1234 这类脱敏 Key；导入后先回填表单，用户确认后点击「保存」才写入后端，避免误选文件直接覆盖本地设置。",
         "导出的 JSON 标记 containsSecrets=true 并提示包含明文 API Key，属于私密备份，不能上传 GitHub 或公开分享。"
       ]
@@ -2251,7 +4030,7 @@
         "Grok Video 1.5 对齐 gpt-image-2-web v4.5U：走 xai/grok-imagine-video/v1.5/image-to-video，只支持图生视频，最多 1 张参考图，不发送 aspect_ratio 参数。",
         "Grok Video 1.5 的图像传入模式默认 base64；前端提交固定 image_mode=base64，后端默认使用 refToBananaImage 转换本地/远端参考图后写入 image_url。",
         "Grok Video FAL 旧版链路继续支持 image-to-video、reference-to-video 和无图 text-to-video fallback；Grok Video 1.5 缺少参考图时会前后端明确报错。",
-        "模型注意事项弹窗同步补充最新视频模型说明：Grok Video 1.5 可作为 SD 平替图生视频，Sora2 当前先不建议使用，Seedance 预扣/退补规则保持清晰提示。",
+        "模型注意事项弹窗同步补充最新视频模型说明：Grok Video 1.5 可作为 SD 平替图生视频，Sora2 支持 sora-vip 分组与 default 默认分组的 FAL 模型，Seedance 预扣/退补规则保持清晰提示。",
         "公开版本同步到 1.7.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub；本次按规范打包 Electron。"
       ]
     },
@@ -2357,12 +4136,12 @@
       "items": [
         "remove-ai-watermark 节点固定桥接 wiltodelta/remove-ai-watermarks，上游算法不复制到 T8；T8 负责画布节点、媒体解析、CLI/Python 调用、输出转存和错误文案。",
         "后端 runner 优先探测 T8_REMOVE_AI_WATERMARKS_RUNTIME、Electron resources/tools/remove-ai-watermarks sidecar、T8_REMOVE_AI_WATERMARKS_BIN、T8_REMOVE_AI_WATERMARKS_SRC、开发期 _external clone，再 fallback PATH CLI。",
-        "状态接口动态返回 upstream version、markKeys 与 optionalFeatures(invisible/lama/detect/trustmark/restore/auto/controlnet/adaptivePolish)，前端 mark 列表必须以动态结果为准并以 auto/gemini/doubao/jimeng 兜底。",
-        "完整能力依赖 remove-ai-watermarks[gpu,detect,trustmark,lama,restore]、CUDA Torch、OpenCV 兼容版本和 LaMA/invisible/GFPGAN 可选模型；缺依赖时后端必须优雅显示未安装或能力不可用，不允许炸后端。",
+        "状态接口动态返回 upstream version、markKeys 与 optionalFeatures(invisible/lama/detect/trustmark/controlnet/adaptivePolish/esrgan/model/guidanceScale)，前端 mark 列表必须以动态结果为准并以 auto/gemini/doubao/jimeng/samsung 兜底。",
+        "完整能力依赖 remove-ai-watermarks[gpu,detect,trustmark,lama]、CUDA Torch、OpenCV 兼容版本和 LaMA/invisible 可选模型；ESRGAN 预放大另需 esrgan extra；缺依赖时后端必须优雅显示未安装或能力不可用，不允许炸后端。",
         "隐形水印参数在 T8 层钳制安全边界：steps 至少 4，非 0 maxResolution 至少 256，strength 至少保证一个 diffusion timestep，避免上游 diffusers 空 latent 崩溃。",
-        "已同步上游 0.8.9：visible/identify 动态覆盖 Gemini、豆包、即梦可见标记；invisible 默认走上游来源自适应强度，并支持 auto、controlnet、min-resolution、adaptive-polish、unsharp 与 GFPGAN restore-faces；旧 0.8.7 runtime 仍版本感知兼容 protect flags。",
+        "已同步上游 0.11.0：visible/identify 动态覆盖 Gemini、豆包、即梦、Samsung 可见标记；invisible 默认走 ControlNet + 来源自适应强度，并支持 model、guidance-scale、upscaler、min-resolution、adaptive-polish、unsharp；旧 0.8.9 runtime 仍版本感知兼容 auto/restore-faces，旧 0.8.7 runtime 兼容 protect flags。",
         "Electron 用户包若要开箱可用，必须准备 tools/remove-ai-watermarks-runtime sidecar runtime，electron-builder 会复制到 resources/tools/remove-ai-watermarks；正式发版可设置 T8_REQUIRE_AI_WATERMARK_RUNTIME=1 强制缺失即失败。",
-        "上游仓库更新后只同步 registry、命令参数、mark/mode/options 与能力探测适配；新增能力必须补 tests/aiWatermarkRunner.test.ts 并更新 README/features/skill 的 MIT attribution 与打包说明。"
+        "上游仓库更新后只同步 registry、命令参数、mark/mode/options 与能力探测适配；新增能力必须补 tests/aiWatermarkRunner.test.ts 并更新 README/features/skill 的 Apache-2.0 attribution 与打包说明。"
       ]
     },
     "phase119": {
@@ -2766,6 +4545,136 @@
         "README 当前版本、badge 与节点数量同步到 2.0.6 / 50 个节点，避免文档落后于 Topaz、ComfyUI 和扩展平台能力。",
         "features.json 记录 v2.0.6 为 source-only 版本；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
       ]
+    },
+    "phase151": {
+      "label": "七龙珠神龙过场与 Electron 自动更新发布 (v2.0.7)",
+      "status": "implemented",
+      "items": [
+        "七龙珠神龙隐藏模式过场改为 src/assets/theme-dragonball/shenron-dragon.png 透明 PNG 资产，不再使用 CSS 线框；过场包含雷达扫描、能量雾、光束、七龙珠聚合和 reduced-motion 兜底。",
+        "DragonBallRadar、theme-dragonball.css 与 tests/dragonBallRadar.test.ts 锁定雷达工具栏、经典星位、15 分钟龙珠倒计时、3 秒收集反馈、隐藏模式成就和 PNG 过场资产。",
+        "3D 全景节点完成机位书签、默认视线中心、热点导览和跨全景节点跳转；Panorama3DNode / panorama3d utils / tests/panorama3d.test.ts 同步。",
+        "火山引擎扩展 API 修复连接检测、Seedream/Seedance 签名与视频提交路径，避免 Seedance 2.0 视频提交 HTTP 404。",
+        "成就系统补齐主题详情、完成度、隐藏模式仪式感、有效时长持久化和导入导出；奖励影片未提供前继续显示待解锁占位。",
+        "本地私有扩展拆分为 local-private ignored overlay，公开源码只保留通用 extension hook；本机 Electron 打包可包含加密私有扩展，GitHub 源码不包含实现。",
+        "公开版本同步到 2.0.7：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.0.7.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase152": {
+      "label": "火山 Seedance 2.0 结果解析与 Electron 自动更新发布 (v2.0.8)",
+      "status": "implemented",
+      "items": [
+        "Volcengine provider 的视频 URL 收集器对齐 Infinite-Canvas 思路，兼容 content/result/output/mp4_url/output_url/src/path/preview_url 和 JSON 字符串返回，避免成功任务误报空视频。",
+        "新增 tests/volcengineProvider.test.ts 回归：嵌套 Ark task content、content JSON 字符串、ModelNotOpen 友好提示和真实 URL 提取边界。",
+        "成就系统与隐藏模式补记继续修复，确保统计关闭/重新开启、七龙珠神龙和 RH 隐藏模式事件能正确影响成就进度。",
+        "七龙珠神龙模式补齐隐藏音乐、普通/隐藏双模式切换、雷达状态和主题可读性；相关 CSS、store、Tracker 与测试同步。",
+        "公开版本同步到 2.0.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.0.8.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase153": {
+      "label": "Sora2 Zhenzhen API 双通道与独立 Key",
+      "status": "implemented",
+      "items": [
+        "视频节点 Sora2 在保留原 `sora-2 (FAL)` 入口不迁移的前提下，新增 `sora-2 (Zhenzhen API)` 具体模型；内部值为 `sora-2-zhenzhen`，后端提交到 /v2/videos/generations 时映射为上游真实 model=`sora-2`。",
+        "Sora2 Zhenzhen API 通道对齐 gpt-image-2-web 非 FAL 实现：支持 16:9 / 9:16、15 秒、seed、private 和最多 1 张 base64 参考图；FAL 通道仍使用独立的 mode / duration / resolution / character ids / IP 阻断参数。",
+        "分类独立 API Key 从 7 类扩展为 8 类：新增 `soraApiKey` 与设置页「sora2 系列」，Sora2 FAL 与 Zhenzhen API 都优先使用该 Key，未填时 fallback 到贞贞通用 Key；`veoApiKey` 改回只负责 Veo / Veo3.1。",
+        "新增回归测试锁定 Sora2 双通道、`soraApiKey` 设置字段、后端 key 选择和 `sora-2-zhenzhen` → `sora-2` 映射，防止后续误把旧 FAL 入口改走普通视频提交。"
+      ]
+    },
+    "phase154": {
+      "label": "Veo 分类默认模型切到 veo-omni-10s",
+      "status": "implemented",
+      "items": [
+        "视频节点主模型分类显示名从 `Veo 3.1` 改为 `Veo`，但保留内部主分类 id，避免旧画布的 Veo 节点失配。",
+        "Veo 具体模型新增并默认选择 `veo-omni-10s`；旧 `veo3.1`、`veo3.1-fal` 等子模型继续保留可选，不迁移、不删除。",
+        "`veo-omni-10s` 对齐 Comfly_veo_omini：前端保存公开模型值，后端提交时映射为 `omni_flash-10s`，通过 `/v1/videos` multipart 发送 `input_reference`，轮询改查 `/v1/videos/{task_id}`。",
+        "新增回归测试锁定 Veo 显示名、默认子模型、旧 Veo 选项保留和后端 `/v1/videos` multipart 协议，避免误套旧 `/v2/videos/generations` 协议。"
+      ]
+    },
+    "phase155": {
+      "label": "3D 全景导演台、Veo Omni 与 Sora2 双通道 Electron 发布 (v2.0.9)",
+      "status": "implemented",
+      "items": [
+        "3D 全景节点把多人彩色小人、100+ 动作预设、自然语言动作生成、关键帧时间轴、遮挡参考、画面关节拖拽、序列帧素材集和全屏导演台作为本次发布能力收口。",
+        "Sora2 新增 Zhenzhen API 通道和独立 sora2 分类 API Key，原 FAL 通道保持默认选项与旧参数兼容。",
+        "Veo 分类显示名改为 Veo，默认具体模型切到 `veo-omni-10s`，后端按 `/v1/videos` multipart 与 `omni_flash-10s` 上游模型调用。",
+        "上传素材 20MB 上限、画布崩溃恢复、模型注意事项文案、3D 节点右栏布局和视频模型帮助一起进入公开源码。",
+        "公开版本同步到 2.0.9：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.0.9.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase156": {
+      "label": "New API 分组令牌公开扩展点与 Nano Banana 2 映射修复 (v2.1.1)",
+      "status": "implemented",
+      "items": [
+        "新增公开本地扩展插槽 LocalSettingsAddonSlot / LocalNodeAddonSlot 与后端 runtimeHooks，方便 ignored local-private 扩展接入 New API 分组令牌高级模式，同时保持 GitHub 源码不包含私有实现。",
+        "图像、视频、Seedance、音频节点和 generation service 支持 providerParams 透传；后端 zhenzhen.resolveApiKey hook 可按节点所选分组替换实际 API Key，普通用户不启用高级模式时不改变旧流程。",
+        "FAL 图像/视频提交与查询固定使用通用贞贞 API Key，不接 New API 分组令牌；Sora2/Veo/Grok 等旧 FAL 通道继续保留兼容。",
+        "分类独立 API Key 设置页每个系列新增清空按钮，保存后可明确清空对应分类 Key。",
+        "Nano Banana 2 的 UI 选项继续显示 nano-banana-2 (Flash)，但真实上游模型改为 gemini-3.1-flash-image-preview；旧画布保存值在 ImageNode 与 proxy 后端两侧兜底归一。",
+        "新增 imageModelMapping、localExtensionHooks 等回归测试，并同步 advanced provider、API 设置、Electron 打包检查与 FAL key 边界测试。",
+        "公开版本同步到 2.1.1：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.1.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase157": {
+      "label": "即梦 CLI Seedream 4.7 与 Seedance 2.0 模型补齐 (v2.1.3)",
+      "status": "implemented",
+      "items": [
+        "按用户提供的安装命令更新本机 dreamina CLI，并用 dreamina -h / text2image -h / image2image -h / text2video -h / multimodal2video -h 作为权威模型支持来源。",
+        "即梦 CLI 图像模型新增 seedream-4.7，并在后端 jimengCli 适配器中把 seedream-4.7 / 4.7 转换为 --model_version=4.7；seedream-4.6、seedream-4.5、seedream-5.0 同步进入默认列表。",
+        "即梦 CLI 视频模型默认列表补齐 seedance2.0fast_vip、seedance2.0_vip、seedance2.0fast、seedance2.0；旧设置中空的 jimeng-cli 模型列表会在后端归一化时自动补回内置默认值；非 seedance2.0_vip 的 Seedance 2.0 变体会固定 720p。",
+        "API Key 设置页模型提示同步展示 seedream-4.7 与完整 Seedance 2.0 变体；新增 advanced provider 与 jimeng CLI 回归测试。",
+        "公开版本同步到 2.1.3：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.3.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase158": {
+      "label": "俄罗斯方块主题、Codex 创作节点与批处理源码版 (v2.1.8)",
+      "status": "implemented",
+      "items": [
+        "俄罗斯方块主题补齐 Korobeiniki 默认音乐、方块化画布 / 节点 / 连线 / 小地图和 10x20 小游戏体验，关卡、障碍、技能、存档和视觉反馈持续增强。",
+        "工具箱新增批量素材处理节点，覆盖多文件 / 文件夹导入、批量改名、去黑边、抠图、扩图、高清放大、格式转换和打开输出文件夹。",
+        "Codex CLI Agent 支持简约模式和创作台：LLM / IMG 双模式、Skill 调用、项目 Skill、模板工坊、产物库、参考素材可视化、流式对话、文本复制、产物发布和深色主题可读性修复。",
+        "Codex 生图工作台节点面向 imagegen 流程，提供队列、公共图库、模板 / 片段工具、参数快捷 Chip、批量历史和画布输出衔接。",
+        "Grok Agent 修复视频任务轮询、模式高亮、产物库删除 / 清空 / 批量删除和深色主题可读性；视频节点补齐 grok-1.5-video-6s / 10s / 15s 的 Zhenzhen New size 参数。",
+        "AI 消除水印跟进 remove-ai-watermarks 新版能力，补齐前端节点、后端路由和本地 runtime 文档；同时修复素材拖动、预览、侧边栏主题可读性和输出产物链路。",
+        "公开版本同步到 2.1.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.8.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase159": {
+      "label": "俄罗斯方块大屏、Agent CLI 收口与 Electron 自动更新发布 (v2.1.9)",
+      "status": "implemented",
+      "items": [
+        "俄罗斯方块主题补齐大屏游戏模式、99 关完成后通关判定、10 秒通关仪式感过场、隐藏奖励影片解锁提示、开发全检查点、平滑速度 / 技能消耗曲线、Guard 随机清障和新形状独立颜色。",
+        "Tetris / RH / 幽游白书 / 龙珠 / 科技风隐藏奖励影片以加密 .t8media 分发，成就完成后才能在隐藏影片馆播放。",
+        "Codex CLI Agent 继续收口简约模式和创作台：LLM / IMG 双模式默认模型与默认 imagegen Skill、创作台会话记忆、模板和 Skill 注入、产物库删除 / 清空 / 批量删除、文本复制、自动滚动、主题可读性和最终产物解析。",
+        "Codex 生图工作台保留队列、公共图库、模板 / 片段工坊、参数快捷 Chip、历史记录和输出素材衔接，避免重复发布无关文本或旧产物。",
+        "Grok Agent 视频链路修复：SSE 轮询监听 res.close、视频轮询延长到 15 分钟、失败时带出最后状态 / request id / 错误原因，私有 xAI 查询优先 /v1/videos/{request_id} 并补齐 edits / extensions 入口。",
+        "FAL 超市新增 Bernini R、Luma Ray / Uni、BRIA、Nemotron ASR、Pixelcut 等模型入口，按 Comfyui-zhenzhen 节点实现迁移参数、分类、输入输出和回归测试。",
+        "公开版本同步到 2.1.9：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.9.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase160": {
+      "label": "灵感之源、批量去边和 Agent 输入预览源码版 (v2.2.0)",
+      "status": "implemented",
+      "items": [
+        "新增灵感之源分类和艺术风格大师节点，迁移 qiaomu 艺术家风格图片与 manifest，支持搜索、筛选、lightbox、复制提示词、自定义风格、分类管理和导入导出。",
+        "艺术风格大师修复输出风格提示词 / 输出风格图片按钮无反应、缩略图和长文字撑出节点、节点网格不能滚轮浏览的问题；自定义风格支持本地图片上传。",
+        "批量素材处理优先完善去除图片上下左右边框：支持黑边 / 白边 / 透明边 / 自动检测，支持自动、手动像素和 gap 类滑动调整，并展示裁掉像素。",
+        "Codex CLI Agent 简约模式和 Codex 生图工作台补齐上游图片预览、排序、删除与稳定图像产物输出，创作台保持既有素材区和记忆逻辑。",
+        "俄罗斯方块主题继续修复拖动节点顶部残影、大屏游戏布局和游戏难度曲线细节。",
+        "公开版本同步到 2.2.0：package.json、package-lock.json、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.0.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase161": {
+      "label": "灵感之源与工具体验源码收口版 (v2.2.1)",
+      "status": "implemented",
+      "items": [
+        "艺术风格大师继续完善输出风格提示词 / 图片、自定义图片上传、右键保存风格、分类 / 流派筛选、节点内滚轮浏览和长文字防溢出；输出提示词改为单行风格提示词 + 固定英文参考句，避免冗长元信息。",
+        "新增并完善动漫标签大师节点，支持 Danbooru / Gelbooru 懒加载图库、标签 / 图像输出、自定义分类、导入导出和素材图片右键保存标签。",
+        "资源库分类新增 / 重命名 / 删除恢复可用，任务完成提示音支持设置页上传自定义音频，顶部快捷栏新增输出素材持久化开关。",
+        "画布交互修复 Home 键回到画布中心、文本节点长文缩放溢出、对齐 / 整理顺序颠倒和图像编辑裁切比例默认撑满。",
+        "RH 工具箱读取字段时每次以当前 WebAppId 为准，完整映射字段但在用户节点隐藏调试映射块，避免旧应用字段混入。",
+        "Codex CLI Agent 简约模式和 Codex 生图工作台补齐上游图片预览、排序、删除、LLM / IMG 模式边界和 gpt-image-2-vip 模型提示。",
+        "俄罗斯方块主题继续修复节点顶部残影；公开版本同步到 2.2.1，本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
+      ]
     }
   },
   "categories": {
@@ -2822,7 +4731,7 @@
         {
           "type": "llm",
           "label": "LLM/Vision 节点",
-          "description": "LLM/Vision 模型(gemini-3.1-flash-lite 默认/gemini-3.5-flash/gpt-4o/gemini-3.1-pro/gpt-5/gpt-image-2-all) + temp/max_tokens + system 预设 + 多模态图片 + 多轮会话 + SSE 流式 + 独立 LLM Key；上游文本/图像缩略图可在节点内单项排除且不断开连线"
+          "description": "LLM/Vision 模型(gemini-3.1-flash-lite/gemini-3.5-flash 默认/gpt-4o/gemini-3.1-pro/gpt-5/gpt-image-2-all) + temp/max_tokens + system 预设 + 多模态图片 + 多轮会话 + SSE 流式 + 独立 LLM Key；上游文本/图像缩略图可在节点内单项排除且不断开连线"
         }
       ]
     },
@@ -2855,6 +4764,22 @@
           "label": "RH 配置",
           "description": "RunningHub 工作流参数注入(v1.1.x 起 hidden:true 仅从 Sidebar 隐藏,nodeTypes 注册保留以兼容老画布)",
           "hidden": true
+        }
+      ]
+    },
+    "inspiration": {
+      "label": "灵感之源",
+      "count": 2,
+      "nodes": [
+        {
+          "type": "artist-style-master",
+          "label": "艺术风格大师",
+          "description": "移植 qiaomu 艺术家风格库，支持画家英文名/中文名/风格标签搜索、按流派和分类筛选、缩略图 lightbox、大图方向键切换、复制画家提示词、自定义分类/风格保存、导入导出，并可运行输出风格提示词或风格图片"
+        },
+        {
+          "type": "anime-tag-master",
+          "label": "动漫标签大师",
+          "description": "基于 comfyui-anima-t8 的 Danbooru / Gelbooru 懒加载图库思路，支持动漫标签搜索、按分类/来源筛选、在线预览、lightbox、复制标签提示词、自定义分类/标签保存、图片上传、导入导出，并可运行输出标签或参考图"
         }
       ]
     },
@@ -3012,7 +4937,7 @@
         {
           "type": "remove-ai-watermark",
           "label": "去AI水印",
-          "description": "接入 wiltodelta/remove-ai-watermarks 0.8.9，可处理 Gemini / 豆包 / 即梦等已知可见 AI 水印、框选擦除(cv2/LaMA)、来源自适应隐形水印、ControlNet 结构保留、GFPGAN 脸部恢复、AI 元数据清理与来源鉴别；支持本地 Python 包或 Electron sidecar runtime，视频/音频首阶段支持元数据检查和清理"
+          "description": "接入 wiltodelta/remove-ai-watermarks 0.11.0，可处理 Gemini / 豆包 / 即梦 / Samsung 等已知可见 AI 水印、框选擦除(cv2/LaMA)、来源自适应隐形水印、默认 ControlNet 结构保留、ESRGAN 小图预放大、模型/CFG 调参、AI 元数据清理、来源鉴别与官方 all 完整清理；支持本地 Python 包或 Electron sidecar runtime，视频/音频以及 HEIC/HEIF/JXL/Opus 等容器支持元数据检查和清理"
         },
         {
           "type": "video-output",
@@ -3023,7 +4948,7 @@
     },
     "toolbox": {
       "label": "工具箱",
-      "count": 8,
+      "count": 9,
       "nodes": [
         {
           "type": "cinematic",
@@ -3054,6 +4979,11 @@
           "type": "aggregate-parser",
           "label": "聚合解析",
           "description": "基于 ParseHub 的轻量自媒体聚合解析节点：输入短链、作品链接、分享码或分享文案，合规确认后默认保存到 output/parsehub；可选使用代理/Cookie，远端地址解析作为高级模式保留"
+        },
+        {
+          "type": "batch-processor",
+          "label": "批量素材处理",
+          "description": "批量导入文件或文件夹，也可连接上游素材；在节点内执行原名/改名、去除上下黑边、批量抠图、扩图、高清放大和格式转换，完成后只显示节点内进度和结果，不自动生成输出素材节点"
         },
         {
           "type": "topaz-image-upscale",
@@ -3237,17 +5167,26 @@
         ]
       },
       {
-        "id": "veo-3.1",
-        "label": "Veo 3.1",
+        "id": "veo",
+        "label": "Veo",
         "provider": "zhenzhen",
-        "endpoint": "/v1/videos/generations"
+        "endpoint": "/v1/videos 或 /v2/videos/generations",
+        "defaultModel": "veo-omni-10s",
+        "extraModels": [
+          "veo-omni-10s",
+          "veo3.1",
+          "veo3.1-fal"
+        ]
       },
       {
         "id": "sora-2",
         "label": "Sora2",
         "provider": "zhenzhen",
-        "endpoint": "/fal/fal-ai/sora-2/{text-to-video|image-to-video}",
+        "endpoint": "/fal/fal-ai/sora-2/{text-to-video|image-to-video} 或 /v2/videos/generations",
         "defaultModel": "sora-2",
+        "extraModels": [
+          "sora-2-zhenzhen"
+        ],
         "imageMode": "base64",
         "maxRefs": 1
       },
@@ -3436,6 +5375,12 @@
             "veo"
           ]
         },
+        "soraApiKey": {
+          "label": "sora2 系列",
+          "matches": [
+            "sora"
+          ]
+        },
         "grokApiKey": {
           "label": "grok 系列",
           "matches": [
@@ -3616,8 +5561,8 @@
         "POST /api/eagle/import — 将上传素材、输出素材、素材集或文本发送到本机 Eagle，支持 /files/input、/files/output、资源库文件、素材集文件和 http(s) URL"
       ],
       "aiWatermark": [
-        "GET /api/ai-watermark/status — 检测 remove-ai-watermarks CLI/Python 包或 Electron sidecar runtime、版本、已知 visible mark 与 optionalFeatures(invisible/lama/detect/trustmark)",
-        "POST /api/ai-watermark/process — 去AI水印辅助节点处理入口，支持 smart/visible/erase(cv2/LaMA)/invisible/metadata-check/metadata-remove/identify，输出统一转存 /files/output 或返回文本报告"
+        "GET /api/ai-watermark/status — 检测 remove-ai-watermarks CLI/Python 包或 Electron sidecar runtime、版本、已知 visible mark 与 optionalFeatures(invisible/lama/detect/trustmark/controlnet/adaptivePolish/esrgan/model/guidanceScale)",
+        "POST /api/ai-watermark/process — 去AI水印辅助节点处理入口，支持 smart/visible/erase(cv2/LaMA)/invisible/all/metadata-check/metadata-remove/identify，输出统一转存 /files/output 或返回文本报告"
       ],
       "cloudUploads": [
         "GET /api/cloud-uploads/status — 返回云端上传目标的脱敏配置与摘要，用于 API 设置页和素材右键菜单",
@@ -3683,6 +5628,7 @@
     "portrait-master",
     "pose-master",
     "aggregate-parser",
+    "batch-processor",
     "topaz-image-upscale",
     "topaz-video-upscale",
     "remove-ai-watermark"
@@ -3738,5 +5684,157 @@
     "中键 / 右键拖动": "平移画布",
     "空格 + 拖拽": "平移画布(备选)",
     "ESC (拖拽素材中)": "取消跨节点拖拽"
+  },
+  "panorama3dSceneActors": {
+    "version": "2.0.9-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-06",
+    "description": "3D 全景节点新增多人彩色低多边形小人、动作姿势、场景快照、构图安全区、布局导入导出和视频参考提示词，用于控制全景场景中的人物位置、朝向和动作参考。",
+    "sourceFiles": [
+      "src/utils/panorama3d.ts",
+      "src/components/nodes/Panorama3DNode.tsx",
+      "src/components/Canvas.tsx",
+      "tests/panorama3d.test.ts"
+    ],
+    "dataFields": [
+      "panoramaAvatars",
+      "panoramaActiveAvatarId",
+      "panoramaSceneSnapshot",
+      "panoramaControlSnapshotUrl",
+      "panoramaAvatarKeyframes",
+      "panoramaKeyframeSequenceCount",
+      "panoramaOcclusionMasks",
+      "panoramaOcclusionMaskVisible",
+      "panoramaActorOverlayVisible",
+      "panoramaAvatarIkEditMode",
+      "panoramaCompositionGuide",
+      "panoramaSceneLegendVisible",
+      "panoramaScenePrompt",
+      "panoramaActionPrompt",
+      "panoramaActionPlan",
+      "PanoramaAvatar.groundMode",
+      "PanoramaAvatar.rootHeight",
+      "PanoramaAvatar.rootPitch",
+      "PanoramaAvatar.rootRoll",
+      "PanoramaAvatar.poseParams.armLBendOffsetZ",
+      "PanoramaAvatar.poseParams.armRBendOffsetZ",
+      "PanoramaAvatar.poseParams.legLBendOffsetZ",
+      "PanoramaAvatar.poseParams.legRBendOffsetZ",
+      "PanoramaAvatar.poseParams.armLOffsetZ",
+      "PanoramaAvatar.poseParams.armROffsetZ",
+      "PanoramaAvatar.poseParams.legLOffsetZ",
+      "PanoramaAvatar.poseParams.legROffsetZ",
+      "panoramaShotCamera.mode",
+      "panoramaShotCamera.presetId",
+      "panoramaShotCamera.targetAvatarId",
+      "panoramaShotCamera.targetBone",
+      "panoramaShotCamera.framingRatio",
+      "panoramaShotCamera.closeupStrength",
+      "panoramaShotCamera.lowAngle"
+    ],
+    "capabilities": [
+      "同一全景内最多 8 个彩色 3D 小人。",
+      "点击画面放置、数字控制点或移动手柄拖动平移角色、选中角色下方旋转手柄可左右调整朝向并上下调整前后倾，角色图例点击可选中并跳转定位。",
+      "动作预设扩展到 100+ 种常用姿态，覆盖基础移动、手势表演、跆拳道/拳击/武器、运动、舞蹈和剧情动作；每个新动作都带 root 默认值、关键词和 poseParams 骨骼参数。",
+      "Phase A 动作底座新增贴地/离地/手动高度、角色整体离地高度、前后倾和左右翻滚，可表达飞踢、受击后仰、单膝跪地、倒地等不钉地动作。",
+      "Phase B.1 骨架底座把四肢拆成上臂/前臂、大腿/小腿；角色面板支持左/右上臂、左/右大腿、左/右肘、左/右膝附加弯曲微调。",
+      "Phase B.2 选中角色时把手/脚端点投影为低干扰 DOM IK 手柄，可直接拖动左手、右手、左脚、右脚微调肢体方向和肘膝弯曲。",
+      "Phase C 导演镜头支持全身动作、双人打斗、低机位、脚部特写、手部特写、肩后视角和被击者视角，可绑定角色和身体部位并导出镜头提示词。",
+      "Phase D 可在预览右上角打开全屏导演台，集中调整视角、角色、骨骼、导演镜头、构图和导出参数。",
+      "Phase D.1 3D 全景节点改为左预览/参数、右角色双列布局，右栏独立滚动；摄像机/导览移到左侧预览下方并常展开，热点取点表单不溢出，并修正快捷键帮助弹窗在龙珠主题下的高对比可读性。",
+      "3D 全景节点选中或全屏导演台打开时支持节点级快捷键：1-8 选中并跳转角色、Tab 切换角色、I 进入画面关节编辑、O 打开全屏、? 查看帮助。",
+      "Phase E 补齐后续导演台能力：支持控制快照、动作关键帧时间轴和手动遮挡参考区，三者都会进入 panoramaSceneSnapshot 与 promptText。",
+      "Phase E.1 强化画面直接编辑：遮挡区可在预览里拖动和拖角缩放，关节模式可直接拖肩/肘/手/髋/膝/脚，关键帧快照可按帧数输出 F01-Fxx 序列帧。",
+      "Phase E.2 继续修正画面编辑可用性：全屏导演台左侧预览也支持直接拖角色/关节/遮挡，Delete/Backspace 会优先删除选中的遮挡或当前小人，不再误删整个节点；动作预设左右肢体改为顺侧外展，避免手脚互相交叉乱折。",
+      "Phase E.4 右栏常展开并取消普通节点内侧 maxHeight 滚动，普通节点动作生成移到左栏摄像机/导览下方空白区，序列帧数量输入支持先输入 1 再组成 12，多帧快照自动输出为一个图像素材集，角色平移/旋转按钮贴近角色右侧并在靠右边缘时换边，避免被身体、关节点或预览边缘挡住。",
+      "Phase F 新增动作生成：可把自然语言导演指令解析为 PanoramaActionPlan 草案，支持本地规则、AI JSON 增强、应用当前、新增角色、替换场景，并自动写入小人、关键帧、导演镜头和序列帧参数。",
+      "Phase F.1 动作生成升级：本地解析可识别跆拳道等非旧模板动作，AI 草案可用 poseParams 自定义动作，关键帧清洗会避免 K1/K2/K3 全静态，并按每段最多 6 帧限制序列帧数量。",
+      "Phase F.2 序列帧导出修复：每个 F01-Fxx 快照渲染前都会同步 Three 小人 mesh 到插值后的姿态，并强化空手道直拳等动作终点，让序列缩略图能看出动作变化。",
+      "可调远近、大小、脚底高度、透明度、朝向和面向镜头。",
+      "场景快照导出会合成当前全景视角与小人，并写入 panoramaSceneSnapshot；panoramaSourceUrl 保持原始全景贴图。",
+      "支持 16:9、9:16、1:1、4:3 构图安全区、快照图例、场景词复制和布局 JSON 导入导出。",
+      "场景快照可通过现有发送素材弹窗作为图片发送到其他画布/节点，sourceNodeData 保留结构化人物布局。",
+      "检测同画布姿势大师节点，可把姿势提示和预设轻量导入当前小人的动作、角色设定与 poseParams，后续可继续深化为精确骨架映射。"
+    ],
+    "actionDirectorPhaseA": [
+      "PanoramaAvatar 新增 groundMode/rootHeight/rootPitch/rootRoll 字段，并进入 sanitize、upsert、scene snapshot 和 promptText。",
+      "飞踢、受击后仰、单膝跪地、倒地动作预设会设置合理 root 默认姿态，用户可继续手动调整。",
+      "数字角色点增加 nodrag/nopan 和 touch-action 边界，只移动小人不旋转全景；选中角色下方新增旋转手柄并写入 heading/faceMode。",
+      "场景词会输出 Root状态，要求下游保持离地高度、身体倾斜和动作关系。"
+    ],
+    "actionDirectorPhaseB1": [
+      "Three.js 小人从单段四肢升级为 segmented limb：arm/leg 主关节 + lower joint + hand/foot endpoint。",
+      "动作预设开始使用 elbow/knee bend，让坐下、蹲下、飞踢、跪地、受击后仰更接近人体结构。",
+      "poseParams 支持 armLBendOffsetZ / armRBendOffsetZ / legLBendOffsetZ / legRBendOffsetZ，在当前预设基础上微调肘膝弯曲。"
+    ],
+    "actionDirectorPhaseB2": [
+      "手/脚 endpoint 控制点通过 Three world position 投影为 DOM 按钮，并复用 nodrag/nopan/touch-action 事件边界；Phase D 起仅在关节编辑模式中显示，避免普通预览遮挡画面。",
+      "拖动 IK 手柄期间只更新 avatarsRef、poseParams 和 Three mesh，松手再写回 ReactFlow node data。",
+      "首版轻量屏幕 IK 写入 arm/leg OffsetZ 与 BendOffsetZ，用于快速修正手脚位置；后续可继续升级为严格 2-bone IK。",
+      "动作预设数值收敛为保守可读姿态，手动切换动作时清空上一动作的 poseParams 偏移，避免默认动作被旧 IK 偏移污染。",
+      "画面 IK 手柄在该阶段先只保留手/脚小圆点，肘/膝和上半段由面板滑杆控制；Phase E.1 已升级为肩/肘/手/髋/膝/脚都可直接拖动。"
+    ],
+    "actionDirectorPhaseB3": [
+      "选中角色新增移动手柄，和数字角色点一样用于平移角色在全景中的 yaw/pitch 站位。",
+      "旋转手柄从环绕角度算法改为直接拖拽映射：左右拖调整 heading，上下拖调整 rootPitch，避免起拖时方向跳变。",
+      "快照图例里的角色 chip 点击会调用 focusAvatar，直接选中并跳转到对应角色附近视角。"
+    ],
+    "actionDirectorPhaseC": [
+      "新增 panoramaShotCamera 协议，mode 区分 panorama-view 当前视角和 shot-camera 动作参考镜头，不宣称单张全景具备真实 xyz 平移视差。",
+      "导演镜头预设覆盖全身动作、双人打斗、低机位、脚部特写、手部特写、肩后视角和被击者视角，支持 targetAvatarId 与 targetBone 绑定。",
+      "角色 / 场景面板新增快照模式、镜头预设、镜头目标、身体部位、镜头比例、特写强度、低机位和套用按钮。",
+      "预览层显示独立导演取景框、中心到目标部位的目标线和目标标签；导出场景快照会把该框线绘入参考图。",
+      "buildPanoramaSceneSnapshot 会写入 shotCamera 和 shotTarget，promptText 追加导演镜头语言，适合传给图生视频/首帧参考链路。"
+    ],
+    "actionDirectorPhaseD": [
+      "补齐所有内置动作的 root 默认姿态，切换动作时统一重置 groundMode/rootHeight/rootPitch/rootRoll 与 poseParams，避免飞踢、倒地、受击等动作污染挥手/指向/对话。",
+      "重新收敛挥手、指向、持物、对话、战斗、飞踢、受击后仰等默认肢体角度，以可读人体轮廓优先，极端动作主要由离地和整体倾斜表达。",
+      "panoramaAvatarIkEditMode 控制画面关节编辑点显隐；节点面板新增“关节”按钮，快捷键 I 可切换，关闭后立即清理 DOM 控制点。",
+      "3D 全景预览右上角新增全屏导演台与快捷键帮助按钮；节点头部也提供 ? 入口。",
+      "节点内角色面板默认只保留高频动作、朝向、关节、重置、复制和全屏入口，导演镜头与高级骨骼/位置参数改为折叠区。",
+      "全屏导演台通过 createPortal 打开，左侧显示大预览，右侧集中提供视角、角色、骨骼、导演镜头、构图安全区、快照、发送、入库和场景词全参数。",
+      "节点级快捷键只在当前 3D 全景节点被选中或全屏导演台打开时响应，并跳过 input/textarea/select/contentEditable。"
+    ],
+    "actionDirectorPhaseE": [
+      "新增 panoramaControlSnapshotUrl，控制快照导出时临时隐藏全景球背景，在深色背景上输出低模角色、导演镜头框、遮挡参考和图例，用作姿势/构图控制参考图。",
+      "新增 panoramaAvatarKeyframes，节点面板和全屏导演台都可把当前角色姿态记录为关键帧，并可一键应用/删除；buildPanoramaScenePrompt 会输出动作时间轴说明。",
+      "新增 panoramaOcclusionMasks 与 panoramaOcclusionMaskVisible，用户可手动标注画面百分比遮挡区；遮挡框会显示在预览层、绘入场景/控制快照，并写入 promptText。",
+      "发送素材时如果同时存在场景快照与控制快照，会一并发送，sourceNodeData 保留完整 panoramaSceneSnapshot。"
+    ],
+    "actionDirectorPhaseE1": [
+      "遮挡参考从只靠右侧滑杆升级为预览内直接编辑：拖遮挡框主体移动，拖 8 个边角/边缘手柄调整大小；快照里使用更高对比填充、斜线纹理、虚线边框和标签，避免透明遮挡难以理解。",
+      "画面关节编辑从手/脚端点扩展到 shoulder / elbow / hand / hip / knee / foot；按钮文案改为“关节”，提示用户可直接在画面拖动肩、肘、手、髋、膝、脚。",
+      "新增 panoramaKeyframeSequenceCount，场景快照在存在至少两个关键帧时会自动插值生成 F01-Fxx 序列帧，并把 sequenceFrameCount / sequenceFrames 写入 panoramaSceneSnapshot。",
+      "节点右侧设置栏使用 nodrag/nowheel 并拦截 wheel，鼠标滚轮可以滚动右侧参数面板而不是误操作画布；摄像机/导览移到左侧预览下方，右侧聚焦角色、关节、时间轴和遮挡设置。"
+    ],
+    "actionDirectorPhaseE2": [
+      "全屏导演台不再只显示静态 img，左侧预览增加 directorStageRef 交互层，并复用角色点、移动/旋转手柄、关节点和遮挡拖拽/缩放手柄。",
+      "预览右上角快捷键和全屏按钮改成高对比圆形按钮，叠在深色或复杂全景图上仍可辨认。",
+      "新增 activeOcclusionMaskId；点击或拖动遮挡会选中该遮挡，Delete/Backspace 优先删除选中遮挡，其次删除当前小人，并在节点级快捷键捕获阶段阻止 ReactFlow 删除整个 3D 全景节点。",
+      "挥手、指向、坐下、奔跑、蹲下、飞踢、受击后仰等预设统一改为左右手脚顺侧外展：左肢体根关节与肘/膝下段为负向，右肢体为正向，默认站立和各动作脚部不再向中线交叉。",
+      "关节拖拽从固定 dx/dy 符号改为屏幕空间目标求解，拖上/下/左/右都会按鼠标方向靠近；节点小预览和全屏导演台舞台都增加 window pointerdown 捕获、舞台捕获阶段 IK 命中测试、previewStageRef 捕获指针、mousedown 拦截与 window pointermove/up 兜底，避免 ReactFlow、遮挡层或按钮重绘打断非放大模式关节拖拽。",
+      "遮挡参考标签改为浅琥珀底、深色粗体、深色边框和白色外描边，并同步到场景/控制快照绘制，叠在蓝色斜线遮挡区上仍能看清。"
+    ],
+    "actionDirectorPhaseE4": [
+      "普通节点右侧栏从内部 maxHeight 滚动和 details 折叠改为常展开自然占高，角色/场景、导演镜头、时间轴、遮挡参考、高级姿态和场景词预览都在右栏直接可见；动作生成移到左栏摄像机/导览下方空白区。",
+      "panoramaKeyframeSequenceCount 输入框改成本地草稿态，onChange 只在合法 2-48 时写回节点，onBlur/Enter 再清洗，用户可以直接输入 12 而不会被即时改成 2。",
+      "场景快照导出时主快照仍写入 imageUrl/imageUrls/urls；F01-Fxx 序列帧不再进入通用 imageUrls，改为自动创建或更新一个 image material-set 节点，避免 autoOutput 一帧一个节点铺满画布。",
+      "发送序列帧时默认使用 material-set 模式；需要单帧时可从素材集拆散或使用取用节点。",
+      "选中角色的平移/旋转按钮改为贴近角色右侧的浮动工具组，靠近画面右边缘时才自动换到左侧；活跃角色浮层层级高于 IK 关节点，减少被身体轮廓、关节点和预览边缘遮挡导致点不到。"
+    ],
+    "actionDirectorPhaseF": [
+      "新增 PanoramaActionPlan 协议与 PANORAMA_ACTION_TERMS 动作词库，覆盖飞踢、受击后仰、闪避、扶起、脚部特写、低机位等常用导演指令。",
+      "PANORAMA_AVATAR_POSES 扩展为 100+ 种数据化动作定义；动作词库会从 pose 定义自动生成，包含跆拳道横踢/前踢/侧踢/下劈/后踢、拳击、持武器、运动、舞蹈和剧情动作。",
+      "buildPanoramaLocalActionPlan 可离线把“角色B飞踢角色A，角色A受击后仰，脚部特写，8帧”解析成角色站位、动作 root、poseParams、关键帧和 shotCamera；帧数会按每段最多 6 帧收敛。",
+      "sanitizePanoramaActionPlan 会为 poseId 合并默认 root/poseParams，修正 AI 返回的重复大时间点和全静态 K1/K2/K3，并把 48 帧这类过量序列帧限制到动作段需要的数量。",
+      "buildPanoramaActionPlannerSystemPrompt / UserPrompt 复用现有 generateLlm 的 /api/proxy/llm 生成 JSON 草案，parsePanoramaActionPlanJson 和 sanitizePanoramaActionPlan 负责提取、校验和数值钳制；AI 失败时自动回退本地草案。",
+      "3D 全景普通节点左栏摄像机/导览下方与全屏导演台右栏新增“动作生成”面板：解析后先显示草案摘要，用户可选择应用当前、新增角色或替换场景，再写入 panoramaAvatars / panoramaAvatarKeyframes / panoramaShotCamera / panoramaKeyframeSequenceCount。",
+      "序列帧导出循环在每帧 drawFrame 前调用 updateAvatarMeshes，确保 poseId、poseParams、rootPitch/rootRoll/rootHeight 的插值真正进入 Three 渲染结果。"
+    ],
+    "verification": [
+      "node --test tests\\panorama3d.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
   }
 }

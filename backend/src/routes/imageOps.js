@@ -158,6 +158,256 @@ function clampNumber(v, min, max, fallback) {
   return Math.max(min, Math.min(max, n));
 }
 
+function normalizeTrimMode(value) {
+  const s = String(value || 'black');
+  return ['black', 'white', 'transparent', 'auto'].includes(s) ? s : 'black';
+}
+
+function normalizeTrimAxis(value) {
+  const s = String(value || 'vertical');
+  return ['vertical', 'horizontal', 'all'].includes(s) ? s : 'vertical';
+}
+
+function normalizeTrimStrategy(value) {
+  const s = String(value || 'auto');
+  return s === 'manual' ? 'manual' : 'auto';
+}
+
+function parseRatio(value, fallbackWidth, fallbackHeight) {
+  const raw = String(value || 'keep').trim();
+  if (!raw || raw === 'keep') return fallbackWidth / Math.max(1, fallbackHeight);
+  const m = /^(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)$/i.exec(raw);
+  if (m) {
+    const w = Number(m[1]);
+    const h = Number(m[2]);
+    if (w > 0 && h > 0) return w / h;
+  }
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) return n;
+  return fallbackWidth / Math.max(1, fallbackHeight);
+}
+
+function normalizeImageFormat(value, fallback = 'png') {
+  const s = String(value || fallback).toLowerCase().replace(/^\./, '');
+  if (s === 'jpeg') return 'jpg';
+  if (s === 'jpg' || s === 'png' || s === 'webp') return s;
+  return fallback;
+}
+
+function encoderForFormat(format, quality = 90) {
+  const q = Math.max(1, Math.min(100, parseInt(quality) || 90));
+  if (format === 'jpg') {
+    return {
+      ext: 'jpg',
+      encode: (p) => p.jpeg({ quality: q, mozjpeg: false }),
+    };
+  }
+  if (format === 'webp') {
+    return {
+      ext: 'webp',
+      encode: (p) => p.webp({ quality: q, effort: 3 }),
+    };
+  }
+  return {
+    ext: 'png',
+    encode: (p) => p.png({ compressionLevel: 6, effort: 3 }),
+  };
+}
+
+function normalizeHexColorForSharp(value, fallback = '#00000000') {
+  const raw = String(value || fallback).trim();
+  if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(raw)) return raw;
+  if (/^#[0-9a-f]{3}$/i.test(raw)) {
+    return `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`;
+  }
+  return fallback;
+}
+
+function isBorderPixel(r, g, b, a, mode, threshold) {
+  if (mode === 'transparent') return a <= threshold;
+  const bright = (r + g + b) / 3;
+  if (mode === 'white') return bright >= 255 - threshold;
+  if (mode === 'auto') return a <= threshold || bright <= threshold || bright >= 255 - threshold;
+  return bright <= threshold;
+}
+
+function colorDistanceSq(data, index, color) {
+  const dr = data[index] - color.r;
+  const dg = data[index + 1] - color.g;
+  const db = data[index + 2] - color.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+function averageCornerBackground(data, width, height) {
+  const points = [
+    [0, 0],
+    [Math.max(0, width - 1), 0],
+    [0, Math.max(0, height - 1)],
+    [Math.max(0, width - 1), Math.max(0, height - 1)],
+  ];
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let count = 0;
+  for (const [x, y] of points) {
+    const index = (y * width + x) * 4;
+    if (data[index + 3] <= 8) continue;
+    r += data[index];
+    g += data[index + 1];
+    b += data[index + 2];
+    count += 1;
+  }
+  if (count === 0) return { r: 255, g: 255, b: 255 };
+  return {
+    r: Math.round(r / count),
+    g: Math.round(g / count),
+    b: Math.round(b / count),
+  };
+}
+
+async function removeConnectedSolidBackground(buffer, input = {}) {
+  const image = sharp(buffer).rotate().ensureAlpha();
+  const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+  const width = info.width || 0;
+  const height = info.height || 0;
+  if (!width || !height) throw new Error('无法读取图像尺寸');
+
+  const bg = averageCornerBackground(data, width, height);
+  const threshold = clampNumber(input.threshold, 0, 120, 36);
+  const thresholdSq = threshold * threshold * 3;
+  const total = width * height;
+  const visited = new Uint8Array(total);
+  const queue = [];
+
+  const matchesBackground = (pixelIndex) => {
+    const i = pixelIndex * 4;
+    return data[i + 3] <= 8 || colorDistanceSq(data, i, bg) <= thresholdSq;
+  };
+  const pushIfBackground = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const pixelIndex = y * width + x;
+    if (visited[pixelIndex] || !matchesBackground(pixelIndex)) return;
+    visited[pixelIndex] = 1;
+    queue.push(pixelIndex);
+  };
+
+  for (let x = 0; x < width; x += 1) {
+    pushIfBackground(x, 0);
+    pushIfBackground(x, height - 1);
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    pushIfBackground(0, y);
+    pushIfBackground(width - 1, y);
+  }
+
+  let removed = 0;
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const pixelIndex = queue[cursor];
+    const i = pixelIndex * 4;
+    if (data[i + 3] !== 0) {
+      data[i + 3] = 0;
+      removed += 1;
+    }
+    const x = pixelIndex % width;
+    const y = Math.floor(pixelIndex / width);
+    pushIfBackground(x + 1, y);
+    pushIfBackground(x - 1, y);
+    pushIfBackground(x, y + 1);
+    pushIfBackground(x, y - 1);
+  }
+
+  const out = await sharp(data, { raw: { width, height, channels: 4 } })
+    .png({ compressionLevel: 6, effort: 3 })
+    .toBuffer();
+  return { out, removed, total, background: bg };
+}
+
+async function detectTrimCrop(buffer, input) {
+  const meta = await sharp(buffer).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  if (!width || !height) throw new Error('无法读取图像尺寸');
+  const mode = normalizeTrimMode(input.mode);
+  const axis = normalizeTrimAxis(input.axis);
+  const threshold = clampNumber(input.threshold, 0, 120, 18);
+  const strategy = normalizeTrimStrategy(input.strategy);
+
+  if (strategy === 'manual') {
+    const manual = input.manual || {};
+    const top = axis === 'vertical' || axis === 'all' ? Math.trunc(clampNumber(manual.top, 0, height - 1, 0)) : 0;
+    const bottomLimit = Math.max(0, height - top - 1);
+    const bottom = axis === 'vertical' || axis === 'all' ? Math.trunc(clampNumber(manual.bottom, 0, bottomLimit, 0)) : 0;
+    const left = axis === 'horizontal' || axis === 'all' ? Math.trunc(clampNumber(manual.left, 0, width - 1, 0)) : 0;
+    const rightLimit = Math.max(0, width - left - 1);
+    const right = axis === 'horizontal' || axis === 'all' ? Math.trunc(clampNumber(manual.right, 0, rightLimit, 0)) : 0;
+    return {
+      x: left,
+      y: top,
+      w: Math.max(1, width - left - right),
+      h: Math.max(1, height - top - bottom),
+      originalWidth: width,
+      originalHeight: height,
+      removed: { top, right, bottom, left },
+      strategy,
+      mode,
+      axis,
+      threshold,
+    };
+  }
+
+  const raw = await sharp(buffer).ensureAlpha().raw().toBuffer();
+
+  const rowIsBorder = (y) => {
+    let border = 0;
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      if (isBorderPixel(raw[i], raw[i + 1], raw[i + 2], raw[i + 3], mode, threshold)) border += 1;
+    }
+    return border / width >= 0.985;
+  };
+  const colIsBorder = (x) => {
+    let border = 0;
+    for (let y = 0; y < height; y += 1) {
+      const i = (y * width + x) * 4;
+      if (isBorderPixel(raw[i], raw[i + 1], raw[i + 2], raw[i + 3], mode, threshold)) border += 1;
+    }
+    return border / height >= 0.985;
+  };
+
+  let top = 0;
+  let bottom = height - 1;
+  let left = 0;
+  let right = width - 1;
+
+  if (axis === 'vertical' || axis === 'all') {
+    while (top < bottom && rowIsBorder(top)) top += 1;
+    while (bottom > top && rowIsBorder(bottom)) bottom -= 1;
+  }
+  if (axis === 'horizontal' || axis === 'all') {
+    while (left < right && colIsBorder(left)) left += 1;
+    while (right > left && colIsBorder(right)) right -= 1;
+  }
+
+  return {
+    x: left,
+    y: top,
+    w: Math.max(1, right - left + 1),
+    h: Math.max(1, bottom - top + 1),
+    originalWidth: width,
+    originalHeight: height,
+    removed: {
+      top,
+      right: Math.max(0, width - right - 1),
+      bottom: Math.max(0, height - bottom - 1),
+      left,
+    },
+    strategy,
+    mode,
+    axis,
+    threshold,
+  };
+}
+
 function normalizeGridOrderMode(v) {
   const s = String(v || 'row');
   if (['row', 'column', 'snake', 'reverse'].includes(s)) return s;
@@ -559,6 +809,85 @@ router.post('/crop', async (req, res) => {
   }
 });
 
+// ========== POST /api/image/trim-border — 去除上下黑边/白边/透明边 ==========
+// body: { imageUrl, mode?: 'black'|'white'|'transparent'|'auto', axis?: 'vertical'|'horizontal'|'all', threshold?: number, strategy?: 'auto'|'manual', manual?: {top,right,bottom,left} }
+router.post('/trim-border', async (req, res) => {
+  try {
+    const { imageUrl } = req.body || {};
+    if (!imageUrl) return res.status(400).json({ success: false, error: 'imageUrl 必填' });
+    const buf = await fetchImageBuffer(imageUrl);
+    const crop = await detectTrimCrop(buf, req.body || {});
+    const meta = await sharp(buf).metadata();
+    const enc = chooseEncoder(meta);
+    const out = await enc
+      .encode(sharp(buf).extract({ left: crop.x, top: crop.y, width: crop.w, height: crop.h }))
+      .toBuffer();
+    const url = await saveBufferAsync(out, enc.ext);
+    res.json({ success: true, data: { imageUrl: url, crop } });
+  } catch (e) {
+    console.error('trim-border 错误:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ========== POST /api/image/pad-canvas — 扩画布到指定比例 ==========
+// body: { imageUrl, ratio?: '1:1'|'16:9'|'9:16'|'4:3'|number, background?: '#rrggbb[aa]' }
+router.post('/pad-canvas', async (req, res) => {
+  try {
+    const { imageUrl, ratio, background } = req.body || {};
+    if (!imageUrl) return res.status(400).json({ success: false, error: 'imageUrl 必填' });
+    const buf = await fetchImageBuffer(imageUrl);
+    const meta = await sharp(buf).metadata();
+    const width = meta.width || 0;
+    const height = meta.height || 0;
+    if (!width || !height) throw new Error('无法读取图像尺寸');
+    const targetRatio = parseRatio(ratio, width, height);
+    let targetW = width;
+    let targetH = height;
+    const currentRatio = width / height;
+    if (currentRatio < targetRatio) targetW = Math.ceil(height * targetRatio);
+    if (currentRatio > targetRatio) targetH = Math.ceil(width / targetRatio);
+    const left = Math.floor((targetW - width) / 2);
+    const right = targetW - width - left;
+    const top = Math.floor((targetH - height) / 2);
+    const bottom = targetH - height - top;
+    const out = await sharp(buf)
+      .ensureAlpha()
+      .extend({
+        top,
+        bottom,
+        left,
+        right,
+        background: normalizeHexColorForSharp(background, '#00000000'),
+      })
+      .png({ compressionLevel: 6, effort: 3 })
+      .toBuffer();
+    const url = await saveBufferAsync(out, 'png');
+    res.json({ success: true, data: { imageUrl: url, width: targetW, height: targetH } });
+  } catch (e) {
+    console.error('pad-canvas 错误:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ========== POST /api/image/convert — 格式转换 / 压缩 ==========
+// body: { imageUrl, format?: 'png'|'jpg'|'webp', quality?: number }
+router.post('/convert', async (req, res) => {
+  try {
+    const { imageUrl, format, quality } = req.body || {};
+    if (!imageUrl) return res.status(400).json({ success: false, error: 'imageUrl 必填' });
+    const outFormat = normalizeImageFormat(format, 'png');
+    const enc = encoderForFormat(outFormat, quality);
+    const buf = await fetchImageBuffer(imageUrl);
+    const out = await enc.encode(sharp(buf).rotate()).toBuffer();
+    const url = await saveBufferAsync(out, enc.ext);
+    res.json({ success: true, data: { imageUrl: url, format: enc.ext } });
+  } catch (e) {
+    console.error('convert 错误:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ========== POST /api/image/grid-crop — 九宫格切图 ==========
 // body:
 //   等分模式: { imageUrl, rows?, cols?, gap?, orderMode?, exportIndexes? }
@@ -864,20 +1193,20 @@ router.post('/compare', async (req, res) => {
   }
 });
 
-// ========== POST /api/image/remove-bg — 抠图(占位:返回原图) ==========
-// 真实抠图通常需要 RH 工作流或 AI 模型,Phase 4 接入
+// ========== POST /api/image/remove-bg — 本地纯色背景抠图 ==========
 router.post('/remove-bg', async (req, res) => {
   try {
-    const { imageUrl } = req.body || {};
+    const { imageUrl, threshold } = req.body || {};
     if (!imageUrl) return res.status(400).json({ success: false, error: 'imageUrl 必填' });
-    // 简易实现:转 PNG(保留 alpha),不做真实背景去除
     const buf = await fetchImageBuffer(imageUrl);
-    const out = await sharp(buf).png().toBuffer();
+    const result = await removeConnectedSolidBackground(buf, { threshold });
     res.json({
       success: true,
       data: {
-        imageUrl: saveBuffer(out, 'png'),
-        warning: '当前为占位实现,真实抠图需 RH 工作流或 AI 模型',
+        imageUrl: await saveBufferAsync(result.out, 'png'),
+        warning: result.removed > 0 ? '纯色背景本地抠图已完成' : '未识别到边缘连通纯色背景',
+        removedPixels: result.removed,
+        totalPixels: result.total,
       },
     });
   } catch (e) {

@@ -135,15 +135,15 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
   const sub = isPixel ? 'var(--px-ink-soft)' : isLight ? '#64748b' : 'rgba(229,247,251,0.62)';
   const border = isPixel ? 'var(--px-ink)' : isLight ? 'rgba(14,165,233,0.24)' : 'rgba(103,232,249,0.24)';
   const accent = activeApp?.ui?.accent || '#67e8f9';
-  const inputCls = isPixel ? 'px-input nodrag nowheel w-full px-2 py-1 text-xs' : 'nodrag nowheel w-full rounded border px-2 py-1 text-xs outline-none';
+  const inputCls = isPixel ? 'px-input nodrag nopan nowheel w-full px-2 py-1 text-xs' : 'nodrag nopan nowheel w-full rounded border px-2 py-1 text-xs outline-none';
   const inputStyle: CSSProperties = isPixel ? {} : {
     background: isLight ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.06)',
     borderColor: border,
     color: text,
   };
   const buttonCls = isPixel
-    ? 'px-btn nodrag nowheel inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px]'
-    : 'nodrag nowheel inline-flex items-center justify-center gap-1 rounded border px-2 py-1 text-[11px]';
+    ? 'px-btn nodrag nopan nowheel inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px]'
+    : 'nodrag nopan nowheel inline-flex items-center justify-center gap-1 rounded border px-2 py-1 text-[11px]';
   const rootStyle: CSSProperties = {
     width: size.w,
     height: size.h,
@@ -153,7 +153,7 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
     color: text,
     border: `2px solid ${selected ? accent : border}`,
     borderRadius: isPixel ? 8 : 14,
-    overflow: 'hidden',
+    overflow: 'visible',
     boxShadow: isPixel ? '3px 3px 0 var(--px-ink)' : 'var(--t8-node-shadow, 0 12px 30px rgba(0,0,0,0.28))',
   };
 
@@ -241,8 +241,8 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
   const handleRun = async () => {
     const src = `comfyui-store:${id.slice(0, 6)}`;
     if (!provider) {
-      update({ status: 'error', error: '请先在 API 设置里启用本地 ComfyUI。' });
-      throw new Error('请先在 API 设置里启用本地 ComfyUI。');
+      update({ status: 'error', error: '请先在 API 设置里启用 ComfyUI。' });
+      throw new Error('请先在 API 设置里启用 ComfyUI。');
     }
     if (!activeApp) {
       update({ status: 'error', error: '请先导入或制作一个 ComfyUI 应用。' });
@@ -293,7 +293,7 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
   useRunTrigger(id, handleRun, 'image');
 
   return (
-    <div className="relative flex flex-col nowheel" style={rootStyle}>
+    <div className="t8-comfyui-store-node relative flex flex-col nowheel" style={rootStyle}>
       <Handle type="target" position={Position.Left} style={{ ...handleStyle, background: PORT_COLOR.image, left: -6 }} />
       <Handle type="source" position={Position.Right} style={{ ...handleStyle, background: PORT_COLOR.image, right: -6 }} />
       <ResizableCorners
@@ -306,24 +306,25 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
         onResizeEnd={(_, params) => update({ size: { w: Math.round(params.width), h: Math.round(params.height) } })}
       />
 
-      <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: border }}>
-        <div className="flex h-8 w-8 items-center justify-center rounded border" style={{ borderColor: accent, color: accent }}>
-          <Boxes size={17} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-black">ComfyUI超市</div>
-          <div className="truncate text-[11px]" style={{ color: sub }}>
-            {activeApp ? activeApp.title : `${manifest.apps.length} 个应用`} · 本地工作流
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ borderRadius: isPixel ? 6 : 12 }}>
+        <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: border }}>
+          <div className="flex h-8 w-8 items-center justify-center rounded border" style={{ borderColor: accent, color: accent }}>
+            <Boxes size={17} />
           </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-base font-black">ComfyUI超市</div>
+            <div className="truncate text-[11px]" style={{ color: sub }}>
+              {activeApp ? activeApp.title : `${manifest.apps.length} 个应用`} · 本地工作流
+            </div>
+          </div>
+          {activeApp && (
+            <button type="button" className={buttonCls} style={inputStyle} onClick={() => update({ comfyuiStoreActiveAppId: '' })}>
+              <ArrowLeft size={12} /> 列表
+            </button>
+          )}
         </div>
-        {activeApp && (
-          <button type="button" className={buttonCls} style={inputStyle} onClick={() => update({ comfyuiStoreActiveAppId: '' })}>
-            <ArrowLeft size={12} /> 列表
-          </button>
-        )}
-      </div>
 
-      <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3 nowheel">
+        <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3 nowheel">
         <div className="grid grid-cols-1 gap-2">
           <label className="space-y-1">
             <span className="text-[11px] font-bold" style={{ color: sub }}>ComfyUI 实例</span>
@@ -427,7 +428,7 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
                       </div>
                       <button
                         type="button"
-                        className="nodrag nowheel inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border"
+                        className="nodrag nopan nowheel inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border"
                         style={{ borderColor: 'rgba(248,113,113,0.45)', color: userCategoryIds.has(category.id) ? '#f87171' : sub, opacity: userCategoryIds.has(category.id) ? 1 : 0.55 }}
                         title={userCategoryIds.has(category.id) ? '删除分类' : '内置分类不能删除'}
                         onClick={() => removeCategory(category.id)}
@@ -467,11 +468,14 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
                     key={app.id}
                     role="button"
                     tabIndex={0}
-                    className="nodrag nowheel w-full cursor-pointer rounded border p-2 text-left"
+                    className="nodrag nopan nowheel w-full cursor-pointer rounded border p-2 text-left"
                     style={{ borderColor: border, background: isLight ? 'rgba(15,23,42,0.03)' : 'rgba(255,255,255,0.05)', color: text }}
                     onClick={() => selectApp(app)}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') selectApp(app);
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        selectApp(app);
+                      }
                     }}
                   >
                     <div className="flex items-center gap-2">
@@ -487,6 +491,7 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
                         className={`${inputCls} flex-1`}
                         style={inputStyle}
                         title="设置应用分类"
+                        onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => {
                           event.stopPropagation();
@@ -503,6 +508,7 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
                         className={buttonCls}
                         style={{ ...inputStyle, borderColor: 'rgba(248,113,113,0.45)', color: userAppIds.has(app.id) ? '#f87171' : sub, opacity: userAppIds.has(app.id) ? 1 : 0.55 }}
                         title={userAppIds.has(app.id) ? '删除应用' : '内置应用不能删除'}
+                        onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
                           removeApp(app);
@@ -579,7 +585,14 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
               <div className="text-xs font-black">参数</div>
               {activeApp.userParams.map((param) => (
                 <label key={param.key} className="block space-y-1">
-                  <span className="text-[11px] font-bold" style={{ color: sub }}>{param.label}</span>
+                  <span className="flex items-center justify-between gap-2 text-[11px] font-bold" style={{ color: sub }}>
+                    <span className="min-w-0 truncate">{param.label}</span>
+                    {(param.nodeId || param.fieldName) && (
+                      <span className="shrink-0 font-mono text-[10px]" style={{ color: accent }}>
+                        {param.nodeId ? `#${param.nodeId}` : ''}{param.fieldName ? `.${param.fieldName}` : ''}
+                      </span>
+                    )}
+                  </span>
                   {param.kind === 'textarea' ? (
                     <PromptTextarea
                       title={`ComfyUI 参数 · ${param.label}`}
@@ -594,9 +607,23 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
                   ) : param.kind === 'boolean' ? (
                     <input
                       type="checkbox"
+                      className="nodrag nopan nowheel"
                       checked={!!paramValues[param.key]}
                       onChange={(e) => setParam(param.key, e.target.checked)}
                     />
+                  ) : param.kind === 'select' && param.options?.length ? (
+                    <select
+                      value={String(paramValues[param.key] ?? param.defaultValue ?? param.options[0] ?? '')}
+                      onChange={(e) => setParam(param.key, e.target.value)}
+                      className={inputCls}
+                      style={inputStyle}
+                    >
+                      {param.options.map((option) => (
+                        <option key={String(option)} value={String(option)}>
+                          {String(option)}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <input
                       type={param.kind === 'number' ? 'number' : 'text'}
@@ -637,6 +664,7 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

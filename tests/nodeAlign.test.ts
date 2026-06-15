@@ -123,6 +123,20 @@ test('applyNodeAlignment arranges selected nodes into a compact visual grid', ()
   assert.deepEqual(result.nodes.find((n: any) => n.id === 'd')?.position, { x: 160, y: 140 });
 });
 
+test('applyNodeAlignment arranges connected nodes by edge direction before visual position', () => {
+  const nodes = [
+    node('output', 20, 20, 120, 80, 'output'),
+    node('source', 360, 30, 120, 80, 'text'),
+  ];
+  const result = applyNodeAlignment(nodes, ['output', 'source'], 'arrange-grid', {
+    gridGap: 40,
+    edges: [{ source: 'source', target: 'output' }],
+  });
+
+  assert.deepEqual(result.nodes.find((n: any) => n.id === 'source')?.position, { x: 20, y: 20 });
+  assert.deepEqual(result.nodes.find((n: any) => n.id === 'output')?.position, { x: 180, y: 20 });
+});
+
 test('applyNodeAlignment moves group members when only the group box is aligned', () => {
   const nodes = [
     {

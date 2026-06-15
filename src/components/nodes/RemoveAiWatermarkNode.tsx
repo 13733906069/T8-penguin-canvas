@@ -1,14 +1,14 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useEdges, useNodes } from '@xyflow/react';
 import {
   AlertTriangle,
   Eraser,
   FileText,
   Info,
-  Loader2,
   Plus,
   ShieldOff,
   Sparkles,
+  Square,
   Trash2,
 } from 'lucide-react';
 import { getAiWatermarkStatus, processAiWatermark, type AiWatermarkMode, type AiWatermarkOptions, type AiWatermarkRegion, type AiWatermarkStatus } from '../../services/aiWatermark';
@@ -17,12 +17,16 @@ import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import SmartImage from '../SmartImage';
+import { useRunBusStore } from '../../stores/runBus';
+
+type AiWatermarkMediaKind = Exclude<MediaKind, 'model3d'>;
 
 const MODE_OPTIONS: Array<{ value: AiWatermarkMode; label: string; hint: string }> = [
   { value: 'smart', label: '智能清理', hint: '可见水印 auto + 元数据清理' },
   { value: 'visible', label: '可见水印', hint: 'Gemini / Doubao / Jimeng 等已知标记' },
   { value: 'erase', label: '框选擦除', hint: '手动区域 inpaint' },
   { value: 'invisible', label: '隐形水印', hint: '需要上游 GPU 可选依赖' },
+  { value: 'all', label: '完整清理', hint: '官方 all：可见 + 隐形 + 元数据' },
   { value: 'metadata-check', label: '元数据检查', hint: '仅输出报告' },
   { value: 'metadata-remove', label: '元数据清理', hint: '图片 / 视频 / 音频容器' },
   { value: 'identify', label: '来源鉴别', hint: '输出 JSON 报告' },
@@ -40,16 +44,19 @@ const DEFAULT_OPTIONS: AiWatermarkOptions = {
   backend: 'cv2',
   eraseMethod: 'telea',
   dilate: 3,
-  pipeline: 'default',
+  pipeline: 'controlnet',
   device: 'auto',
   steps: 50,
   humanize: 0,
   unsharp: 0,
+  upscaler: 'lanczos',
+  model: '',
+  guidanceScale: '',
   maxResolution: 0,
   minResolution: 1024,
   controlnetScale: 1,
   auto: false,
-  adaptivePolish: false,
+  adaptivePolish: true,
   restoreFaces: false,
   restoreFacesWeight: 0.5,
   protectText: false,
@@ -62,13 +69,14 @@ function normalizeMode(value: any): AiWatermarkMode {
   return MODE_OPTIONS.some((item) => item.value === value) ? value : 'smart';
 }
 
-function normalizePipeline(value: any): 'default' | 'controlnet' {
-  return value === 'controlnet' || value === 'ctrlregen' ? 'controlnet' : 'default';
+function normalizePipeline(value: any): 'controlnet' | 'sdxl' {
+  return value === 'default' || value === 'sdxl' ? 'sdxl' : 'controlnet';
 }
 
 function formatMediaSummary(items: MediaItem[]) {
-  const counts = items.reduce<Record<MediaKind, number>>(
+  const counts = items.reduce<Record<AiWatermarkMediaKind, number>>(
     (acc, item) => {
+      if (item.kind === 'model3d') return acc;
       acc[item.kind] += 1;
       return acc;
     },
@@ -132,17 +140,26 @@ function ToggleRow({
   label,
   checked,
   onChange,
+  disabled = false,
+  title,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
-    <label className="flex items-center gap-2 text-[11px] cursor-pointer" style={{ color: 'var(--t8-text-main)' }}>
+    <label
+      className={`flex items-center gap-2 text-[11px] ${disabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'}`}
+      style={{ color: 'var(--t8-text-main)' }}
+      title={title}
+    >
       <input
         className="nodrag"
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
       {label}
@@ -158,13 +175,18 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
   const [status, setStatus] = useState<AiWatermarkStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [localWarning, setLocalWarning] = useState('');
   const [previewSize, setPreviewSize] = useState<{ w: number; h: number } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const runBusWasRunningRef = useRef(false);
+  const isRunBusRunning = useRunBusStore((state) => state.currentRunId === id || state.runningIds.includes(id));
 
   const d = data || {};
   const mode = normalizeMode(d.aiWatermarkMode);
   const processAll = d.aiWatermarkProcessAll === true;
   const options: AiWatermarkOptions = { ...DEFAULT_OPTIONS, ...(d.aiWatermarkOptions || {}) };
   const statusText = d.status || 'idle';
+  const isRunning = statusText === 'running';
   const outputUrls: string[] = Array.isArray(d.imageUrls)
     ? d.imageUrls
     : d.imageUrl
@@ -179,7 +201,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
     for (const sourceId of upstreamIds) {
       const node = nodes.find((item) => item.id === sourceId);
       const nodeData = node?.data || {};
-      for (const kind of ['image', 'video', 'audio'] as MediaKind[]) {
+      for (const kind of ['image', 'video', 'audio'] as AiWatermarkMediaKind[]) {
         for (const item of getMediaItemsFromData(nodeData, kind)) {
           if (!item.url || seen.has(item.url)) continue;
           seen.add(item.url);
@@ -202,8 +224,8 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
       .catch((error) => {
         if (!cancelled) setStatus({
           installed: false,
-          markKeys: ['gemini', 'doubao', 'jimeng'],
-          optionalFeatures: { invisible: false, lama: false, detect: false, trustmark: false, restore: false, auto: false, controlnet: false, adaptivePolish: false },
+          markKeys: ['gemini', 'doubao', 'jimeng', 'samsung'],
+          optionalFeatures: { invisible: false, lama: false, detect: false, trustmark: false, restore: false, auto: false, controlnet: false, adaptivePolish: false, esrgan: false, model: false, guidanceScale: false },
           setupHints: [error?.message || '状态检查失败'],
         });
       })
@@ -218,6 +240,30 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
   const patchOptions = (patch: Partial<AiWatermarkOptions>) => {
     update({ aiWatermarkOptions: { ...options, ...patch } });
   };
+
+  const stopProcessing = useCallback((message = '已停止去 AI 水印任务') => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLocalError(message);
+    setLocalWarning('');
+    update({ status: 'idle', error: message });
+  }, [update]);
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (isRunBusRunning) {
+      runBusWasRunningRef.current = true;
+      return;
+    }
+    if (runBusWasRunningRef.current && abortRef.current && isRunning) {
+      stopProcessing('已停止去 AI 水印任务');
+    }
+    runBusWasRunningRef.current = false;
+  }, [isRunBusRunning, isRunning, stopProcessing]);
 
   const setRegions = (regions: AiWatermarkRegion[]) => patchOptions({ regions });
 
@@ -245,6 +291,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
 
   const handleRun = async () => {
     setLocalError('');
+    setLocalWarning('');
     const candidates = isImageOnlyMode(mode)
       ? upstreamItems.filter((item) => item.kind === 'image')
       : upstreamItems;
@@ -261,21 +308,35 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
       return;
     }
     const selectedItems = processAll ? candidates : candidates.slice(0, 1);
+    abortRef.current?.abort();
+    const aborter = new AbortController();
+    abortRef.current = aborter;
     update({ status: 'running', error: '', outputText: '' });
     try {
+      const effectiveOptions: AiWatermarkOptions = {
+        ...options,
+        restoreFaces: options.restoreFaces === true && status?.optionalFeatures?.restore === true,
+      };
       const results = [];
       const imageUrls: string[] = [];
       const videoUrls: string[] = [];
       const audioUrls: string[] = [];
       const texts: string[] = [];
+      const warnings: string[] = [];
       for (const item of selectedItems) {
+        if (aborter.signal.aborted) throw new DOMException('已停止去 AI 水印任务', 'AbortError');
         const result = await processAiWatermark({
           source: item.url,
           kind: item.kind,
           mode,
-          options,
+          options: effectiveOptions,
+        }, {
+          signal: aborter.signal,
         });
         results.push(result);
+        for (const warning of result.warnings || []) {
+          if (warning && !warnings.includes(warning)) warnings.push(warning);
+        }
         if (result.outputUrl) {
           if (result.outputKind === 'image') imageUrls.push(result.outputUrl);
           else if (result.outputKind === 'video') videoUrls.push(result.outputUrl);
@@ -287,7 +348,8 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
         status: 'success',
         error: '',
         aiWatermarkResults: results,
-        metadata: { aiWatermarkResults: results },
+        aiWatermarkWarnings: warnings,
+        metadata: { aiWatermarkResults: results, aiWatermarkWarnings: warnings },
       };
       if (imageUrls.length > 0) {
         patch.imageUrl = imageUrls[0];
@@ -307,25 +369,35 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
         patch.text = patch.outputText;
         patch.prompt = patch.outputText;
       }
+      if (aborter.signal.aborted) throw new DOMException('已停止去 AI 水印任务', 'AbortError');
+      setLocalWarning(warnings.join('\n'));
       update(patch);
     } catch (error: any) {
+      if (aborter.signal.aborted || error?.name === 'AbortError') {
+        const msg = '已停止去 AI 水印任务';
+        setLocalError(msg);
+        update({ status: 'idle', error: msg });
+        return;
+      }
       const msg = error?.message || '去 AI 水印处理失败';
       setLocalError(msg);
       update({ status: 'error', error: msg });
+    } finally {
+      if (abortRef.current === aborter) abortRef.current = null;
     }
   };
 
   useRunTrigger(id, handleRun);
 
   const modeMeta = MODE_OPTIONS.find((item) => item.value === mode) || MODE_OPTIONS[0];
-  const marks = ['auto', ...((status?.markKeys || ['gemini', 'doubao', 'jimeng']).filter((item) => item !== 'auto'))];
+  const marks = ['auto', ...((status?.markKeys || ['gemini', 'doubao', 'jimeng', 'samsung']).filter((item) => item !== 'auto'))];
   const canUseInvisible = status?.optionalFeatures?.invisible;
   const canUseLama = status?.optionalFeatures?.lama;
-  const canUseAutoTune = status?.optionalFeatures?.auto !== false;
   const canUseControlnet = status?.optionalFeatures?.controlnet !== false;
-  const canUseRestore = status?.optionalFeatures?.restore === true;
+  const canUseEsrgan = status?.optionalFeatures?.esrgan !== false;
   const pipeline = normalizePipeline(options.pipeline);
   const error = localError || d.error || '';
+  const warning = localWarning || (Array.isArray(d.aiWatermarkWarnings) ? d.aiWatermarkWarnings.filter(Boolean).join('\n') : '');
 
   return (
     <div
@@ -423,6 +495,23 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
           </div>
         )}
 
+        {mode === 'all' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <FieldLabel>修补方式</FieldLabel>
+              <select className="t8-select w-full px-2 py-1 text-xs" value={options.inpaintMethod || 'ns'} onChange={(e) => patchOptions({ inpaintMethod: e.target.value as any })}>
+                <option value="ns">ns</option>
+                <option value="telea">telea</option>
+                <option value="gaussian">gaussian</option>
+              </select>
+            </div>
+            <ToggleRow label="可见残影修补" checked={options.inpaint !== false} onChange={(value) => patchOptions({ inpaint: value })} />
+            <div className="col-span-2">
+              <SmallHint>完整清理会调用上游 all 命令，依次处理已知可见标记、隐形水印和 AI 元数据；GPU 依赖缺失时会明确失败。</SmallHint>
+            </div>
+          </div>
+        )}
+
         {mode === 'erase' && (
           <div className="space-y-2">
             {firstPreviewImage && (
@@ -479,7 +568,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
           </div>
         )}
 
-        {(mode === 'invisible' || (mode === 'smart' && options.runInvisible)) && (
+        {(mode === 'invisible' || mode === 'all' || (mode === 'smart' && options.runInvisible)) && (
           <div className="space-y-2">
             {!canUseInvisible && (
               <div className="flex items-start gap-1 rounded border px-2 py-1 text-[10px]" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-muted)' }}>
@@ -496,10 +585,10 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
               <div>
                 <FieldLabel>管线</FieldLabel>
                 <select className="t8-select w-full px-2 py-1 text-xs" value={pipeline} onChange={(e) => patchOptions({ pipeline: e.target.value as any })}>
-                  <option value="default">default</option>
-                  <option value="controlnet" disabled={!canUseControlnet}>controlnet{canUseControlnet ? '' : ' (需 0.8.9)'}</option>
+                  <option value="controlnet" disabled={!canUseControlnet}>controlnet{canUseControlnet ? ' 默认' : ' (需新版)'}</option>
+                  <option value="sdxl">sdxl</option>
                 </select>
-                <SmallHint>ControlNet 保留文字 / 人脸结构，替代旧保护开关。</SmallHint>
+                <SmallHint>0.11 默认 ControlNet 保留文字 / 人脸结构；纯图可选 sdxl。</SmallHint>
               </div>
               <div>
                 <FieldLabel>步数</FieldLabel>
@@ -508,7 +597,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
               <div>
                 <FieldLabel>强度</FieldLabel>
                 <NumberInput value={options.strength === undefined ? '' : Number(options.strength)} min={0} max={1} step={0.05} onChange={(value) => patchOptions({ strength: value === '' ? undefined : value })} />
-                <SmallHint>留空使用 0.8.9 的 OpenAI / Google / 未知来源自适应强度。</SmallHint>
+                <SmallHint>留空使用 OpenAI / Google / 未知来源自适应强度。</SmallHint>
               </div>
               <div>
                 <FieldLabel>长边上限</FieldLabel>
@@ -519,6 +608,14 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
                 <FieldLabel>长边下限</FieldLabel>
                 <NumberInput value={Number(options.minResolution ?? 1024)} min={0} max={8192} step={64} onChange={(value) => patchOptions({ minResolution: value === '' ? 1024 : value })} />
                 <SmallHint>小图默认升到 1024 再扩散，0 关闭。</SmallHint>
+              </div>
+              <div>
+                <FieldLabel>小图放大</FieldLabel>
+                <select className="t8-select w-full px-2 py-1 text-xs" value={options.upscaler || 'lanczos'} onChange={(e) => patchOptions({ upscaler: e.target.value as any })}>
+                  <option value="lanczos">lanczos</option>
+                  <option value="esrgan" disabled={!canUseEsrgan}>esrgan{canUseEsrgan ? '' : ' (未装)'}</option>
+                </select>
+                <SmallHint>ESRGAN 需要上游 esrgan extra；缺失时上游会回退。</SmallHint>
               </div>
               <div>
                 <FieldLabel>胶片颗粒</FieldLabel>
@@ -533,17 +630,21 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
                 <NumberInput value={Number(options.controlnetScale ?? 1)} min={0} max={3} step={0.1} onChange={(value) => patchOptions({ controlnetScale: value === '' ? 1 : value })} />
               </div>
               <div>
-                <FieldLabel>脸部权重</FieldLabel>
-                <NumberInput value={Number(options.restoreFacesWeight ?? 0.5)} min={0} max={1} step={0.05} onChange={(value) => patchOptions({ restoreFacesWeight: value === '' ? 0.5 : value })} />
+                <FieldLabel>CFG</FieldLabel>
+                <NumberInput value={options.guidanceScale === undefined || options.guidanceScale === '' ? '' : Number(options.guidanceScale)} min={0} max={30} step={0.5} onChange={(value) => patchOptions({ guidanceScale: value })} />
+                <SmallHint>留空使用上游默认 7.5。</SmallHint>
               </div>
-              <ToggleRow label="自动策略 (0.8.9)" checked={options.auto === true || options.autoTune === true} onChange={(value) => patchOptions({ auto: value })} />
-              <ToggleRow label="自适应细节抛光" checked={options.adaptivePolish === true} onChange={(value) => patchOptions({ adaptivePolish: value })} />
-              <ToggleRow label={`GFPGAN 脸部恢复${canUseRestore ? '' : '（未装 restore）'}`} checked={options.restoreFaces === true} onChange={(value) => patchOptions({ restoreFaces: value })} />
-              {canUseAutoTune ? (
-                <SmallHint>自动策略会由上游按图像内容选择管线、脸部恢复和细节抛光；手动选 controlnet 会覆盖自动管线。</SmallHint>
-              ) : (
-                <SmallHint>当前 runtime 不是 0.8.9，新参数会自动降级为旧版可识别参数。</SmallHint>
-              )}
+              <div className="col-span-2">
+                <FieldLabel>模型 ID（可选）</FieldLabel>
+                <input
+                  className="t8-input nodrag nowheel w-full px-2 py-1 text-xs"
+                  value={options.model || ''}
+                  placeholder="默认 SDXL base"
+                  onChange={(event) => patchOptions({ model: event.target.value })}
+                />
+              </div>
+              <ToggleRow label="自适应细节抛光" checked={options.adaptivePolish !== false} onChange={(value) => patchOptions({ adaptivePolish: value })} />
+              <SmallHint>0.11 不再提供 GFPGAN face-restore；ControlNet 是默认的结构保留方式，`--auto` 已退役。</SmallHint>
             </div>
           </div>
         )}
@@ -558,17 +659,23 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
 
         <button
           type="button"
-          className="t8-btn t8-btn-primary w-full px-3 py-2 text-sm"
-          disabled={statusText === 'running'}
-          onClick={handleRun}
+          className={`t8-btn w-full px-3 py-2 text-sm ${isRunning ? '' : 't8-btn-primary'}`}
+          onClick={isRunning ? () => stopProcessing() : handleRun}
         >
-          {statusText === 'running' ? <Loader2 size={14} className="animate-spin" /> : mode === 'erase' ? <Eraser size={14} /> : mode.includes('metadata') || mode === 'identify' ? <FileText size={14} /> : <Sparkles size={14} />}
-          {statusText === 'running' ? '处理中...' : '运行'}
+          {isRunning ? <Square size={14} /> : mode === 'erase' ? <Eraser size={14} /> : mode.includes('metadata') || mode === 'identify' ? <FileText size={14} /> : <Sparkles size={14} />}
+          {isRunning ? '停止' : '运行'}
         </button>
 
         {error && (
           <div className="rounded-md border px-2 py-1.5 text-[11px]" style={{ borderColor: '#ef444466', color: '#ef4444' }}>
             {error}
+          </div>
+        )}
+
+        {warning && (
+          <div className="flex items-start gap-1 rounded-md border px-2 py-1.5 text-[10px] leading-snug" style={{ borderColor: '#f59e0b66', color: '#f59e0b' }}>
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+            <span className="whitespace-pre-wrap">{warning}</span>
           </div>
         )}
 

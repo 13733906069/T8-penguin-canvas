@@ -33,6 +33,7 @@ export interface RunRhToolboxToolOptions {
   toolId: string;
   manifest?: RhToolboxManifest;
   inputs?: RhToolboxInputPools;
+  inputValues?: Record<string, string | string[]>;
   userParams?: Record<string, string | number | boolean>;
   instanceType?: string;
   appInfo?: any;
@@ -73,6 +74,11 @@ function assertNotAborted(signal?: AbortSignal) {
 
 function isMediaInputKind(kind: string): boolean {
   return kind === 'image' || kind === 'video' || kind === 'audio';
+}
+
+function hasInputValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some((item) => hasInputValue(item));
+  return String(value ?? '').trim() !== '';
 }
 
 async function resolveRhToolboxInputValues(
@@ -130,8 +136,13 @@ export async function runRhToolboxTool(options: RunRhToolboxToolOptions): Promis
   progress?.({ stage: 'prepare', message: `准备运行 ${tool.title}` });
 
   const picked = pickRhToolboxInputs(tool, options.inputs || {});
-  if (picked.missing.length > 0) {
-    throw new Error(`缺少上游输入：${picked.missing.join('、')}`);
+  const explicitInputValues = options.inputValues || {};
+  const missing = tool.inputSchema
+    .filter((input) => input.required !== false)
+    .filter((input) => !hasInputValue(picked.values[input.key]) && !hasInputValue(explicitInputValues[input.key]) && !hasInputValue(input.defaultValue))
+    .map((input) => input.label || input.key);
+  if (missing.length > 0) {
+    throw new Error(`缺少输入：${missing.join('、')}（可在节点内填写/上传，或从左侧连接上游素材）`);
   }
 
   assertNotAborted(options.signal);
@@ -142,7 +153,10 @@ export async function runRhToolboxTool(options: RunRhToolboxToolOptions): Promis
         return fetchRhAppInfo(tool.webappId);
       })());
 
-  const inputValues = await resolveRhToolboxInputValues(tool, picked.values, progress, options.signal);
+  const inputValues = await resolveRhToolboxInputValues(tool, {
+    ...picked.values,
+    ...explicitInputValues,
+  }, progress, options.signal);
   const nodeInfoList = buildRhToolboxNodeInfoList(tool, {
     inputValues,
     userParamValues: options.userParams,

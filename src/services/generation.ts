@@ -21,6 +21,7 @@ export interface GenerateImageRequest {
   // 兼容旧参数:若传了 size(像素串)则优先用、image 单张也会并入 images
   size?: string;
   image?: string;
+  providerParams?: Record<string, any>;
 }
 
 export interface GenerateImageResult {
@@ -224,6 +225,7 @@ export interface FalSubmitRequest {
   enable_web_search?: boolean;
   /** 'image_url'(上传贞贞取 URL) | 'base64' 默认 'image_url' */
   image_mode?: 'image_url' | 'base64';
+  providerParams?: Record<string, any>;
 }
 
 export interface FalSubmitResult {
@@ -600,6 +602,7 @@ export interface VideoFalSubmitRequest {
   soraBlockIp?: boolean;
   /** sora-fal: 最多 2 个 character id，逗号分隔 */
   soraCharacterIds?: string;
+  providerParams?: Record<string, any>;
 }
 
 export interface VideoFalSubmitResult {
@@ -642,14 +645,17 @@ export async function queryVideoFal(params: { responseUrl?: string; endpoint?: s
 // ========================================================================
 // 视频生成(异步) — 完全对齐 gpt-image-2-web
 //   - veo3.1   字段:  aspect_ratio + enhance_prompt + enable_upsample + seed + images(base64,≤3)
+//   - veo-omni 字段:  aspect_ratio + duration=10 + images(base64,取第1张),后端转 /v1/videos multipart
 //   - grok     字段:  ratio + duration(秒,数字) + resolution + seed + images(本地 URL/base64,≤7,后端转上游 URL)
+//   - grok 1.5 new: model(grok-1.5-video-*s) + size + images(取第1张),后端转 /v1/videos multipart
+//   - sora2    字段:  aspect_ratio + duration + private + seed + images(base64,≤1)
 //   - seedance 字段:  沿用 veo 字段(零破坏)
 // 后端通过 model 字段名自动选择协议,前端无需显式传 kind。
 // ========================================================================
 export interface VideoSubmitRequest {
   model: string;
   prompt: string;
-  // Veo3.1
+  // Veo / Veo3.1
   aspect_ratio?: string;
   enhance_prompt?: boolean;
   enable_upsample?: boolean;
@@ -657,15 +663,22 @@ export interface VideoSubmitRequest {
   ratio?: string;
   duration?: number;
   resolution?: string;
+  size?: string;
   // 通用
   seed?: number;
+  /** Sora2 Zhenzhen API: 是否私密生成(对齐 gpt-image-2-web sr_private) */
+  private?: boolean;
+  is_private?: boolean;
   /**
    * 参考图。
    *  - veo3.1:   base64 dataURL,最多 3 张
+   *  - veo-omni: base64 dataURL,取第 1 张并转为 input_reference multipart
    *  - grok:     可传 base64 dataURL 或 /files/* 本地 URL,最多 7 张(后端会上传到上游 /v1/files 取 URL)
+   *  - sora2:    base64 dataURL,最多 1 张(后端会转为上游要求的裸 base64)
    *  - seedance: base64 dataURL,最多 3 张(同 veo)
    */
   images?: string[];
+  providerParams?: Record<string, any>;
 }
 
 export async function submitVideo(req: VideoSubmitRequest): Promise<{ taskId: string }> {
@@ -730,6 +743,7 @@ export interface SeedanceSubmitRequest {
   videos?: string[];
   /** 参考音频 URL 多个 */
   audios?: string[];
+  providerParams?: Record<string, any>;
 }
 
 export async function submitSeedance(req: SeedanceSubmitRequest): Promise<{ taskId: string }> {
@@ -777,6 +791,7 @@ export interface AudioSubmitRequest {
   continue_clip_id?: string;
   continue_at?: number;
   cover_clip_id?: string;
+  providerParams?: Record<string, any>;
 }
 
 export async function submitAudio(
@@ -830,9 +845,13 @@ export async function queryAudio(clipIds: string[], saveLocal: boolean = true): 
  */
 export async function uploadAudioForSuno(
   file: File,
+  providerParams?: Record<string, any>,
 ): Promise<{ clipId: string; uploadId: string; filename: string; size: number; mime: string }> {
   const fd = new FormData();
   fd.append('file', file, file.name);
+  if (providerParams && Object.keys(providerParams).length > 0) {
+    fd.append('providerParams', JSON.stringify(providerParams));
+  }
   const r = await fetch('/api/proxy/audio/upload', { method: 'POST', body: fd });
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);

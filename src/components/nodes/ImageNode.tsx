@@ -22,6 +22,7 @@ import {
   DEFAULT_MJ_VERSION,
   DEFAULT_MJ_RATIO,
   DEFAULT_MJ_SPEED,
+  gptImage2ZhenzhenVariantSize,
 } from '../../providers/models';
 import {
   submitImageAsync,
@@ -67,7 +68,8 @@ import {
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
 import { COMFY_APP_SOURCE_LABELS } from '../../utils/comfyuiApps';
-import { canonicalizeComfyFieldsByWorkflow } from '../../utils/comfyuiWorkflow';
+import { canonicalizeComfyFieldsByWorkflow, comfyFieldInputValue } from '../../utils/comfyuiWorkflow';
+import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 
 /**
  * ImageNode - 图像生成(ZhenzhenMagic)
@@ -86,6 +88,16 @@ const COMFY_NUMERIC_FIELD_SOURCES = new Set([
   'steps',
   'cfg',
   'denoise',
+  'start_at_step',
+  'end_at_step',
+  'guidance',
+  'shift',
+  'fps',
+  'frame_rate',
+  'num_frames',
+  'duration',
+  'strength',
+  'weight',
   'strength_model',
   'strength_clip',
 ]);
@@ -107,16 +119,35 @@ const COMFY_NODE_FIELD_SOURCES = new Set([
   'clip_name',
   'vae_name',
   'lora_name',
+  'unet_name',
+  'control_net_name',
+  'clip_vision_name',
+  'style_model_name',
+  'upscale_model',
   'strength_model',
   'strength_clip',
-  'image1',
-  'image2',
-  'image3',
-  'video1',
-  'audio1',
+  'start_at_step',
+  'end_at_step',
+  'guidance',
+  'shift',
+  'fps',
+  'frame_rate',
+  'num_frames',
+  'duration',
+  'strength',
+  'weight',
+  'control_after_generate',
+  'add_noise',
 ]);
 const COMFY_IMAGE_SOURCE_RE = /^image(?:_|-)?(\d+)$/i;
+const COMFY_MEDIA_SOURCE_RE = /^(image|video|audio)(?:_|-)?\d+$/i;
+const COMFY_SAFE_CUSTOM_SOURCE_RE = /^[a-z][a-z0-9_:. -]{0,79}$/i;
 const comfyFieldSource = (field: any) => String(field?.source || field?.fieldName || '').trim();
+const isComfyNodeFieldSource = (source: string) => {
+  if (!source || source === 'fixed') return false;
+  if (COMFY_NODE_FIELD_SOURCES.has(source) || COMFY_MEDIA_SOURCE_RE.test(source)) return true;
+  return COMFY_SAFE_CUSTOM_SOURCE_RE.test(source);
+};
 const comfyImageSourceIndex = (source: string) => {
   const match = source.match(COMFY_IMAGE_SOURCE_RE);
   return match ? Math.max(1, Number(match[1]) || 1) : 0;
@@ -177,7 +208,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
     return comfyWorkflowFields.filter((field: any) => {
       const source = comfyFieldSource(field);
       const key = `${field?.nodeId || ''}:${field?.fieldName || ''}:${source}`;
-      if (!COMFY_NODE_FIELD_SOURCES.has(source) || seen.has(key)) return false;
+      if (!isComfyNodeFieldSource(source) || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
@@ -297,7 +328,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   };
   const comfyFieldDefault = (field: any) => {
     if (!comfyWorkflow?.workflowJson || !field?.nodeId || !field?.fieldName) return '';
-    const value = (comfyWorkflow.workflowJson as any)?.[field.nodeId]?.inputs?.[field.fieldName];
+    const value = comfyFieldInputValue(comfyWorkflow.workflowJson, field);
     if (Array.isArray(value) || (value && typeof value === 'object')) return '';
     return value ?? '';
   };
@@ -323,7 +354,10 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   const aspectRatio = d?.aspectRatio || modelDef.defaultAspectRatio;
   const sizeLevel = d?.sizeLevel || modelDef.defaultSize;
   // 子模型变体(对齐 gpt-image-2-web 的 g_model/n_model)
-  const apiModel = d?.apiModel || modelDef.apiModel;
+  const savedApiModel = typeof d?.apiModel === 'string' ? d.apiModel : '';
+  const apiModel = modelDef.apiModelOptions.some((opt) => opt.value === savedApiModel)
+    ? savedApiModel
+    : modelDef.apiModel;
 
   // ========== FAL 渠道识别及参数(不影响其他模型) ==========
   const isFal = isFalModel(apiModel);
@@ -445,6 +479,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       if (!newDef.sizes.includes(sizeLevel)) patch.sizeLevel = newDef.defaultSize;
     }
     update(patch);
+  };
+
+  const switchApiModel = (nextApiModel: string) => {
+    const nextSize = gptImage2ZhenzhenVariantSize(nextApiModel);
+    update(nextSize ? { apiModel: nextApiModel, sizeLevel: nextSize } : { apiModel: nextApiModel });
   };
 
   // 从上游节点 + 本地上传按用户排序后的顺序聚合 prompt + 参考图
@@ -741,6 +780,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           system_prompt: falKind === 'nbpro-fal' ? nbSysPrompt : undefined,
           enable_web_search: falKind === 'nbpro-fal' ? nbWebSearch : undefined,
           image_mode: falKind === 'nbpro-fal' ? nbImgMode : undefined,
+          providerParams,
         });
 
         // 同步完成
@@ -814,6 +854,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         image_size: sizeLevel,
         images: allRefs,
         n: 1,
+        providerParams,
       });
 
       // 分支一:同步完成
@@ -1171,6 +1212,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                           const label = COMFY_APP_SOURCE_LABELS[source] || source;
                           const target = field?.nodeId && field?.fieldName ? `#${field.nodeId}.${field.fieldName}` : '';
                           const value = providerParams[source] ?? comfyFieldDefault(field);
+                          const selectOptions = Array.isArray(field?.options) ? field.options : [];
                           const isNumber = COMFY_NUMERIC_FIELD_SOURCES.has(source);
                           if (source === 'prompt' || source === 'positive') {
                             const promptValue = localPrompt || String(providerParams[source] ?? providerParams.prompt ?? '');
@@ -1178,7 +1220,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                               <label key={`${field.nodeId}-${field.fieldName}-${source}`} className="space-y-1 col-span-2">
                                 <span className="flex items-center justify-between gap-2 text-[10px] text-white/55">
                                   <span>{label}</span>
-                                  {target && <span className="text-cyan-200/50">{target}</span>}
+                                  {target && <span className="text-cyan-100/80">{target}</span>}
                                 </span>
                                 <MentionPromptInput
                                   title="ComfyUI 正向 Prompt"
@@ -1213,7 +1255,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                               <label key={`${field.nodeId}-${field.fieldName}-${source}`} className="space-y-1 col-span-2">
                                 <span className="flex items-center justify-between gap-2 text-[10px] text-white/55">
                                   <span>{label}</span>
-                                  {target && <span className="text-cyan-200/50">{target}</span>}
+                                  {target && <span className="text-cyan-100/80">{target}</span>}
                                 </span>
                                 <PromptTextarea
                                   title="ComfyUI 负向 Prompt"
@@ -1235,7 +1277,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                               <div key={`${field.nodeId}-${field.fieldName}-${source}`} className="col-span-2 rounded border border-white/10 bg-black/10 p-2">
                                 <div className="flex items-center justify-between gap-2 text-[10px] text-white/55">
                                   <span>{label}</span>
-                                  {target && <span className="text-cyan-200/50">{target}</span>}
+                                  {target && <span className="text-cyan-100/80">{target}</span>}
                                 </div>
                                 <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-white/60">
                                   <span>{imageMaterial ? `使用第 ${imageSlot} 张图片：${imageMaterial.label || imageMaterial.url}` : `等待第 ${imageSlot} 张图片`}</span>
@@ -1250,7 +1292,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                               </div>
                             );
                           }
-                          if (source === 'video1' || source === 'audio1') {
+                            if (/^(video|audio)(?:_|-)?\d+$/i.test(source)) {
                             return (
                               <div key={`${field.nodeId}-${field.fieldName}-${source}`} className="col-span-2 rounded border border-amber-300/20 bg-amber-400/10 p-2 text-[10px] text-amber-100">
                                 {label} {target ? `(${target})` : ''} 已映射，但图像节点当前仅提交文本和图片输入；如需视频/音频工作流，后续应放到对应节点入口。
@@ -1261,21 +1303,36 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                             <label key={`${field.nodeId}-${field.fieldName}-${source}`} className="space-y-1">
                               <span className="flex items-center justify-between gap-2 text-[10px] text-white/55">
                                 <span>{label}</span>
-                                {target && <span className="text-cyan-200/50">{target}</span>}
+                                {target && <span className="text-cyan-100/80">{target}</span>}
                               </span>
-                              <input
-                                type={isNumber ? 'number' : 'text'}
-                                value={String(value ?? '')}
-                                step={source === 'cfg' || source === 'denoise' || source.startsWith('strength_') ? 0.1 : 1}
-                                min={source === 'width' || source === 'height' ? 64 : source === 'batch_size' ? 1 : undefined}
-                                onChange={(e) => {
-                                  const raw = e.target.value;
-                                  patchProviderParams({ [source]: isNumber && raw !== '' ? Number(raw) : raw });
-                                }}
-                                placeholder={String(comfyFieldDefault(field) ?? '')}
-                                style={{ background: '#18181b', color: '#ffffff' }}
-                                className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-cyan-300/60"
-                              />
+                              {selectOptions.length > 0 ? (
+                                <select
+                                  value={String(value ?? selectOptions[0] ?? '')}
+                                  onChange={(e) => patchProviderParams({ [source]: e.target.value })}
+                                  style={{ background: '#18181b', color: '#ffffff' }}
+                                  className="nodrag nowheel w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-cyan-300/60"
+                                >
+                                  {selectOptions.map((option: string | number) => (
+                                    <option key={String(option)} value={String(option)} style={{ background: '#18181b', color: '#ffffff' }}>
+                                      {String(option)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type={isNumber ? 'number' : 'text'}
+                                  value={String(value ?? '')}
+                                  step={source === 'cfg' || source === 'denoise' || source.startsWith('strength_') ? 0.1 : 1}
+                                  min={source === 'width' || source === 'height' ? 64 : source === 'batch_size' ? 1 : undefined}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    patchProviderParams({ [source]: isNumber && raw !== '' ? Number(raw) : raw });
+                                  }}
+                                  placeholder={String(comfyFieldDefault(field) ?? '')}
+                                  style={{ background: '#18181b', color: '#ffffff' }}
+                                  className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-cyan-300/60"
+                                />
+                              )}
                             </label>
                           );
                         })}
@@ -1359,7 +1416,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             <label className="text-[10px] text-white/50 block mb-1">具体模型</label>
             <select
               value={apiModel}
-              onChange={(e) => update({ apiModel: e.target.value })}
+              onChange={(e) => switchApiModel(e.target.value)}
               style={{ background: '#18181b', color: '#ffffff' }}
               className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
             >
@@ -1369,6 +1426,21 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             </select>
           </div>
         )}
+
+        <LocalNodeAddonSlot
+          nodeId={id}
+          nodeType="image"
+          data={d}
+          update={update}
+          context={{
+            providerSource: isExternalSelected ? providerSelection.providerSource : 'zhenzhen',
+            providerId: providerSelection.providerId,
+            providerModel: isExternalSelected ? externalProviderModel : apiModel,
+            model: modelDef.id,
+            apiModel,
+            providerKind: isFal ? 'fal' : modelDef.paramKind,
+          }}
+        />
 
         {/* 比例 + 尺寸 并排(非 FAL 且非 MJ 模型);Grok Image 只需要比例 */}
         {(!isFal && !isMj && !isComfyExternal) && (
@@ -1938,6 +2010,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             data-drag-url={imageUrl}
             data-drag-preview={imageUrl}
             data-drag-node-id={id}
+            data-resource-title={imageUrl.split('/').pop() || '生成图像'}
+            data-prompt-template-kind="image"
+            data-prompt-template-category="image-reference-edit"
+            data-prompt-template-prompt={d?.lastPrompt || localPrompt || String(providerParams.prompt ?? providerParams.positive ?? '')}
+            data-prompt-template-negative={String(providerParams.negative ?? providerParams.negativePrompt ?? '')}
             onMouseDown={(e) =>
               beginMaterialDrag(e, { kind: 'image', url: imageUrl, sourceNodeId: id, previewUrl: imageUrl })
             }

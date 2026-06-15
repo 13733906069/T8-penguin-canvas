@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { useThemeStore } from '../../stores/theme';
 import { opCrop, opGridCrop, uploadDataUrl, uploadFileBlob } from '../../services/imageOps';
+import { createMaxCropBoxForAspect, fitCropBoxToAspect, resizeCropBoxWithAspect } from '../../utils/imageCropAspect';
 
 /**
  * ImageEditModal
@@ -69,6 +70,32 @@ interface Props {
 type EditMode = 'crop' | 'mask' | 'brush' | 'grid' | 'compose';
 type GridSubMode = 'preset' | 'custom';
 type BrushTool = 'free' | 'rect' | 'ellipse' | 'label';
+type CropAspectPreset = 'free' | '16:9' | '9:16' | '4:3' | '3:4' | '1:1' | 'custom';
+
+const CROP_ASPECT_PRESETS: Array<{ id: CropAspectPreset; label: string }> = [
+  { id: 'free', label: '自由' },
+  { id: '16:9', label: '16:9' },
+  { id: '9:16', label: '9:16' },
+  { id: '4:3', label: '4:3' },
+  { id: '3:4', label: '3:4' },
+  { id: '1:1', label: '1:1' },
+  { id: 'custom', label: '自定义' },
+];
+
+const CROP_ASPECT_VALUES: Partial<Record<CropAspectPreset, number>> = {
+  '16:9': 16 / 9,
+  '9:16': 9 / 16,
+  '4:3': 4 / 3,
+  '3:4': 3 / 4,
+  '1:1': 1,
+};
+
+function cropAspectValue(preset: CropAspectPreset, customW: number, customH: number) {
+  if (preset === 'custom') {
+    return customW > 0 && customH > 0 ? customW / customH : null;
+  }
+  return CROP_ASPECT_VALUES[preset] ?? null;
+}
 
 // ---- compose v2 图层类型 ----
 interface ImageLayer {
@@ -187,6 +214,9 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const [mode, setMode] = useState<EditMode>('crop');
   const [gridMode, setGridMode] = useState<GridSubMode>('preset');
   const [crop, setCrop] = useState<CropBox>({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+  const [cropAspectPreset, setCropAspectPreset] = useState<CropAspectPreset>('free');
+  const [customAspectW, setCustomAspectW] = useState(16);
+  const [customAspectH, setCustomAspectH] = useState(9);
   const [rows, setRows] = useState(3);
   const [cols, setCols] = useState(3);
   const [gap, setGap] = useState(0);
@@ -383,6 +413,36 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const inputBg = isPixel ? '#fff' : isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
   const handleRadius = isPixel ? 0 : 999;
 
+  const activeCropAspect = useMemo(
+    () => cropAspectValue(cropAspectPreset, customAspectW, customAspectH),
+    [cropAspectPreset, customAspectW, customAspectH],
+  );
+
+  const selectCropAspectPreset = useCallback(
+    (preset: CropAspectPreset) => {
+      const nextAspect = cropAspectValue(preset, customAspectW, customAspectH);
+      setCropAspectPreset(preset);
+      if (nextAspect && naturalSize) {
+        setCrop(createMaxCropBoxForAspect(naturalSize.w, naturalSize.h, nextAspect));
+      }
+    },
+    [customAspectH, customAspectW, naturalSize],
+  );
+
+  const resetCropBox = useCallback(() => {
+    const base = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+    if (activeCropAspect && naturalSize) {
+      setCrop(createMaxCropBoxForAspect(naturalSize.w, naturalSize.h, activeCropAspect));
+      return;
+    }
+    setCrop(base);
+  }, [activeCropAspect, naturalSize]);
+
+  useEffect(() => {
+    if (mode !== 'crop' || !activeCropAspect || !naturalSize) return;
+    setCrop((current) => fitCropBoxToAspect(current, naturalSize.w, naturalSize.h, activeCropAspect));
+  }, [activeCropAspect, mode, naturalSize]);
+
   // ---- crop-box 拖拽 ----
   const dragRef = useRef<{
     mode: 'move' | 'tl' | 'tr' | 'bl' | 'br';
@@ -416,6 +476,16 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       if (ctx.mode === 'move') {
         x = clamp(x + dx, 0, 1 - w);
         y = clamp(y + dy, 0, 1 - h);
+      } else if (activeCropAspect && naturalSize) {
+        return resizeCropBoxWithAspect(
+          ctx.startCrop,
+          dx,
+          dy,
+          ctx.mode,
+          naturalSize.w,
+          naturalSize.h,
+          activeCropAspect,
+        );
       } else if (ctx.mode === 'br') {
         w = clamp(ctx.startCrop.w + dx, 0.02, 1 - x);
         h = clamp(ctx.startCrop.h + dy, 0.02, 1 - y);
@@ -1490,6 +1560,18 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       : `1px solid ${active ? accent : isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.18)'}`,
     fontWeight: active ? 700 : 500,
   });
+  const cropAspectBtn = (active: boolean): React.CSSProperties => ({
+    ...btnBase,
+    height: 28,
+    padding: '0 8px',
+    minWidth: 44,
+    justifyContent: 'center',
+    background: active ? (isPixel ? '#FFE066' : `${accent}22`) : inputBg,
+    color: active ? (isPixel ? '#1A1410' : accent) : textColor,
+    border: isPixel
+      ? '2px solid #1A1410'
+      : `1px solid ${active ? accent : isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.18)'}`,
+  });
 
   const inputStyle: React.CSSProperties = {
     width: 56,
@@ -1594,10 +1676,60 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
               <strong>{cropPxLabel}</strong>
               <button
                 style={btnBase}
-                onClick={() => setCrop({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 })}
+                onClick={resetCropBox}
               >
                 <RotateCcw size={13} /> 重置
               </button>
+              <span style={{ color: subText }}>比例</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                {CROP_ASPECT_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    style={cropAspectBtn(cropAspectPreset === preset.id)}
+                    onClick={() => selectCropAspectPreset(preset.id)}
+                    title={preset.id === 'free' ? '不锁定裁剪比例' : `锁定 ${preset.label} 裁剪比例`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+                {cropAspectPreset === 'custom' && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      paddingLeft: 2,
+                      color: textColor,
+                      fontSize: 12,
+                    }}
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={customAspectW}
+                      onChange={(e) =>
+                        setCustomAspectW(clamp(Number(e.target.value) || 1, 1, 999))
+                      }
+                      style={{ ...inputStyle, width: 44, height: 28 }}
+                      aria-label="自定义裁剪比例宽"
+                    />
+                    :
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={customAspectH}
+                      onChange={(e) =>
+                        setCustomAspectH(clamp(Number(e.target.value) || 1, 1, 999))
+                      }
+                      style={{ ...inputStyle, width: 44, height: 28 }}
+                      aria-label="自定义裁剪比例高"
+                    />
+                  </span>
+                )}
+              </div>
               <div style={{ flex: 1 }} />
               {naturalSize && (
                 <span style={{ color: subText }}>

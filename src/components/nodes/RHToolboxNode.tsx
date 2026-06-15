@@ -3,28 +3,42 @@ import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflo
 import {
   AlertCircle,
   ArrowLeft,
+  Image as ImageIcon,
   Layers,
   Loader2,
+  Music,
+  Pencil,
   Play,
   Search,
   Sparkles,
   Square,
+  Upload,
+  Video as VideoIcon,
   Wrench,
+  X,
 } from 'lucide-react';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
+import { fetchRhAppInfo, uploadFile } from '../../services/generation';
 import { runRhToolboxTool, getRhToolboxManifest, type RunRhToolboxProgress } from '../../services/rhToolbox';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import {
   RH_TOOLBOX_ALL_CATEGORY_ID,
   RH_TOOLBOX_CAPABILITY_LABELS,
-  RH_TOOLBOX_QUICK_SURFACE_LABELS,
-  buildRhToolboxQuickActions,
   filterRhToolboxTools,
+  getRhToolboxCategoryMajorId,
+  getRhToolboxNodeInfoFieldLabel,
+  getRhToolboxNodeInfoFieldName,
+  getRhToolboxNodeInfoFieldNodeId,
+  getRhToolboxNodeInfoFieldOptions,
+  getRhToolboxToolMajorCategory,
+  inferRhToolboxUserParamsFromNodeInfoList,
+  isRhToolboxBuiltinCategoryId,
   listRhToolboxTools,
   normalizeRhToolboxManifest,
-  type RhToolboxQuickSurface,
+  RH_TOOLBOX_MAJOR_CATEGORIES,
+  type RhToolboxInputMapping,
   type RhToolboxTool,
   type RhToolboxUserParam,
 } from '../../utils/rhToolbox';
@@ -39,6 +53,8 @@ import { useOrderedMaterials } from './useOrderedMaterials';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import MentionPromptInput from './MentionPromptInput';
+import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
 import ResizableCorners from './ResizableCorners';
@@ -57,8 +73,7 @@ const STATUS_LABEL: Record<string, string> = {
   success: '已完成',
   error: '失败',
 };
-
-const QUICK_SURFACES: RhToolboxQuickSurface[] = ['image', 'video', 'text', 'audio'];
+const RH_TOOLBOX_DEVELOPER_MODULE = '../../utils/rhToolboxDeveloper';
 
 function capabilityLabel(capability: string): string {
   return RH_TOOLBOX_CAPABILITY_LABELS[capability] || capability;
@@ -66,6 +81,24 @@ function capabilityLabel(capability: string): string {
 
 function toolMatchesNodeSurface(tool: RhToolboxTool): boolean {
   return tool.ui?.showInNode !== false;
+}
+
+function mediaMentionsForKey(value: unknown): MediaMention[] {
+  return Array.isArray(value) ? (value as MediaMention[]) : [];
+}
+
+function inputKindLabel(kind: RhToolboxInputMapping['kind']): string {
+  if (kind === 'image') return '图像';
+  if (kind === 'video') return '视频';
+  if (kind === 'audio') return '音频';
+  return '文本';
+}
+
+function acceptForInputKind(kind: RhToolboxInputMapping['kind']): string {
+  if (kind === 'image') return 'image/*';
+  if (kind === 'video') return 'video/*';
+  if (kind === 'audio') return 'audio/*';
+  return '*/*';
 }
 
 const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
@@ -79,18 +112,23 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
   const d = (data || {}) as any;
 
   const [manifest, setManifest] = useState(() => normalizeRhToolboxManifest(getRhToolboxManifest()));
-  const enabledTools = useMemo(
-    () => listRhToolboxTools(manifest).filter(toolMatchesNodeSurface),
+  const allTools = useMemo(
+    () => listRhToolboxTools(manifest, { includeDisabled: true }).filter(toolMatchesNodeSurface),
     [manifest],
+  );
+  const enabledTools = useMemo(
+    () => allTools.filter((tool) => tool.enabled !== false),
+    [allTools],
   );
   const draftTools = useMemo(
-    () => listRhToolboxTools(manifest, { includeDisabled: true }).filter((tool) => !tool.enabled),
-    [manifest],
+    () => allTools.filter((tool) => !tool.enabled),
+    [allTools],
   );
+  const majorCategoryId = d.rhToolboxMajorCategoryId || RH_TOOLBOX_ALL_CATEGORY_ID;
   const categoryId = d.rhToolboxCategoryId || RH_TOOLBOX_ALL_CATEGORY_ID;
   const query = d.rhToolboxSearchQuery || '';
   const activeToolId = d.rhToolboxActiveToolId || '';
-  const activeTool = enabledTools.find((tool) => tool.id === activeToolId);
+  const baseActiveTool = enabledTools.find((tool) => tool.id === activeToolId);
   const status = d.status || 'idle';
   const isBusy = status === 'submitting' || status === 'polling';
   const urls: string[] = Array.isArray(d.urls) ? d.urls : [];
@@ -99,36 +137,127 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
   const audioUrls: string[] = Array.isArray(d.audioUrls) ? d.audioUrls : (d.audioUrl ? [d.audioUrl] : []);
   const outputText = String(d.outputText || '');
   const userParamValues: Record<string, string | number | boolean> = d.rhToolboxUserParams || {};
+  const userParamMentions: Record<string, MediaMention[]> = d.rhToolboxUserParamMentions || {};
+  const textInputValues: Record<string, string> = d.rhToolboxTextInputs || {};
+  const textInputMentions: Record<string, MediaMention[]> = d.rhToolboxTextMentions || {};
+  const promptMentions: MediaMention[] = Array.isArray(d.promptMentions) ? d.promptMentions : [];
+  const localInputValues: Record<string, string[]> = d.rhToolboxLocalInputs || {};
   const instanceType = d.instanceType || '';
   const [progressMessage, setProgressMessage] = useState('');
+  const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [activeToolAppInfo, setActiveToolAppInfo] = useState<any>(null);
+  const activeToolAppInfoFields = useMemo(
+    () => (Array.isArray(activeToolAppInfo?.nodeInfoList) ? activeToolAppInfo.nodeInfoList : []),
+    [activeToolAppInfo],
+  );
+  const activeTool = useMemo(() => {
+    if (!baseActiveTool) return undefined;
+    if (!activeToolAppInfoFields.length) return baseActiveTool;
+    const enrichedParams = (baseActiveTool.userParams || []).map((param) => {
+      const matchedField = activeToolAppInfoFields.find((field: any) => (
+        getRhToolboxNodeInfoFieldNodeId(field) === String(param.rhNodeId || '').trim().replace(/^#/, '')
+        && getRhToolboxNodeInfoFieldName(field) === String(param.fieldName || '').trim()
+      ));
+      const label = matchedField ? getRhToolboxNodeInfoFieldLabel(matchedField) : '';
+      const options = matchedField && param.kind === 'select' ? getRhToolboxNodeInfoFieldOptions(matchedField) : undefined;
+      const shouldPatchLabel = !!label
+        && label !== param.label
+        && (!param.label || param.label === param.fieldName || param.label === param.key || param.label === 'value');
+      const shouldPatchOptions = param.kind === 'select' && (!param.options?.length) && !!options?.length;
+      if (!shouldPatchLabel && !shouldPatchOptions) return param;
+      return {
+        ...param,
+        ...(shouldPatchLabel ? { label } : {}),
+        ...(shouldPatchOptions ? { options } : {}),
+      };
+    });
+    const inferredParams = inferRhToolboxUserParamsFromNodeInfoList(activeToolAppInfoFields, [
+      ...(baseActiveTool.inputSchema || []),
+      ...enrichedParams,
+      ...(baseActiveTool.fixedParams || []),
+    ]);
+    if (enrichedParams === baseActiveTool.userParams && inferredParams.length === 0) return baseActiveTool;
+    return {
+      ...baseActiveTool,
+      userParams: [...enrichedParams, ...inferredParams],
+    };
+  }, [activeToolAppInfoFields, baseActiveTool]);
 
   const initialSize = (d?.size && typeof d.size.w === 'number') ? d.size : { w: 360, h: 460 };
   const [size, setSize] = useState<{ w: number; h: number }>(initialSize);
 
   useEffect(() => {
     let disposed = false;
-    const refreshManifest = () => {
+    const refreshManifest = (event?: Event) => {
+      const detail = (event as CustomEvent | undefined)?.detail || {};
+      const applyManifest = (nextManifest: ReturnType<typeof normalizeRhToolboxManifest>) => {
+        if (disposed) return;
+        setManifest(nextManifest);
+        if (detail?.kind === 'tool-deleted' && detail.toolId && activeToolId === detail.toolId) {
+          update({
+            rhToolboxActiveToolId: '',
+            rhToolboxSearchQuery: '',
+            rhToolboxMajorCategoryId: RH_TOOLBOX_ALL_CATEGORY_ID,
+            rhToolboxCategoryId: RH_TOOLBOX_ALL_CATEGORY_ID,
+          });
+          return;
+        }
+        if ((detail?.kind === 'tool-saved' || detail?.kind === 'focus-tool') && detail.toolId) {
+          const nextTool = nextManifest.tools.find((tool) => tool.id === detail.toolId);
+          update({
+            rhToolboxSearchQuery: '',
+            rhToolboxMajorCategoryId: RH_TOOLBOX_ALL_CATEGORY_ID,
+            rhToolboxCategoryId: RH_TOOLBOX_ALL_CATEGORY_ID,
+            rhToolboxActiveToolId: nextTool && nextTool.enabled !== false && nextTool.ui?.showInNode !== false ? nextTool.id : '',
+            status: 'idle',
+            error: nextTool ? '' : '工具已保存，但还不能显示：请检查 WebApp ID、启用状态和节点显示开关',
+          });
+        }
+      };
       const base = getRhToolboxManifest();
       if (!import.meta.env.DEV) {
-        setManifest(normalizeRhToolboxManifest(base));
+        applyManifest(normalizeRhToolboxManifest(base));
         return;
       }
-      import('../../utils/rhToolboxDeveloper')
+      import(/* @vite-ignore */ RH_TOOLBOX_DEVELOPER_MODULE)
         .then(({ mergeRhToolboxManifestWithDeveloperDrafts }) => {
-          if (!disposed) setManifest(mergeRhToolboxManifestWithDeveloperDrafts(base));
+          applyManifest(mergeRhToolboxManifestWithDeveloperDrafts(base, detail?.manifest));
         })
         .catch(() => {
-          if (!disposed) setManifest(normalizeRhToolboxManifest(base));
+          applyManifest(normalizeRhToolboxManifest(base));
         });
     };
     refreshManifest();
     window.addEventListener('penguin:rh-toolbox-manifest-updated', refreshManifest);
+    const intervalId = import.meta.env.DEV ? window.setInterval(() => refreshManifest(), 1500) : undefined;
     return () => {
       disposed = true;
+      if (intervalId) window.clearInterval(intervalId);
       window.removeEventListener('penguin:rh-toolbox-manifest-updated', refreshManifest);
     };
-  }, []);
+  }, [activeToolId, update]);
+
+  useEffect(() => {
+    let disposed = false;
+    setActiveToolAppInfo(null);
+    if (!baseActiveTool?.webappId || baseActiveTool.runtime?.fetchAppInfo === false) return () => {
+      disposed = true;
+    };
+    fetchRhAppInfo(baseActiveTool.webappId)
+      .then((info) => {
+        if (disposed) return;
+        setActiveToolAppInfo(info);
+      })
+      .catch((error: any) => {
+        if (disposed) return;
+        logBus.debug(error?.message || '读取 RH NodeList 失败', `rh-toolbox:${id}`);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [baseActiveTool?.id, baseActiveTool?.runtime?.fetchAppInfo, baseActiveTool?.webappId]);
 
   const upstream = useUpstreamMaterials(id);
   const excludedMaterialIds = useMemo(
@@ -161,28 +290,59 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
   const orderedVideos = useOrderedMaterials(visibleUpstreamVideos, materialOrder);
   const orderedAudios = useOrderedMaterials(visibleUpstreamAudios, materialOrder);
 
+  const categoriesForMajor = useMemo(
+    () => manifest.categories.filter((category) => (
+      !isRhToolboxBuiltinCategoryId(category.id)
+      && (
+      majorCategoryId === RH_TOOLBOX_ALL_CATEGORY_ID || getRhToolboxCategoryMajorId(category) === majorCategoryId
+      )
+    )),
+    [manifest.categories, majorCategoryId],
+  );
+  const visibleCategoryId = useMemo(
+    () => {
+      if (categoryId === RH_TOOLBOX_ALL_CATEGORY_ID) return RH_TOOLBOX_ALL_CATEGORY_ID;
+      return categoriesForMajor.some((category) => category.id === categoryId) ? categoryId : RH_TOOLBOX_ALL_CATEGORY_ID;
+    },
+    [categoriesForMajor, categoryId],
+  );
   const filteredTools = useMemo(
     () => filterRhToolboxTools(manifest, {
-      categoryId,
+      majorCategoryId,
+      categoryId: visibleCategoryId,
       query,
     }).filter(toolMatchesNodeSurface),
-    [manifest, categoryId, query],
+    [manifest, majorCategoryId, visibleCategoryId, query],
+  );
+  const previewTool = useMemo(
+    () => (hoveredToolId ? enabledTools.find((tool) => tool.id === hoveredToolId) : undefined),
+    [enabledTools, hoveredToolId],
+  );
+  const majorCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tool of enabledTools) {
+      const majorId = getRhToolboxToolMajorCategory(tool, manifest.categories);
+      counts.set(majorId, (counts.get(majorId) || 0) + 1);
+    }
+    return counts;
+  }, [enabledTools, manifest.categories]);
+  const majorVisibleToolCount = useMemo(
+    () => enabledTools.filter((tool) => (
+      majorCategoryId === RH_TOOLBOX_ALL_CATEGORY_ID || getRhToolboxToolMajorCategory(tool, manifest.categories) === majorCategoryId
+    )).length,
+    [enabledTools, majorCategoryId, manifest.categories],
   );
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const tool of enabledTools) counts.set(tool.categoryId, (counts.get(tool.categoryId) || 0) + 1);
+    for (const tool of enabledTools) {
+      const toolMajorId = getRhToolboxToolMajorCategory(tool, manifest.categories);
+      if (majorCategoryId !== RH_TOOLBOX_ALL_CATEGORY_ID && toolMajorId !== majorCategoryId) continue;
+      counts.set(tool.categoryId, (counts.get(tool.categoryId) || 0) + 1);
+    }
     return counts;
-  }, [enabledTools]);
-  const quickActionGroups = useMemo(
-    () =>
-      QUICK_SURFACES.map((surface) => ({
-        surface,
-        actions: buildRhToolboxQuickActions(manifest, surface, { includeDisabled: true }).slice(0, 4),
-      })).filter((group) => group.actions.length > 0),
-    [manifest],
-  );
+  }, [enabledTools, majorCategoryId, manifest.categories]);
 
-  const accent = activeTool?.ui?.accent || (isPixel ? 'var(--px-ink)' : isLight ? '#0891b2' : '#67e8f9');
+  const accent = isPixel ? 'var(--px-ink)' : isLight ? '#0891b2' : '#67e8f9';
   const bg = isPixel ? 'var(--px-surface)' : isLight ? '#ffffff' : 'rgba(18, 24, 27, 0.96)';
   const surface = isPixel ? 'var(--px-muted)' : isLight ? 'rgba(8,145,178,0.08)' : 'rgba(255,255,255,0.06)';
   const surfaceStrong = isPixel ? 'var(--px-yellow)' : isLight ? 'rgba(8,145,178,0.16)' : 'rgba(103,232,249,0.14)';
@@ -190,6 +350,42 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
   const subText = isPixel ? 'var(--px-ink-soft)' : isLight ? '#64748b' : 'rgba(229,247,251,0.62)';
   const border = isPixel ? 'var(--px-ink)' : isLight ? 'rgba(8,145,178,0.24)' : 'rgba(103,232,249,0.22)';
   const errorText = isPixel ? '#dc2626' : '#fca5a5';
+
+  const activeTextInputs = useMemo(
+    () => (activeTool?.inputSchema || []).filter((input) => input.kind === 'text'),
+    [activeTool],
+  );
+  const activeMediaInputs = useMemo(
+    () => (activeTool?.inputSchema || []).filter((input) => input.kind !== 'text'),
+    [activeTool],
+  );
+  const localMaterials = useMemo(() => {
+    const out: { images: Material[]; videos: Material[]; audios: Material[] } = { images: [], videos: [], audios: [] };
+    for (const input of activeMediaInputs) {
+      const urls = Array.isArray(localInputValues[input.key]) ? localInputValues[input.key].filter(Boolean) : [];
+      urls.forEach((url, index) => {
+        const material: Material = {
+          id: `${id}::rh-local:${input.key}:${index}:${url}`,
+          kind: input.kind,
+          url,
+          sourceNodeId: id,
+          origin: 'local',
+          label: `${input.label || input.key}${urls.length > 1 ? index + 1 : ''}`,
+        };
+        if (input.kind === 'image') out.images.push(material);
+        else if (input.kind === 'video') out.videos.push(material);
+        else if (input.kind === 'audio') out.audios.push(material);
+      });
+    }
+    return out;
+  }, [activeMediaInputs, id, localInputValues]);
+  const displayImages = useMemo(() => [...localMaterials.images, ...orderedImages], [localMaterials.images, orderedImages]);
+  const displayVideos = useMemo(() => [...localMaterials.videos, ...orderedVideos], [localMaterials.videos, orderedVideos]);
+  const displayAudios = useMemo(() => [...localMaterials.audios, ...orderedAudios], [localMaterials.audios, orderedAudios]);
+  const mentionMaterials = useMemo(
+    () => [...displayImages, ...displayVideos, ...displayAudios],
+    [displayImages, displayVideos, displayAudios],
+  );
 
   const rootStyle: CSSProperties = {
     background: bg,
@@ -205,6 +401,71 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
   };
 
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const hasTextInputValue = (input: RhToolboxInputMapping): boolean => (
+    Object.prototype.hasOwnProperty.call(textInputValues, input.key)
+  );
+  const textInputValue = (input: RhToolboxInputMapping): string => {
+    if (hasTextInputValue(input)) return String(textInputValues[input.key] ?? '');
+    if (input.key === 'prompt' && typeof d.prompt === 'string' && d.prompt.length > 0) return d.prompt;
+    return input.defaultValue == null ? '' : String(input.defaultValue);
+  };
+  const textInputMentionsFor = (input: RhToolboxInputMapping): MediaMention[] => {
+    const mentions = mediaMentionsForKey(textInputMentions[input.key]);
+    if (mentions.length || input.key !== 'prompt' || hasTextInputValue(input)) return mentions;
+    return typeof d.prompt === 'string' && d.prompt.length > 0 ? promptMentions : [];
+  };
+  const setTextInput = (input: RhToolboxInputMapping, value: string, mentions: MediaMention[]) => {
+    const patch: Record<string, unknown> = {
+      rhToolboxTextInputs: {
+        ...textInputValues,
+        [input.key]: value,
+      },
+      rhToolboxTextMentions: {
+        ...textInputMentions,
+        [input.key]: mentions,
+      },
+    };
+    if (input.key === 'prompt') {
+      patch.prompt = value;
+      patch.promptMentions = mentions;
+    }
+    update(patch);
+  };
+  const setLocalInputUrls = (input: RhToolboxInputMapping, urls: string[]) => {
+    update({
+      rhToolboxLocalInputs: {
+        ...localInputValues,
+        [input.key]: urls.filter(Boolean),
+      },
+    });
+  };
+  const removeLocalMaterial = (m: Material) => {
+    if (m.origin !== 'local') return;
+    const input = activeMediaInputs.find((candidate) => m.id.includes(`rh-local:${candidate.key}:`));
+    if (!input) return;
+    const next = (localInputValues[input.key] || []).filter((url) => url !== m.url);
+    setLocalInputUrls(input, next);
+  };
+  const uploadInputFiles = async (input: RhToolboxInputMapping, files: FileList | null) => {
+    const selectedFiles = Array.from(files || []);
+    if (selectedFiles.length === 0) return;
+    setProgressMessage(`上传 ${input.label || input.key}...`);
+    try {
+      const maxItems = Math.max(1, input.multiple ? (input.maxItems || selectedFiles.length) : 1);
+      const uploaded = [] as string[];
+      for (const file of selectedFiles.slice(0, maxItems)) {
+        const result = await uploadFile(file);
+        uploaded.push(result.url);
+      }
+      const prev = input.multiple ? (localInputValues[input.key] || []) : [];
+      setLocalInputUrls(input, [...prev, ...uploaded].slice(0, maxItems));
+      setProgressMessage(`已上传 ${uploaded.length} 个${inputKindLabel(input.kind)}`);
+    } catch (error: any) {
+      const message = error?.message || '上传失败';
+      update({ status: 'error', error: message });
+      setProgressMessage('');
+    }
+  };
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
     update({
@@ -213,12 +474,33 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
+  const collectExplicitInputValues = (): Record<string, string | string[]> => {
+    const explicit: Record<string, string | string[]> = {};
+    for (const input of activeTextInputs) {
+      const value = resolveMediaMentions(textInputValue(input), textInputMentionsFor(input), mentionMaterials).trim();
+      if (value) explicit[input.key] = value;
+    }
+    for (const input of activeMediaInputs) {
+      const urls = (localInputValues[input.key] || []).filter(Boolean);
+      if (urls.length > 0) explicit[input.key] = input.multiple ? urls : urls[0];
+    }
+    return explicit;
+  };
 
   const setActiveTool = (tool: RhToolboxTool) => {
     setProgressMessage('');
+    const defaultTextInputs = Object.fromEntries(
+      tool.inputSchema
+        .filter((input) => input.kind === 'text' && input.defaultValue != null && input.defaultValue !== '')
+        .map((input) => [input.key, String(input.defaultValue)]),
+    );
+    const defaultPrompt = String(defaultTextInputs.prompt || '');
     update({
       rhToolboxActiveToolId: tool.id,
       rhToolboxUserParams: {},
+      rhToolboxTextInputs: defaultTextInputs,
+      rhToolboxTextMentions: {},
+      rhToolboxLocalInputs: {},
       instanceType: tool.runtime?.instanceType || '',
       status: 'idle',
       taskId: '',
@@ -230,20 +512,19 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
       audioUrl: '',
       audioUrls: [],
       outputText: '',
+      prompt: defaultPrompt,
+      promptMentions: [],
+      promptResolved: defaultPrompt,
+      lastPrompt: defaultPrompt,
       error: '',
     });
   };
 
-  const openQuickAction = (toolId: string) => {
-    const tool = enabledTools.find((item) => item.id === toolId);
-    if (tool) {
-      setActiveTool(tool);
-      return;
-    }
-    update({
-      rhToolboxSearchQuery: toolId,
-      rhToolboxCategoryId: RH_TOOLBOX_ALL_CATEGORY_ID,
-    });
+  const editDeveloperTool = (toolId: string) => {
+    if (!import.meta.env.DEV) return;
+    import(/* @vite-ignore */ RH_TOOLBOX_DEVELOPER_MODULE)
+      .then(({ notifyRhToolboxDeveloperToolEdit }) => notifyRhToolboxDeveloperToolEdit(toolId))
+      .catch(() => undefined);
   };
 
   const setUserParam = (param: RhToolboxUserParam, value: string | number | boolean) => {
@@ -253,6 +534,27 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
         [param.key]: value,
       },
     });
+  };
+  const setUserParamText = (param: RhToolboxUserParam, value: string, mentions: MediaMention[]) => {
+    update({
+      rhToolboxUserParams: {
+        ...userParamValues,
+        [param.key]: value,
+      },
+      rhToolboxUserParamMentions: {
+        ...userParamMentions,
+        [param.key]: mentions,
+      },
+    });
+  };
+  const collectResolvedUserParams = (): Record<string, string | number | boolean> => {
+    const resolved: Record<string, string | number | boolean> = { ...userParamValues };
+    for (const param of activeTool?.userParams || []) {
+      if (param.kind !== 'text') continue;
+      const value = String(userParamValues[param.key] ?? param.defaultValue ?? '');
+      resolved[param.key] = resolveMediaMentions(value, mediaMentionsForKey(userParamMentions[param.key]), mentionMaterials);
+    }
+    return resolved;
   };
 
   const handleRun = async () => {
@@ -279,20 +581,28 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
     });
     const source = `rh-toolbox:${id}`;
     try {
+      const explicitInputValues = collectExplicitInputValues();
+      const resolvedUserParams = collectResolvedUserParams();
+      const runManifest = normalizeRhToolboxManifest({
+        ...manifest,
+        tools: manifest.tools.map((tool) => (tool.id === activeTool.id ? activeTool : tool)),
+      });
       const onProgress = (progress: RunRhToolboxProgress) => {
         setProgressMessage(progress.message);
         if (progress.taskId) update({ status: progress.stage === 'poll' ? 'polling' : 'submitting', taskId: progress.taskId });
       };
       const result = await runRhToolboxTool({
         toolId: activeTool.id,
-        manifest,
+        manifest: runManifest,
+        appInfo: activeToolAppInfo,
         inputs: {
           texts: orderedTexts.map((m) => m.url),
           images: orderedImages.map((m) => m.url),
           videos: orderedVideos.map((m) => m.url),
           audios: orderedAudios.map((m) => m.url),
         },
-        userParams: userParamValues,
+        inputValues: explicitInputValues,
+        userParams: resolvedUserParams,
         instanceType,
         signal: aborter.signal,
         onProgress,
@@ -311,7 +621,9 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
         audioUrl: result.audioUrls[0] || '',
         outputText: textValue,
         text: textValue,
-        prompt: textValue,
+        prompt: textValue || String(explicitInputValues.prompt || ''),
+        promptResolved: String(explicitInputValues.prompt || ''),
+        lastPrompt: String(explicitInputValues.prompt || ''),
         texts: textOutputs,
         textSegments: textOutputs,
         raw: result.raw,
@@ -375,9 +687,11 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
           {activeTool ? `${activeTool.title} · ${activeTool.capabilities.map(capabilityLabel).join(' / ')}` : '维护者精选 RunningHub 工具'}
         </div>
       </div>
-      <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: accent, background: surface, border: `1px solid ${border}` }}>
-        {STATUS_LABEL[status] || status}
-      </span>
+      {status !== 'idle' && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: accent, background: surface, border: `1px solid ${border}` }}>
+          {STATUS_LABEL[status] || status}
+        </span>
+      )}
     </div>
   );
 
@@ -395,14 +709,14 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
           />
         </div>
         <div className="flex gap-1 overflow-x-auto nodrag nowheel" onMouseDown={(e) => e.stopPropagation()}>
-          {[{ id: RH_TOOLBOX_ALL_CATEGORY_ID, name: '全部' }, ...manifest.categories].map((category) => {
-            const active = categoryId === category.id;
-            const count = category.id === RH_TOOLBOX_ALL_CATEGORY_ID ? enabledTools.length : categoryCounts.get(category.id) || 0;
+          {[{ id: RH_TOOLBOX_ALL_CATEGORY_ID, name: '全部' }, ...RH_TOOLBOX_MAJOR_CATEGORIES].map((category) => {
+            const active = majorCategoryId === category.id;
+            const count = category.id === RH_TOOLBOX_ALL_CATEGORY_ID ? enabledTools.length : majorCounts.get(category.id) || 0;
             return (
               <button
                 key={category.id}
                 type="button"
-                onClick={() => update({ rhToolboxCategoryId: category.id })}
+                onClick={() => update({ rhToolboxMajorCategoryId: category.id, rhToolboxCategoryId: RH_TOOLBOX_ALL_CATEGORY_ID })}
                 className="nodrag shrink-0 rounded-full px-2 py-0.5 text-[11px]"
                 style={{
                   background: active ? accent : surface,
@@ -416,40 +730,30 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
             );
           })}
         </div>
-        {quickActionGroups.length > 0 && (
-          <div className="rounded-lg p-2 space-y-1.5" style={{ background: surface, border: `1px solid ${border}` }}>
-            <div className="flex items-center gap-1 text-[10px] font-bold" style={{ color: text }}>
-              <Sparkles size={11} style={{ color: accent }} />
-              快捷接入位
-            </div>
-            <div className="space-y-1">
-              {quickActionGroups.map((group) => (
-                <div key={group.surface} className="flex items-center gap-1">
-                  <span className="w-8 shrink-0 text-[10px]" style={{ color: subText }}>
-                    {RH_TOOLBOX_QUICK_SURFACE_LABELS[group.surface]}
-                  </span>
-                  <div className="flex min-w-0 flex-1 gap-1 overflow-hidden">
-                    {group.actions.map((action) => (
-                      <button
-                        key={`${group.surface}-${action.toolId}`}
-                        type="button"
-                        onClick={() => openQuickAction(action.toolId)}
-                        title={action.enabled ? action.title : `${action.title} · ${action.reason || '待配置'}`}
-                        className="nodrag shrink-0 rounded-full px-2 py-0.5 text-[10px]"
-                        style={{
-                          background: action.enabled ? (action.accent || accent) : bg,
-                          color: action.enabled ? (isPixel ? 'var(--px-surface)' : '#001018') : subText,
-                          border: `1px solid ${action.enabled ? (action.accent || accent) : border}`,
-                          opacity: action.enabled ? 1 : 0.72,
-                        }}
-                      >
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+        {categoriesForMajor.length > 0 && (
+          <div className="flex gap-1 overflow-x-auto nodrag nowheel" onMouseDown={(e) => e.stopPropagation()}>
+            {[{ id: RH_TOOLBOX_ALL_CATEGORY_ID, name: '全部' }, ...categoriesForMajor].map((category) => {
+              const active = visibleCategoryId === category.id;
+              const count = category.id === RH_TOOLBOX_ALL_CATEGORY_ID
+                ? majorVisibleToolCount
+                : categoryCounts.get(category.id) || 0;
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => update({ rhToolboxCategoryId: category.id })}
+                  className="nodrag shrink-0 rounded px-2 py-0.5 text-[10px]"
+                  style={{
+                    background: active ? surfaceStrong : bg,
+                    color: active ? accent : subText,
+                    border: `1px solid ${active ? accent : border}`,
+                    fontWeight: active ? 700 : 500,
+                  }}
+                >
+                  {category.name} {count}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -460,42 +764,68 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
             <Sparkles size={22} />
             <div className="text-xs font-semibold" style={{ color: text }}>暂未发布工具</div>
             <div className="text-[11px] leading-relaxed">
-              当前 manifest 有 {draftTools.length} 个维护模板。填写真实 WebApp ID 并启用后，会自动出现在这里。
+              当前 manifest 有 {allTools.length} 个工具，其中 {enabledTools.length} 个可见、{draftTools.length} 个待配置。填写真实 WebApp ID 并启用后，会自动出现在这里。
             </div>
           </div>
         ) : filteredTools.length === 0 ? (
           <div className="h-full flex items-center justify-center text-[11px]" style={{ color: subText }}>无匹配工具</div>
         ) : (
-          <div className="space-y-2">
+          <div
+            className="rh-toolbox-app-grid grid grid-cols-1 gap-2"
+            style={{
+              '--rh-toolbox-app-bg': bg,
+              '--rh-toolbox-app-hover-bg': surface,
+              '--rh-toolbox-app-text': text,
+              '--rh-toolbox-app-border': border,
+            } as CSSProperties}
+          >
             {filteredTools.map((tool) => (
-              <button
-                key={tool.id}
-                type="button"
-                onClick={() => setActiveTool(tool)}
-                className="nodrag w-full text-left rounded-lg p-2 transition"
-                style={{ background: surface, color: text, border: `1px solid ${border}` }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = surfaceStrong;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = surface;
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles size={13} style={{ color: tool.ui?.accent || accent }} />
-                  <span className="flex-1 min-w-0 text-xs font-bold truncate">{tool.title}</span>
-                  <span className="text-[9px]" style={{ color: subText }}>#{tool.webappId}</span>
-                </div>
-                <div className="text-[10px] mt-1 line-clamp-2" style={{ color: subText }}>{tool.description}</div>
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {tool.capabilities.slice(0, 4).map((capability) => (
-                    <span key={capability} className="rounded px-1 py-0.5 text-[9px]" style={{ background: bg, color: subText, border: `1px solid ${border}` }}>
-                      {capabilityLabel(capability)}
-                    </span>
-                  ))}
-                </div>
-              </button>
+              <div key={tool.id} className="relative group">
+                <button
+                  type="button"
+                  onClick={() => setActiveTool(tool)}
+                  onMouseEnter={() => setHoveredToolId(tool.id)}
+                  onMouseLeave={() => setHoveredToolId((prev) => (prev === tool.id ? null : prev))}
+                  title={tool.description || tool.title}
+                  className="nodrag rh-toolbox-app-button"
+                >
+                  <span className="rh-toolbox-app-title">{tool.title}</span>
+                </button>
+                {import.meta.env.DEV && (
+                  <button
+                    type="button"
+                    title="载入制作器编辑名称和分类"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      editDeveloperTool(tool.id);
+                    }}
+                    className="nodrag rh-toolbox-app-edit-button opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                  >
+                    <Pencil size={10} />
+                  </button>
+                )}
+              </div>
             ))}
+          </div>
+        )}
+      </div>
+      <div
+        className="px-3 py-2 shrink-0"
+        style={{ borderTop: `1px solid ${border}`, minHeight: 50, background: surface }}
+      >
+        {previewTool ? (
+          <div>
+            <div className="text-[11px] font-bold truncate" style={{ color: accent }}>
+              <Sparkles size={11} className="inline-block mr-1 align-[-2px]" />
+              {previewTool.title}
+            </div>
+            <div className="text-[10px] mt-0.5 line-clamp-2" style={{ color: subText, lineHeight: 1.35 }}>
+              {previewTool.description || previewTool.capabilities.map(capabilityLabel).join(' / ') || `WebApp ${previewTool.webappId}`}
+            </div>
+          </div>
+        ) : (
+          <div className="text-[10px] leading-relaxed" style={{ color: subText }}>
+            悬停工具查看说明，点击进入 · 共 {enabledTools.length} 个可用工具
           </div>
         )}
       </div>
@@ -542,6 +872,30 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
             ))}
           </select>
         </label>
+      );
+    }
+    if (param.kind === 'text') {
+      return (
+        <div key={param.key} className="block text-[10px] space-y-1" style={{ color: subText }}>
+          <span>{param.label}</span>
+          <MentionPromptInput
+            title={`RH工具箱 · ${param.label}`}
+            value={String(value)}
+            mentions={mediaMentionsForKey(userParamMentions[param.key])}
+            materials={mentionMaterials}
+            placeholder={param.placeholder}
+            onChange={(nextValue, mentions) => setUserParamText(param, nextValue, mentions)}
+            isDark={isDark}
+            isPixel={isPixel}
+            promptTemplateKind="image"
+            className="nodrag nowheel"
+            style={{
+              ...commonStyle,
+              minHeight: 54,
+              paddingRight: 64,
+            }}
+          />
+        </div>
       );
     }
     return (
@@ -591,13 +945,117 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3 nodrag nowheel" onMouseDown={(e) => e.stopPropagation()}>
+          {activeTextInputs.length > 0 && (
+            <div className="space-y-2 rounded-lg p-2" style={{ background: surface, border: `1px solid ${border}` }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1 text-[11px] font-bold" style={{ color: text }}>
+                  <Sparkles size={12} /> Prompt
+                </div>
+                {orderedTexts.length > 0 && (
+                  <span className="text-[10px]" style={{ color: subText }}>本地为空时使用上游文本</span>
+                )}
+              </div>
+              {activeTextInputs.map((input) => (
+                <div key={input.key} className="block text-[10px] space-y-1" style={{ color: subText }}>
+                  <span>{input.label || input.key}{input.required !== false ? '' : '（可选）'}</span>
+                  <MentionPromptInput
+                    title={`RH工具箱 · ${input.label || input.key}`}
+                    value={textInputValue(input)}
+                    mentions={textInputMentionsFor(input)}
+                    materials={mentionMaterials}
+                    onChange={(nextValue, mentions) => setTextInput(input, nextValue, mentions)}
+                    placeholder={input.defaultValue || '输入提示词，也可以 @ 引用上游图片、视频、音频'}
+                    isDark={isDark}
+                    isPixel={isPixel}
+                    promptTemplateKind="image"
+                    className="nodrag nowheel"
+                    style={{
+                      width: '100%',
+                      minHeight: 72,
+                      background: surface,
+                      color: text,
+                      border: `1px solid ${border}`,
+                      borderRadius: 6,
+                      padding: '7px 64px 7px 8px',
+                      fontSize: 11,
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {activeMediaInputs.length > 0 && (
+            <div className="space-y-2 rounded-lg p-2" style={{ background: surface, border: `1px solid ${border}` }}>
+              <div className="flex items-center gap-1 text-[11px] font-bold" style={{ color: text }}>
+                <Layers size={12} /> 素材输入
+              </div>
+              {activeMediaInputs.map((input) => {
+                const localUrls = (localInputValues[input.key] || []).filter(Boolean);
+                const Icon = input.kind === 'image' ? ImageIcon : input.kind === 'video' ? VideoIcon : Music;
+                const upstreamCount = input.kind === 'image' ? orderedImages.length : input.kind === 'video' ? orderedVideos.length : orderedAudios.length;
+                return (
+                  <div key={input.key} className="rounded-md p-2 space-y-1.5" style={{ background: bg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-1.5 text-[10px]" style={{ color: subText }}>
+                      <Icon size={12} style={{ color: accent }} />
+                      <span className="font-bold" style={{ color: text }}>{input.label || input.key}</span>
+                      <span>{inputKindLabel(input.kind)}{input.multiple ? ` · 最多 ${input.maxItems || '多'} 个` : ''}</span>
+                      {input.required === false && <span>可选</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="nodrag flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold"
+                        style={{ background: surfaceStrong, color: text, border: `1px solid ${border}`, boxShadow: 'none' }}
+                        onClick={() => fileInputRefs.current[input.key]?.click()}
+                      >
+                        <Upload size={11} /> 上传{inputKindLabel(input.kind)}
+                      </button>
+                      <input
+                        ref={(el) => {
+                          fileInputRefs.current[input.key] = el;
+                        }}
+                        type="file"
+                        className="hidden"
+                        accept={acceptForInputKind(input.kind)}
+                        multiple={input.multiple}
+                        onChange={(event) => {
+                          void uploadInputFiles(input, event.currentTarget.files);
+                          event.currentTarget.value = '';
+                        }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: subText }}>
+                        {localUrls.length > 0
+                          ? `已本地指定 ${localUrls.length} 个`
+                          : upstreamCount > 0
+                          ? `未上传时自动使用上游 ${inputKindLabel(input.kind)}`
+                          : `也可以从左侧接入上游 ${inputKindLabel(input.kind)}`}
+                      </span>
+                      {localUrls.length > 0 && (
+                        <button
+                          type="button"
+                          className="nodrag rounded p-1"
+                          title="清空本地指定素材"
+                          style={{ color: errorText, border: `1px solid ${border}`, boxShadow: 'none' }}
+                          onClick={() => setLocalInputUrls(input, [])}
+                        >
+                          <X size={11} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <MaterialPreviewSection
             texts={orderedTexts}
-            images={orderedImages}
-            videos={orderedVideos}
-            audios={orderedAudios}
+            images={displayImages}
+            videos={displayVideos}
+            audios={displayAudios}
             order={materialOrder}
             onReorder={setMaterialOrder}
+            onRemoveLocal={removeLocalMaterial}
             onExcludeUpstream={handleExcludeUpstreamMaterial}
             excludedCount={excludedUpstreamCount}
             onRestoreExcluded={handleRestoreExcludedMaterials}

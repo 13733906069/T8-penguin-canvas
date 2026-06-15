@@ -16,6 +16,9 @@ const MIME_BY_EXT = {
   '.gif': 'image/gif',
   '.bmp': 'image/bmp',
   '.avif': 'image/avif',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.jxl': 'image/jxl',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
   '.mov': 'video/quicktime',
@@ -25,6 +28,9 @@ const MIME_BY_EXT = {
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.opus': 'audio/opus',
+  '.mka': 'audio/x-matroska',
   '.m4a': 'audio/mp4',
   '.flac': 'audio/flac',
   '.aac': 'audio/aac',
@@ -37,12 +43,18 @@ const EXT_BY_MIME = {
   'image/gif': '.gif',
   'image/bmp': '.bmp',
   'image/avif': '.avif',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'image/jxl': '.jxl',
   'video/mp4': '.mp4',
   'video/quicktime': '.mov',
   'video/webm': '.webm',
+  'video/x-matroska': '.mkv',
   'audio/mpeg': '.mp3',
   'audio/wav': '.wav',
   'audio/ogg': '.ogg',
+  'audio/opus': '.opus',
+  'audio/x-matroska': '.mka',
   'audio/mp4': '.m4a',
   'audio/flac': '.flac',
   'audio/aac': '.aac',
@@ -90,9 +102,9 @@ function extFromMime(mime, fallback = '.bin') {
 
 function kindFromExt(ext) {
   const normalized = String(ext || '').toLowerCase().replace(/^\./, '');
-  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'].includes(normalized)) return 'image';
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif', 'jxl'].includes(normalized)) return 'image';
   if (['mp4', 'webm', 'mov', 'm4v', 'mkv', 'avi'].includes(normalized)) return 'video';
-  if (['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(normalized)) return 'audio';
+  if (['mp3', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'flac', 'aac', 'mka'].includes(normalized)) return 'audio';
   return '';
 }
 

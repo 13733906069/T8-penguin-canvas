@@ -3,6 +3,8 @@ import { Disc3, VolumeX } from 'lucide-react';
 import type { ThemeMusicPreset, ThemeMusicSource, ThemeTemplate } from '../theme/types';
 import { rhHiddenThemeMusicUrl } from '../theme/defaultTemplates';
 import { useHiddenFeatureStore } from '../stores/hiddenFeatures';
+import { useDragonBallRadarStore } from '../stores/dragonBallRadar';
+import { useSaintSeiyaSanctuaryStore } from '../stores/saintSeiyaSanctuary';
 
 interface ThemeMusicToggleProps {
   template: ThemeTemplate;
@@ -132,6 +134,43 @@ const PRESET_NOTES: Record<ThemeMusicPreset, Note[]> = {
     { freq: 784, at: 1.18, len: 0.18, type: 'sawtooth' },
     { freq: 988, at: 1.54, len: 0.18, type: 'sine' },
   ],
+  'shenron-aura': [
+    { freq: 98, at: 0, len: 0.42, type: 'sine' },
+    { freq: 147, at: 0.32, len: 0.36, type: 'triangle' },
+    { freq: 220, at: 0.66, len: 0.3, type: 'sine' },
+    { freq: 392, at: 1.08, len: 0.18, type: 'triangle' },
+    { freq: 523, at: 1.34, len: 0.2, type: 'sine' },
+    { freq: 659, at: 1.72, len: 0.22, type: 'triangle' },
+    { freq: 784, at: 2.12, len: 0.28, type: 'sine' },
+  ],
+  'pegasus-cosmos': [
+    { freq: 196, at: 0, len: 0.08, type: 'triangle' },
+    { freq: 294, at: 0.16, len: 0.08, type: 'sine' },
+    { freq: 392, at: 0.32, len: 0.1, type: 'triangle' },
+    { freq: 587, at: 0.56, len: 0.12, type: 'sine' },
+    { freq: 784, at: 0.84, len: 0.12, type: 'triangle' },
+    { freq: 988, at: 1.18, len: 0.16, type: 'sawtooth' },
+    { freq: 740, at: 1.54, len: 0.14, type: 'sine' },
+    { freq: 1175, at: 1.86, len: 0.18, type: 'triangle' },
+  ],
+  'hades-eclipse': [
+    { freq: 82, at: 0, len: 0.5, type: 'sine' },
+    { freq: 123, at: 0.36, len: 0.42, type: 'triangle' },
+    { freq: 185, at: 0.72, len: 0.34, type: 'sine' },
+    { freq: 277, at: 1.12, len: 0.22, type: 'triangle' },
+    { freq: 415, at: 1.46, len: 0.22, type: 'sawtooth' },
+    { freq: 622, at: 1.92, len: 0.28, type: 'sine' },
+  ],
+  'block-drop': [
+    { freq: 330, at: 0, len: 0.07, type: 'square' },
+    { freq: 392, at: 0.12, len: 0.07, type: 'square' },
+    { freq: 494, at: 0.24, len: 0.07, type: 'square' },
+    { freq: 659, at: 0.36, len: 0.09, type: 'square' },
+    { freq: 523, at: 0.56, len: 0.07, type: 'triangle' },
+    { freq: 392, at: 0.68, len: 0.07, type: 'square' },
+    { freq: 247, at: 0.86, len: 0.12, type: 'sawtooth' },
+    { freq: 988, at: 1.06, len: 0.08, type: 'square' },
+  ],
 };
 
 const PRESET_LOOP_SECONDS: Record<ThemeMusicPreset, number> = {
@@ -145,6 +184,10 @@ const PRESET_LOOP_SECONDS: Record<ThemeMusicPreset, number> = {
   'buzzer-beater': 2.08,
   'golden-goal': 2.08,
   'ki-burst': 1.96,
+  'shenron-aura': 2.72,
+  'pegasus-cosmos': 2.18,
+  'hades-eclipse': 2.78,
+  'block-drop': 1.32,
 };
 
 function clampVolume(value?: number) {
@@ -395,6 +438,8 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
   const [enabled, setEnabled] = useState(false);
   const rhDuckUploadIds = useHiddenFeatureStore((s) => s.rhDuckUploadIds);
   const yyhPortraitIds = useHiddenFeatureStore((s) => s.yyhPortraitIds);
+  const shenronModeActive = useDragonBallRadarStore((s) => s.shenronModeActive);
+  const hadesModeActive = useSaintSeiyaSanctuaryStore((s) => s.hadesModeActive);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
@@ -404,10 +449,34 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
 
   const rhHiddenMusicActive = template.visuals?.style === 'rh' && rhDuckUploadIds.length > 0;
   const yyhHiddenMusicActive = template.visuals?.style === 'yyh' && yyhPortraitIds.length > 0;
-  const hiddenMusicActive = rhHiddenMusicActive || yyhHiddenMusicActive;
+  const shenronHiddenMusicActive = template.visuals?.style === 'dragon-ball' && shenronModeActive;
+  const hadesHiddenMusicActive = template.visuals?.style === 'saint-seiya' && hadesModeActive;
+  const hiddenMusicActive = rhHiddenMusicActive || yyhHiddenMusicActive || shenronHiddenMusicActive || hadesHiddenMusicActive;
   const music = useMemo(() => {
     const base = template.music;
     if (!hiddenMusicActive) return base;
+    if (hadesHiddenMusicActive) {
+      return {
+        title: base?.hiddenTitle || '冥界篇',
+        preset: 'hades-eclipse' as ThemeMusicPreset,
+        source: (base?.hiddenUrl ? 'url' : 'synth') as ThemeMusicSource,
+        url: base?.hiddenUrl,
+        volume: base?.hiddenVolume ?? 0.18,
+        bpm: 86,
+        copyrightNote: base?.copyrightNote,
+      };
+    }
+    if (shenronHiddenMusicActive) {
+      return {
+        title: base?.hiddenTitle || '神龙模式',
+        preset: 'shenron-aura' as ThemeMusicPreset,
+        source: (base?.hiddenUrl ? 'url' : 'synth') as ThemeMusicSource,
+        url: base?.hiddenUrl,
+        volume: base?.hiddenVolume ?? 0.2,
+        bpm: 72,
+        copyrightNote: base?.copyrightNote,
+      };
+    }
     if (yyhHiddenMusicActive) {
       return {
         title: base?.hiddenTitle || '幽游隐藏模式',
@@ -430,7 +499,9 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
     };
   }, [
     hiddenMusicActive,
+    hadesHiddenMusicActive,
     rhHiddenMusicActive,
+    shenronHiddenMusicActive,
     yyhHiddenMusicActive,
     template.music?.bpm,
     template.music?.copyrightNote,
@@ -447,7 +518,7 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
   const title = music?.title || 'Theme Music';
   const preset = music?.preset || 'tech-pulse';
   const volume = clampVolume(music?.volume);
-  const musicKey = `${template.id}|${rhHiddenMusicActive ? 'rh-hidden' : yyhHiddenMusicActive ? 'yyh-hidden' : 'normal'}|${music?.preset || ''}|${music?.source || ''}|${music?.url || ''}|${volume}`;
+  const musicKey = `${template.id}|${rhHiddenMusicActive ? 'rh-hidden' : yyhHiddenMusicActive ? 'yyh-hidden' : shenronHiddenMusicActive ? 'shenron-hidden' : hadesHiddenMusicActive ? 'hades-hidden' : 'normal'}|${music?.preset || ''}|${music?.source || ''}|${music?.url || ''}|${volume}`;
 
   useEffect(() => {
     enabledRef.current = enabled;

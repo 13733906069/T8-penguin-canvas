@@ -2,6 +2,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 const config = require('../config');
 const {
   maskAdvancedProviders,
@@ -16,7 +17,30 @@ const {
 
 const router = express.Router();
 
-// 默认 settings 结构(三套通用 Key + 7 类分类 Key)
+const TASK_COMPLETION_SOUND_DEFAULT = {
+  mode: 'default',
+  name: '',
+  fileName: '',
+  mimeType: '',
+  size: 0,
+  updatedAt: 0,
+  url: '',
+};
+const TASK_COMPLETION_SOUND_DIRNAME = 'task-completion-sound';
+const TASK_COMPLETION_SOUND_ALLOWED_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.webm']);
+const TASK_COMPLETION_SOUND_EXTENSION_BY_MIME = {
+  'audio/mpeg': '.mp3',
+  'audio/mp3': '.mp3',
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
+  'audio/ogg': '.ogg',
+  'audio/mp4': '.m4a',
+  'audio/aac': '.aac',
+  'audio/flac': '.flac',
+  'audio/webm': '.webm',
+};
+
+// 默认 settings 结构(三套通用 Key + 8 类分类 Key)
 const DEFAULT_SETTINGS = {
   // 三套通用 Key
   zhenzhenApiKey: '',
@@ -31,6 +55,7 @@ const DEFAULT_SETTINGS = {
   nanoBananaApiKey: '',
   mjApiKey: '',
   veoApiKey: '',
+  soraApiKey: '',
   grokApiKey: '',
   seedanceApiKey: '',
   sunoApiKey: '',
@@ -48,12 +73,100 @@ const DEFAULT_SETTINGS = {
   advancedProviders: normalizeAdvancedProviders(),
   // v1.9.x: 云端上传目标（可选）。默认禁用，不影响资源库/自动保存主流程。
   cloudUploadTargets: normalizeCloudUploadTargets(),
+  // 任务完成提示音；默认走前端内置短音，用户上传后走本地音频文件。
+  taskCompletionSound: { ...TASK_COMPLETION_SOUND_DEFAULT },
   // 其他偏好
   preferences: {
     theme: 'dark',
     language: 'zh-CN',
   },
 };
+
+function normalizeTaskCompletionSoundSettings(raw) {
+  const value = raw && typeof raw === 'object' ? raw : {};
+  const mode = value.mode === 'custom' ? 'custom' : 'default';
+  if (mode !== 'custom') return { ...TASK_COMPLETION_SOUND_DEFAULT };
+  const fileName = path.basename(String(value.fileName || ''));
+  if (!fileName) return { ...TASK_COMPLETION_SOUND_DEFAULT };
+  return {
+    mode: 'custom',
+    name: String(value.name || fileName).slice(0, 240),
+    fileName,
+    mimeType: String(value.mimeType || 'audio/mpeg').slice(0, 120),
+    size: Number.isFinite(Number(value.size)) ? Number(value.size) : 0,
+    updatedAt: Number.isFinite(Number(value.updatedAt)) ? Number(value.updatedAt) : 0,
+    url: '',
+  };
+}
+
+function getTaskCompletionSoundDir() {
+  return path.join(path.dirname(config.SETTINGS_FILE), TASK_COMPLETION_SOUND_DIRNAME);
+}
+
+function getTaskCompletionSoundFilePath(settings) {
+  const sound = normalizeTaskCompletionSoundSettings(settings?.taskCompletionSound);
+  if (sound.mode !== 'custom' || !sound.fileName) return '';
+  const dir = getTaskCompletionSoundDir();
+  const filePath = path.join(dir, sound.fileName);
+  const resolvedDir = path.resolve(dir);
+  const resolvedFile = path.resolve(filePath);
+  if (!resolvedFile.startsWith(resolvedDir + path.sep)) return '';
+  return resolvedFile;
+}
+
+function getTaskCompletionSoundPublic(settings) {
+  const sound = normalizeTaskCompletionSoundSettings(settings?.taskCompletionSound);
+  const filePath = getTaskCompletionSoundFilePath({ taskCompletionSound: sound });
+  if (sound.mode !== 'custom' || !filePath || !fs.existsSync(filePath)) {
+    return { ...TASK_COMPLETION_SOUND_DEFAULT };
+  }
+  const stat = fs.statSync(filePath);
+  const updatedAt = sound.updatedAt || Math.max(0, Math.floor(stat.mtimeMs));
+  return {
+    mode: 'custom',
+    name: sound.name || sound.fileName,
+    fileName: sound.fileName,
+    mimeType: sound.mimeType || 'audio/mpeg',
+    size: sound.size || stat.size,
+    updatedAt,
+    url: `/api/settings/task-completion-sound/file?v=${updatedAt}`,
+  };
+}
+
+function deleteTaskCompletionSoundFiles() {
+  const dir = getTaskCompletionSoundDir();
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.startsWith('task-completion-sound')) continue;
+    fs.rmSync(path.join(dir, entry.name), { force: true });
+  }
+}
+
+function isAllowedTaskCompletionSoundFile(file) {
+  const ext = path.extname(String(file?.originalname || '')).toLowerCase();
+  const mime = String(file?.mimetype || '').toLowerCase();
+  return TASK_COMPLETION_SOUND_ALLOWED_EXTENSIONS.has(ext) || mime.startsWith('audio/');
+}
+
+function getTaskCompletionSoundFileExtension(file) {
+  const ext = path.extname(String(file?.originalname || '')).toLowerCase();
+  if (TASK_COMPLETION_SOUND_ALLOWED_EXTENSIONS.has(ext)) return ext;
+  const mime = String(file?.mimetype || '').toLowerCase();
+  return TASK_COMPLETION_SOUND_EXTENSION_BY_MIME[mime] || '.mp3';
+}
+
+const uploadTaskCompletionSoundFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedTaskCompletionSoundFile(file)) {
+      cb(null, true);
+    } else {
+      cb(new Error('仅支持音频文件：mp3 / wav / ogg / m4a / aac / flac / webm'));
+    }
+  },
+}).single('audio');
 
 const CURRENT_DEFAULT_PATHS = {
   fileSavePath: config.DEFAULT_LOCAL_SAVE_DIR,
@@ -71,7 +184,7 @@ const LEGACY_DEFAULT_PATHS = {
 
 // 分类 key 字段列表（供 GET 脱敏与 POST 合并使用）
 const CLASSIFIED_KEY_FIELDS = [
-  'gptImageApiKey', 'nanoBananaApiKey', 'mjApiKey', 'veoApiKey',
+  'gptImageApiKey', 'nanoBananaApiKey', 'mjApiKey', 'veoApiKey', 'soraApiKey',
   'grokApiKey', 'seedanceApiKey', 'sunoApiKey',
 ];
 
@@ -117,6 +230,7 @@ function loadSettings({ persistMigrations = true } = {}) {
     };
     merged.advancedProviders = normalizeAdvancedProviders(data.advancedProviders);
     merged.cloudUploadTargets = normalizeCloudUploadTargets(data.cloudUploadTargets);
+    merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(data.taskCompletionSound);
     const migrated = migrateLegacyDefaultPaths(merged);
     if (persistMigrations && migrated.changed) {
       saveSettings(migrated.settings);
@@ -128,6 +242,8 @@ function loadSettings({ persistMigrations = true } = {}) {
 }
 
 function saveSettings(settings) {
+  const dir = path.dirname(config.SETTINGS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(config.SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
 }
 
@@ -167,6 +283,7 @@ router.get('/', (_req, res) => {
     advancedProviderSummary: summarizeAdvancedProviders(settings.advancedProviders),
     cloudUploadTargets: maskCloudUploadTargets(settings.cloudUploadTargets),
     cloudUploadSummary: summarizeCloudUploadTargets(settings.cloudUploadTargets),
+    taskCompletionSound: getTaskCompletionSoundPublic(settings),
   };
   for (const f of CLASSIFIED_KEY_FIELDS) {
     masked[f] = maskKey(settings[f]);
@@ -179,15 +296,85 @@ router.get('/raw', (_req, res) => {
   res.json({ success: true, data: loadSettings() });
 });
 
+// GET /api/settings/task-completion-sound — 获取当前提示音配置
+router.get('/task-completion-sound', (_req, res) => {
+  res.json({ success: true, data: getTaskCompletionSoundPublic(loadSettings()) });
+});
+
+// GET /api/settings/task-completion-sound/file — 播放/试听自定义提示音
+router.get('/task-completion-sound/file', (_req, res) => {
+  const settings = loadSettings();
+  const sound = getTaskCompletionSoundPublic(settings);
+  const filePath = getTaskCompletionSoundFilePath(settings);
+  if (sound.mode !== 'custom' || !filePath || !fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, error: '未配置自定义提示音' });
+  }
+  res.type(sound.mimeType || 'audio/mpeg');
+  res.sendFile(filePath);
+});
+
+// POST /api/settings/task-completion-sound — 上传自定义任务完成提示音
+router.post('/task-completion-sound', (req, res) => {
+  uploadTaskCompletionSoundFile(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message || '上传提示音失败' });
+    }
+    if (!req.file || !req.file.buffer?.length) {
+      return res.status(400).json({ success: false, error: '请选择一个音频文件' });
+    }
+    try {
+      const dir = getTaskCompletionSoundDir();
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      deleteTaskCompletionSoundFiles();
+      const ext = getTaskCompletionSoundFileExtension(req.file);
+      const fileName = `task-completion-sound${ext}`;
+      const filePath = path.join(dir, fileName);
+      fs.writeFileSync(filePath, req.file.buffer);
+      const updatedAt = Date.now();
+      const current = loadSettings();
+      const next = {
+        ...current,
+        taskCompletionSound: {
+          mode: 'custom',
+          name: String(req.file.originalname || fileName).slice(0, 240),
+          fileName,
+          mimeType: req.file.mimetype || TASK_COMPLETION_SOUND_EXTENSION_BY_MIME[ext] || 'audio/mpeg',
+          size: req.file.size || req.file.buffer.length,
+          updatedAt,
+          url: '',
+        },
+      };
+      saveSettings(next);
+      res.json({ success: true, data: getTaskCompletionSoundPublic(next) });
+    } catch (e) {
+      res.status(500).json({ success: false, error: e?.message || '保存提示音失败' });
+    }
+  });
+});
+
+// DELETE /api/settings/task-completion-sound — 恢复默认提示音
+router.delete('/task-completion-sound', (_req, res) => {
+  try {
+    deleteTaskCompletionSoundFiles();
+    const current = loadSettings();
+    const next = { ...current, taskCompletionSound: { ...TASK_COMPLETION_SOUND_DEFAULT } };
+    saveSettings(next);
+    res.json({ success: true, data: getTaskCompletionSoundPublic(next) });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || '恢复默认提示音失败' });
+  }
+});
+
 // POST /api/settings — 更新设置
 router.post('/', (req, res) => {
   const current = loadSettings();
   const incoming = req.body || {};
+  const { taskCompletionSound: _ignoredTaskCompletionSound, ...safeIncoming } = incoming;
   const hasAdvancedProviders = Object.prototype.hasOwnProperty.call(incoming, 'advancedProviders');
   const hasCloudUploadTargets = Object.prototype.hasOwnProperty.call(incoming, 'cloudUploadTargets');
   const merged = {
     ...current,
-    ...incoming,
+    ...safeIncoming,
     // base URL 强制为配置值,不允许覆盖
     zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL,
     llmBaseUrl: config.ZHENZHEN_BASE_URL,
@@ -198,6 +385,7 @@ router.post('/', (req, res) => {
   merged.cloudUploadTargets = hasCloudUploadTargets
     ? normalizeCloudUploadTargets(incoming.cloudUploadTargets, current.cloudUploadTargets)
     : normalizeCloudUploadTargets(current.cloudUploadTargets);
+  merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(current.taskCompletionSound);
   saveSettings(merged);
   // v1.2.10.2/v1.3.1/v1.3.4: 保存后重新确保本地保存路径存在
   for (const field of ['fileSavePath', 'canvasAutoSavePath', 'resourceLibraryPath', 'themeTemplatePath']) {

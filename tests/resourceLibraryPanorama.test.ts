@@ -159,6 +159,64 @@ test('resource library migrates legacy image 3D panorama resources into panorama
   assert.equal(panoramaItems.data[0].categoryId, 'panorama_uncategorized');
 });
 
+test('resource library keeps renamed default categories and newly added categories', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-resource-categories-'));
+  const resourcesDir = path.join(tmpDir, 'resources');
+
+  const config = require('../backend/src/config.js');
+  const oldConfig = {
+    SETTINGS_FILE: config.SETTINGS_FILE,
+    DEFAULT_RESOURCE_LIBRARY_DIR: config.DEFAULT_RESOURCE_LIBRARY_DIR,
+    INPUT_DIR: config.INPUT_DIR,
+    OUTPUT_DIR: config.OUTPUT_DIR,
+  };
+  t.after(() => Object.assign(config, oldConfig));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  config.SETTINGS_FILE = path.join(tmpDir, 'settings.json');
+  config.DEFAULT_RESOURCE_LIBRARY_DIR = resourcesDir;
+  config.INPUT_DIR = path.join(tmpDir, 'input');
+  config.OUTPUT_DIR = path.join(tmpDir, 'output');
+
+  const express = require('express');
+  const resourcesRouter = require('../backend/src/routes/resources.js');
+  const app = express();
+  app.use('/api/resources', resourcesRouter);
+
+  const server = await new Promise<any>((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  t.after(() => server.close());
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const initial = await fetch(`${base}/api/resources/categories?kind=image`).then((res) => res.json());
+  assert.equal(initial.success, true);
+  const roleCategory = initial.data.find((cat: any) => cat.name === '角色');
+  assert.ok(roleCategory?.id);
+
+  const renamed = await fetch(`${base}/api/resources/categories/${encodeURIComponent(roleCategory.id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '人物收藏' }),
+  }).then((res) => res.json());
+  assert.equal(renamed.success, true);
+  assert.equal(renamed.data.name, '人物收藏');
+
+  const added = await fetch(`${base}/api/resources/categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'image', name: '小红书封面' }),
+  }).then((res) => res.json());
+  assert.equal(added.success, true);
+  assert.equal(added.data.name, '小红书封面');
+
+  const latest = await fetch(`${base}/api/resources/categories?kind=image`).then((res) => res.json());
+  assert.equal(latest.success, true);
+  assert.equal(latest.data.some((cat: any) => cat.id === roleCategory.id && cat.name === '人物收藏'), true);
+  assert.equal(latest.data.some((cat: any) => cat.id === roleCategory.id && cat.name === '角色'), false);
+  assert.equal(latest.data.some((cat: any) => cat.id === added.data.id && cat.name === '小红书封面'), true);
+});
+
 test('panorama resource kind is wired through frontend save, drawer, and insert paths', () => {
   const api = readFileSync(new URL('../src/services/api.ts', import.meta.url), 'utf8');
   const drawer = readFileSync(new URL('../src/components/ResourceLibraryDrawer.tsx', import.meta.url), 'utf8');
@@ -179,4 +237,14 @@ test('panorama resource kind is wired through frontend save, drawer, and insert 
   assert.match(panorama, /categories\.data\.filter\(\(cat\) => cat\.kind === 'panorama'\)/);
   assert.match(panorama, /kind:\s*'panorama'/);
   assert.match(panorama, /saved\.data\.kind !== 'panorama'/);
+});
+
+test('resource library category controls are isolated from canvas drag gestures', () => {
+  const drawer = readFileSync(new URL('../src/components/ResourceLibraryDrawer.tsx', import.meta.url), 'utf8');
+
+  assert.match(drawer, /data-resource-category-action="add"/);
+  assert.match(drawer, /data-resource-category-action="rename"/);
+  assert.match(drawer, /data-resource-category-action="select"/);
+  assert.match(drawer, /stopResourceControlEvent/);
+  assert.match(drawer, /nodrag nopan/);
 });

@@ -27,6 +27,54 @@ export const opResize = (imageUrl: string, width?: number, height?: number, fit?
 export const opUpscale = (imageUrl: string, scale: number) =>
   postOp<{ imageUrl: string; scale: number }>('upscale', { imageUrl, scale });
 
+export const opTrimBorder = (
+  imageUrl: string,
+  options?: {
+    mode?: 'black' | 'white' | 'transparent' | 'auto';
+    axis?: 'vertical' | 'horizontal' | 'all';
+    threshold?: number;
+    strategy?: 'auto' | 'manual';
+    manual?: { top?: number; right?: number; bottom?: number; left?: number };
+  },
+) =>
+  postOp<{
+    imageUrl: string;
+    crop: {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      originalWidth: number;
+      originalHeight: number;
+      removed: { top: number; right: number; bottom: number; left: number };
+      strategy: 'auto' | 'manual';
+      mode: 'black' | 'white' | 'transparent' | 'auto';
+      axis: 'vertical' | 'horizontal' | 'all';
+      threshold: number;
+    };
+  }>('trim-border', {
+    imageUrl,
+    ...(options || {}),
+  });
+
+export const opPadCanvas = (
+  imageUrl: string,
+  options?: { ratio?: string; background?: string },
+) =>
+  postOp<{ imageUrl: string; width: number; height: number }>('pad-canvas', {
+    imageUrl,
+    ...(options || {}),
+  });
+
+export const opConvert = (
+  imageUrl: string,
+  options?: { format?: 'png' | 'jpg' | 'webp'; quality?: number },
+) =>
+  postOp<{ imageUrl: string; format: string }>('convert', {
+    imageUrl,
+    ...(options || {}),
+  });
+
 /**
  * 单矩形裁剪
  * @param imageUrl 原图 URL
@@ -141,4 +189,61 @@ export async function uploadFileBlob(file: File | Blob, filename?: string): Prom
   const json = await r.json();
   if (!r.ok || !json.success) throw new Error(json?.error || `HTTP ${r.status}`);
   return json.data.url as string;
+}
+
+export async function copyFileToOutput(
+  url: string,
+  filename: string,
+  subdir: string = 'batch',
+): Promise<{ url: string; filename: string; path?: string; size?: number; exist?: boolean }> {
+  const r = await fetch('/api/files/copy-to-output', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, filename, subdir }),
+  });
+  const text = await r.text();
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    const isHtml = /^\s*</.test(text || '');
+    if (isHtml) {
+      throw new Error('批处理归档接口未就绪，请重启后端服务后重试');
+    }
+    throw new Error(`批处理归档接口返回异常: ${text.slice(0, 120)}`);
+  }
+  if (!r.ok || !json?.success) throw new Error(json?.error || `HTTP ${r.status}`);
+  return json.data;
+}
+
+export async function openOutputFolder(
+  subdir: string = 'batch',
+): Promise<{ subdir: string; path: string; url: string; opened: boolean }> {
+  const nativeOpenPath = typeof window !== 'undefined' ? window.t8pc?.openPath : undefined;
+  const r = await fetch('/api/files/open-output-folder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subdir, ...(nativeOpenPath ? { dryRun: true } : {}) }),
+  });
+  const text = await r.text();
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    const isHtml = /^\s*</.test(text || '');
+    if (isHtml) {
+      throw new Error('打开输出文件夹接口未就绪，请重启后端服务后重试');
+    }
+    throw new Error(`打开输出文件夹接口返回异常: ${text.slice(0, 120)}`);
+  }
+  if (!r.ok || !json?.success) throw new Error(json?.error || `HTTP ${r.status}`);
+  const data = json.data as { subdir: string; path: string; url: string; opened: boolean };
+  if (nativeOpenPath && data.path) {
+    const opened = await window.t8pc?.openPath(data.path);
+    if (!opened?.success) {
+      throw new Error(opened?.message || '系统打开输出文件夹失败');
+    }
+    return { ...data, opened: true };
+  }
+  return data;
 }

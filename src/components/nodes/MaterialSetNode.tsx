@@ -28,7 +28,6 @@ import {
   createUploadDataFromItem,
   fileNameFromUrl,
   type MediaItem,
-  type MediaKind,
 } from '../../utils/mediaCollection';
 import {
   isMaterialSetKind,
@@ -310,7 +309,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
     setTextDraft('');
   };
 
-  const uploadSingleFile = async (file: File, fileKind: MediaKind): Promise<MaterialSetItem> => {
+  const uploadSingleFile = async (file: File, fileKind: Exclude<MaterialSetKind, 'text'>): Promise<MaterialSetItem> => {
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch('/api/files/upload', { method: 'POST', body: fd });
@@ -418,7 +417,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
         kind === 'text'
           ? { prompt: value }
           : createUploadDataFromItem({
-              kind: kind as MediaKind,
+              kind: kind as Exclude<MaterialSetKind, 'text'>,
               url: value,
               name: item.name || fileNameFromUrl(value),
               size: item.size,

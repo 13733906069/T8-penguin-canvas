@@ -165,6 +165,10 @@ function resultData<T>(r: api.Result<T> | any): T | null {
   return r?.success ? (r.data as T) : null;
 }
 
+function stopResourceControlEvent(event: { stopPropagation: () => void }) {
+  event.stopPropagation();
+}
+
 export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial }: ResourceLibraryDrawerProps) {
   const { theme, style } = useThemeStore();
   const isDark = theme === 'dark';
@@ -226,6 +230,7 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
     const r = await api.addResourceCategory(kind, name.trim());
     if (r.success) {
       setMsg(`已创建分类：${name.trim()}`);
+      setCategoryId(r.data.id);
       await load();
     } else {
       setMsg(r.error || '分类创建失败');
@@ -432,29 +437,82 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
       <div className="flex-1 min-h-0 flex">
         <aside className={`w-32 shrink-0 overflow-y-auto p-2 space-y-1 ${isPixel ? 'border-r-2 border-[var(--px-ink)] bg-[var(--px-muted)]' : isDark ? 'border-r border-white/10 bg-white/[0.02]' : 'border-r border-black/10 bg-black/[0.02]'}`}>
           <button
-            onClick={() => setCategoryId('all')}
-            className={`w-full text-left px-2 py-1.5 text-xs rounded ${categoryId === 'all' ? (isPixel ? 'bg-[var(--px-yellow)] border-2 border-[var(--px-ink)]' : 'bg-cyan-500/15 text-cyan-300') : ''}`}
+            type="button"
+            data-resource-category-action="select"
+            onPointerDown={stopResourceControlEvent}
+            onMouseDown={stopResourceControlEvent}
+            onClick={(event) => {
+              stopResourceControlEvent(event);
+              setCategoryId('all');
+            }}
+            className={`nodrag nopan w-full text-left px-2 py-1.5 text-xs rounded ${categoryId === 'all' ? (isPixel ? 'bg-[var(--px-yellow)] border-2 border-[var(--px-ink)]' : 'bg-cyan-500/15 text-cyan-300') : ''}`}
           >
             全部
           </button>
           {categories.map((cat) => (
             <div key={cat.id} className="group flex items-center gap-1">
               <button
-                onClick={() => setCategoryId(cat.id)}
-                className={`flex-1 min-w-0 text-left px-2 py-1.5 text-xs rounded truncate ${categoryId === cat.id ? (isPixel ? 'bg-[var(--px-yellow)] border-2 border-[var(--px-ink)]' : 'bg-cyan-500/15 text-cyan-300') : isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
+                type="button"
+                data-resource-category-action="select"
+                onPointerDown={stopResourceControlEvent}
+                onMouseDown={stopResourceControlEvent}
+                onClick={(event) => {
+                  stopResourceControlEvent(event);
+                  setCategoryId(cat.id);
+                }}
+                className={`nodrag nopan flex-1 min-w-0 text-left px-2 py-1.5 text-xs rounded truncate ${categoryId === cat.id ? (isPixel ? 'bg-[var(--px-yellow)] border-2 border-[var(--px-ink)]' : 'bg-cyan-500/15 text-cyan-300') : isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
                 title={cat.name}
               >
                 {cat.name}
               </button>
               {!cat.system && (
-                <div className="hidden group-hover:flex items-center">
-                  <button onClick={() => renameCategory(cat)} className="p-1 opacity-70 hover:opacity-100" title="重命名"><Pencil size={10} /></button>
-                  <button onClick={() => removeCategory(cat)} className="p-1 opacity-70 hover:opacity-100 text-red-400" title="删除"><Trash2 size={10} /></button>
+                <div className="flex items-center opacity-60 group-hover:opacity-100 group-focus-within:opacity-100">
+                  <button
+                    type="button"
+                    data-resource-category-action="rename"
+                    onPointerDown={stopResourceControlEvent}
+                    onMouseDown={stopResourceControlEvent}
+                    onClick={(event) => {
+                      stopResourceControlEvent(event);
+                      renameCategory(cat);
+                    }}
+                    className="nodrag nopan p-1 hover:opacity-100"
+                    title="重命名"
+                    aria-label={`重命名分类 ${cat.name}`}
+                  >
+                    <Pencil size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    data-resource-category-action="delete"
+                    onPointerDown={stopResourceControlEvent}
+                    onMouseDown={stopResourceControlEvent}
+                    onClick={(event) => {
+                      stopResourceControlEvent(event);
+                      removeCategory(cat);
+                    }}
+                    className="nodrag nopan p-1 hover:opacity-100 text-red-400"
+                    title="删除"
+                    aria-label={`删除分类 ${cat.name}`}
+                  >
+                    <Trash2 size={10} />
+                  </button>
                 </div>
               )}
             </div>
           ))}
-          <button onClick={addCategory} className={`w-full mt-2 ${itemBtn} flex items-center justify-center gap-1`} title="新建分类">
+          <button
+            type="button"
+            data-resource-category-action="add"
+            onPointerDown={stopResourceControlEvent}
+            onMouseDown={stopResourceControlEvent}
+            onClick={(event) => {
+              stopResourceControlEvent(event);
+              addCategory();
+            }}
+            className={`nodrag nopan w-full mt-2 ${itemBtn} flex items-center justify-center gap-1`}
+            title="新建分类"
+          >
             <FolderPlus size={12} /> 分类
           </button>
         </aside>

@@ -5,11 +5,12 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type FormEvent,
   type MutableRefObject,
   type Ref,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, AtSign, Image as ImageIcon, Library, Maximize2, Music, Video as VideoIcon } from 'lucide-react';
+import { AlertTriangle, AtSign, Library, Maximize2, Music, Video as VideoIcon } from 'lucide-react';
 import SmartImage from '../SmartImage';
 import PromptExpandModal from '../PromptExpandModal';
 import PromptTemplateLibraryModal from '../PromptTemplateLibraryModal';
@@ -41,6 +42,9 @@ interface Props {
   title?: string;
   expandable?: boolean;
   promptTemplateKind?: PromptTemplateKind | false;
+  onSubmit?: (value: string, mentions: MediaMention[]) => void;
+  /** Force the editor to fill a flex parent instead of growing with long text. */
+  fillHeight?: boolean;
 }
 
 interface QueryState {
@@ -49,6 +53,19 @@ interface QueryState {
   end: number;
   query: string;
   activeIndex: number;
+}
+
+interface PlainInputSnapshot {
+  text: string;
+  caret: number;
+  data: string;
+  at: number;
+}
+
+interface CompositionLeakSnapshot {
+  start: number;
+  end: number;
+  data: string;
 }
 
 function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
@@ -62,7 +79,7 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
 
 function getAtQuery(text: string, caret: number, mentions: MediaMention[] = []): { start: number; end: number; query: string } | null {
   const before = text.slice(0, caret);
-  const at = before.lastIndexOf('@');
+  const at = Math.max(before.lastIndexOf('@'), before.lastIndexOf('＠'));
   if (at < 0) return null;
   const segment = before.slice(at);
   if (/\s/.test(segment)) return null;
@@ -233,6 +250,41 @@ function readRichEditor(root: HTMLElement, fallbackMentions: MediaMention[]): { 
   return { text, mentions };
 }
 
+function isImeCompositionInput(event: Event | null | undefined) {
+  const native = event as (InputEvent & { isComposing?: boolean }) | null | undefined;
+  return !!native?.isComposing || /Composition/i.test(String(native?.inputType || ''));
+}
+
+function isImeKeyboardEvent(event: KeyboardEvent | null | undefined) {
+  const native = event as (KeyboardEvent & { isComposing?: boolean; keyCode?: number; which?: number }) | null | undefined;
+  return !!native?.isComposing || native?.key === 'Process' || native?.keyCode === 229 || native?.which === 229;
+}
+
+function stripCompositionLeak(
+  text: string,
+  mentions: MediaMention[],
+  leak: CompositionLeakSnapshot | null,
+): { text: string; mentions: MediaMention[]; caretDelta: number; changed: boolean } {
+  if (!leak || !leak.data) return { text, mentions, caretDelta: 0, changed: false };
+  const start = Math.max(0, Math.min(text.length, leak.start));
+  const end = Math.max(start, Math.min(text.length, leak.end));
+  if (text.slice(start, end) !== leak.data) return { text, mentions, caretDelta: 0, changed: false };
+  const following = text.slice(end, end + 2);
+  if (!/[\u3400-\u9fff\uf900-\ufaff]/.test(following)) return { text, mentions, caretDelta: 0, changed: false };
+
+  const removed = end - start;
+  const nextText = `${text.slice(0, start)}${text.slice(end)}`;
+  const nextMentions = mentions
+    .filter((mention) => mention.end <= start || mention.start >= end)
+    .map((mention) => {
+      if (mention.start >= end) {
+        return { ...mention, start: mention.start - removed, end: mention.end - removed };
+      }
+      return mention;
+    });
+  return { text: nextText, mentions: nextMentions, caretDelta: -removed, changed: true };
+}
+
 const MentionPromptInput = ({
   value,
   mentions = [],
@@ -247,9 +299,13 @@ const MentionPromptInput = ({
   title = '提示词编辑',
   expandable = true,
   promptTemplateKind = false,
+  onSubmit,
+  fillHeight = false,
 }: Props) => {
   const localRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
+  const lastPlainInputRef = useRef<PlainInputSnapshot | null>(null);
+  const compositionLeakRef = useRef<CompositionLeakSnapshot | null>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const expandShortcuts = useShortcutStore((s) => s.shortcuts['editor.expand-prompt']);
   const [isFocused, setIsFocused] = useState(false);
@@ -421,7 +477,7 @@ const MentionPromptInput = ({
         img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
         content.appendChild(img);
       } else {
-        content.textContent = item.material.kind === 'video' ? '▶' : '♪';
+        content.textContent = item.material.kind === 'video' ? '▶' : item.material.kind === 'audio' ? '♪' : 'T';
         content.style.fontWeight = '900';
       }
       span.replaceChildren(content);
@@ -433,8 +489,8 @@ const MentionPromptInput = ({
     }
   }, [editorHtml, inlineMentions, isDark, isPixel]);
 
-  const openFromCaret = (text: string, caret: number) => {
-    const query = getAtQuery(text, caret, mentions);
+  const openFromCaret = (text: string, caret: number, mentionList: MediaMention[] = mentions) => {
+    const query = getAtQuery(text, caret, mentionList);
     if (!query) {
       setQueryState((s) => ({ ...s, open: false }));
       return;
@@ -442,15 +498,51 @@ const MentionPromptInput = ({
     setQueryState({ ...query, open: true, activeIndex: 0 });
   };
 
-  const handleEditorInput = () => {
+  const openFromEditor = () => {
+    const el = localRef.current;
+    if (!el || composingRef.current) return;
+    const caret = getCaretPlainOffset(el);
+    const { text, mentions: nextMentions } = readRichEditor(el, mentions);
+    openFromCaret(text, caret, nextMentions);
+  };
+
+  const handleEditorInput = (event?: FormEvent<HTMLDivElement>) => {
     const el = localRef.current;
     if (!el) return;
-    if (composingRef.current) return;
+    const nativeEvent = event?.nativeEvent;
+    if (isImeCompositionInput(nativeEvent) || composingRef.current) {
+      composingRef.current = true;
+      return;
+    }
     const caret = getCaretPlainOffset(el);
     const { text: nextValue, mentions: nextMentions } = readRichEditor(el, mentions);
+    const inputEvent = nativeEvent as (InputEvent & { data?: string; inputType?: string }) | undefined;
+    if (
+      inputEvent?.inputType === 'insertText' &&
+      /^[A-Za-z]$/.test(String(inputEvent.data || '')) &&
+      caret > 0
+    ) {
+      lastPlainInputRef.current = {
+        text: nextValue,
+        caret,
+        data: String(inputEvent.data),
+        at: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+      };
+    } else {
+      lastPlainInputRef.current = null;
+    }
     onChange(nextValue, nextMentions);
     if (composingRef.current) return;
-    openFromCaret(nextValue, caret);
+    openFromCaret(nextValue, caret, nextMentions);
+  };
+
+  const flushEditorToData = () => {
+    const el = localRef.current;
+    if (!el) return null;
+    const caret = getCaretPlainOffset(el);
+    const { text, mentions: nextMentions } = readRichEditor(el, mentions);
+    onChange(text, nextMentions);
+    return { text, mentions: nextMentions, caret };
   };
 
   const selectMaterial = (material: Material) => {
@@ -476,6 +568,7 @@ const MentionPromptInput = ({
   };
 
   const activeMaterial = filteredMaterials[Math.min(queryState.activeIndex, Math.max(0, filteredMaterials.length - 1))];
+  const fillLayout = fillHeight || !expandable;
 
   const popup =
     queryState.open && popupRect && typeof document !== 'undefined'
@@ -574,7 +667,7 @@ const MentionPromptInput = ({
                         ) : material.kind === 'audio' ? (
                           <Music size={18} />
                         ) : (
-                          <ImageIcon size={18} />
+                          <span style={{ fontSize: 13, fontWeight: 900 }}>T</span>
                         )}
                       </span>
                       <span style={{ minWidth: 0 }}>
@@ -597,8 +690,12 @@ const MentionPromptInput = ({
       : null;
 
   return (
-    <div className={`nodrag nowheel ${expandable ? '' : 'flex h-full min-h-0 flex-col'}`}>
-      <div className={expandable ? 'relative' : 'relative flex min-h-0 flex-1 flex-col'}>
+    <div
+      className={`nodrag nowheel ${
+        fillHeight ? 'flex min-h-0 flex-1 flex-col' : expandable ? '' : 'flex h-full min-h-0 flex-col'
+      }`}
+    >
+      <div className={fillLayout ? 'relative flex min-h-0 flex-1 flex-col' : 'relative'}>
         <div
           ref={setEditorRef}
           contentEditable
@@ -608,7 +705,23 @@ const MentionPromptInput = ({
           tabIndex={0}
           data-placeholder={placeholder || ''}
           onInput={handleEditorInput}
+          onBeforeInput={(event) => {
+            if (isImeCompositionInput(event.nativeEvent)) composingRef.current = true;
+          }}
           onCompositionStart={() => {
+            const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            const lastPlain = lastPlainInputRef.current;
+            compositionLeakRef.current =
+              lastPlain &&
+              now - lastPlain.at < 450 &&
+              /^[A-Za-z]$/.test(lastPlain.data) &&
+              lastPlain.text.slice(lastPlain.caret - lastPlain.data.length, lastPlain.caret) === lastPlain.data
+                ? {
+                    start: lastPlain.caret - lastPlain.data.length,
+                    end: lastPlain.caret,
+                    data: lastPlain.data,
+                  }
+                : null;
             composingRef.current = true;
             setQueryState((s) => ({ ...s, open: false }));
           }}
@@ -617,36 +730,63 @@ const MentionPromptInput = ({
             window.setTimeout(() => {
               if (!el) return;
               composingRef.current = false;
-              const caret = getCaretPlainOffset(el);
-              const { text, mentions: nextMentions } = readRichEditor(el, mentions);
-              onChange(text, nextMentions);
+              const flushed = flushEditorToData();
+              if (!flushed) return;
+              const fixed = stripCompositionLeak(flushed.text, flushed.mentions, compositionLeakRef.current);
+              compositionLeakRef.current = null;
+              lastPlainInputRef.current = null;
+              const text = fixed.changed ? fixed.text : flushed.text;
+              const nextMentions = fixed.changed ? fixed.mentions : flushed.mentions;
+              const caret = Math.max(0, flushed.caret + fixed.caretDelta);
+              if (fixed.changed) onChange(text, nextMentions);
               pendingCaretRef.current = caret;
-              openFromCaret(text, caret);
-            }, 0);
+              openFromCaret(text, caret, nextMentions);
+            }, 16);
           }}
           onFocus={() => {
             setIsFocused(true);
           }}
           onClick={() => {
-            const el = localRef.current;
-            if (!el || composingRef.current) return;
-            openFromCaret(value, getCaretPlainOffset(el));
+            openFromEditor();
           }}
           onKeyUp={(e) => {
             const el = localRef.current;
             if (!el) return;
-            if (composingRef.current || e.nativeEvent.isComposing) return;
+            if (composingRef.current || isImeKeyboardEvent(e.nativeEvent)) return;
             if (['Escape', 'Enter', 'Tab', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
-            const { text } = readRichEditor(el, mentions);
-            openFromCaret(text, getCaretPlainOffset(el));
+            const { text, mentions: nextMentions } = readRichEditor(el, mentions);
+            openFromCaret(text, getCaretPlainOffset(el), nextMentions);
           }}
           onKeyDown={(e) => {
-            if (composingRef.current || e.nativeEvent.isComposing) return;
+            if (isImeKeyboardEvent(e.nativeEvent)) {
+              composingRef.current = true;
+              setQueryState((s) => ({ ...s, open: false }));
+              return;
+            }
+            if (composingRef.current) return;
             if (expandable && matchesAnyShortcut(expandShortcuts, e.nativeEvent)) {
               e.preventDefault();
               e.stopPropagation();
               openExpanded();
               return;
+            }
+            if (
+              onSubmit &&
+              e.key === 'Enter' &&
+              !e.shiftKey &&
+              !e.altKey &&
+              !e.ctrlKey &&
+              !e.metaKey &&
+              !queryState.open
+            ) {
+              e.preventDefault();
+              e.stopPropagation();
+              const flushed = flushEditorToData();
+              onSubmit(flushed?.text ?? value, flushed?.mentions ?? mentions);
+              return;
+            }
+            if (e.key === '@' || e.key === '＠') {
+              window.setTimeout(openFromEditor, 0);
             }
             if (!queryState.open) return;
             if (e.key === 'Escape') {
@@ -670,6 +810,8 @@ const MentionPromptInput = ({
             }
           }}
           onBlur={() => {
+            composingRef.current = false;
+            flushEditorToData();
             setIsFocused(false);
             window.setTimeout(() => setQueryState((s) => ({ ...s, open: false })), 120);
           }}
@@ -684,8 +826,8 @@ const MentionPromptInput = ({
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
             overflowY: 'auto',
-            height: expandable ? style?.height : '100%',
-            minHeight: expandable ? (style?.minHeight ?? 56) : '100%',
+            height: fillLayout ? '100%' : style?.height,
+            minHeight: fillLayout ? 0 : (style?.minHeight ?? 56),
             lineHeight: 1.45,
             caretColor: 'currentColor',
             cursor: 'text',

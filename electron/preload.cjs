@@ -4,6 +4,20 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('t8pc', {
   getInfo: () => ipcRenderer.invoke('t8pc:get-info'),
   openExternal: (url) => ipcRenderer.invoke('t8pc:open-external', url),
+  openPath: (targetPath) => ipcRenderer.invoke('t8pc:open-path', targetPath),
+  dragFileOut: (payload) => ipcRenderer.send('t8pc:drag-file-out', {
+    url: typeof payload?.url === 'string' ? payload.url : '',
+    path: typeof payload?.path === 'string' ? payload.path : '',
+    filename: typeof payload?.filename === 'string' ? payload.filename : '',
+    kind: typeof payload?.kind === 'string' ? payload.kind : '',
+    requestId: typeof payload?.requestId === 'string' ? payload.requestId.slice(0, 120) : '',
+  }),
+  onDragFileOutStatus: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('t8pc:drag-file-out-status', listener);
+    return () => ipcRenderer.removeListener('t8pc:drag-file-out-status', listener);
+  },
   parseAuth: {
     login: (profileId) => ipcRenderer.invoke('t8pc:parse-auth:login', profileId),
     getCookie: (profileId) => ipcRenderer.invoke('t8pc:parse-auth:get-cookie', profileId),

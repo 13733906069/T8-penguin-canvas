@@ -1,11 +1,14 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps, type ResizeParams } from '@xyflow/react';
 import { Hash, Type } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import ResizableCorners from './ResizableCorners';
 import { getCornerResizeBehavior } from '../../utils/nodeResizeBehavior';
 import { normalizeRhNodeId } from '../../utils/rhTextBinding';
-import PromptTextarea from '../PromptTextarea';
+import MentionPromptInput from './MentionPromptInput';
+import { resolveMediaMentions, type MediaMention } from './mediaMentions';
+import { useDownstreamMediaMaterials, useUpstreamMaterials, type Material } from './useUpstreamMaterials';
+import { useThemeStore } from '../../stores/theme';
 
 /**
  * 文本节点 - 提示词输入
@@ -18,12 +21,43 @@ import PromptTextarea from '../PromptTextarea';
  *       测量异常 (measured.width=0 → NodeResizeControl 算出 aspectRatio=0 → 只能纵向拉大) 的问题。
  *       同时 root 始终有具体 px → wrapper measured 准确 → handleBounds 准确, 连线稳定。
  */
+function uniqueMentionMaterials(materials: Material[]): Material[] {
+  const seen = new Set<string>();
+  return materials.filter((material) => {
+    const key = `${material.kind}:${material.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 const TextNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const updateNodeInternals = useUpdateNodeInternals();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const syncRafRef = useRef<{ first?: number; second?: number }>({});
-  const text = ((data as any)?.prompt as string) || '';
+  const d = data as any;
+  const text = (d?.prompt as string) || '';
+  const promptMentions: MediaMention[] = Array.isArray(d?.promptMentions) ? d.promptMentions : [];
+  const upstream = useUpstreamMaterials(id);
+  const downstreamMedia = useDownstreamMediaMaterials(id);
+  const mentionMaterials = useMemo(
+    () => uniqueMentionMaterials([
+      ...upstream.images,
+      ...upstream.videos,
+      ...upstream.audios,
+      ...downstreamMedia,
+      ...upstream.texts,
+    ]),
+    [upstream.images, upstream.videos, upstream.audios, downstreamMedia, upstream.texts],
+  );
+  const resolvedPrompt = useMemo(
+    () => resolveMediaMentions(text, promptMentions, mentionMaterials),
+    [text, promptMentions, mentionMaterials],
+  );
+  const { theme, style } = useThemeStore();
+  const isDark = theme === 'dark';
+  const isPixel = style === 'pixel';
   const rhNodeIdRaw = String((data as any)?.rhNodeId ?? '');
   const rhNodeId = normalizeRhNodeId(rhNodeIdRaw);
   const resizeBehavior = getCornerResizeBehavior('text');
@@ -63,6 +97,14 @@ const TextNode = ({ id, data, selected }: NodeProps) => {
   }, [syncNodeInternals]);
 
   useLayoutEffect(() => syncNodeInternals(), [selected, size.w, size.h, syncNodeInternals]);
+
+  useEffect(() => {
+    if (!promptMentions.length) {
+      if (d?.promptResolved) update({ promptResolved: '' });
+      return;
+    }
+    if (d?.promptResolved !== resolvedPrompt) update({ promptResolved: resolvedPrompt });
+  }, [d?.promptResolved, promptMentions.length, resolvedPrompt, update]);
 
   const handleResize = useCallback(
     (_e: unknown, params: ResizeParams) => {
@@ -104,6 +146,22 @@ const TextNode = ({ id, data, selected }: NodeProps) => {
         onResizeEnd={() => syncNodeInternals()}
       />
       <Handle
+        type="target"
+        position={Position.Left}
+        className="!bg-sky-400 !border-0"
+        style={{
+          top: '50%',
+          left: -5,
+          width: 10,
+          height: 10,
+          minWidth: 10,
+          minHeight: 10,
+          transform: 'translateY(-50%)',
+          zIndex: 12,
+          pointerEvents: 'all',
+        }}
+      />
+      <Handle
         type="source"
         position={Position.Right}
         className="!bg-sky-400 !border-0"
@@ -131,24 +189,30 @@ const TextNode = ({ id, data, selected }: NodeProps) => {
         <span className="text-[10px] text-white/30">prompt</span>
       </div>
 
-      <div className={`p-2.5 flex flex-col ${size.h ? 'flex-1 min-h-0' : ''}`}>
-        <PromptTextarea
+      <div className={`p-2.5 flex flex-col ${size.h ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
+        <MentionPromptInput
           title="文本节点 Prompt"
           value={text}
-          onValueChange={(value) => update({ prompt: value })}
+          mentions={promptMentions}
+          materials={mentionMaterials}
+          onChange={(value, mentions) => update({
+            prompt: value,
+            text: value,
+            promptMentions: mentions,
+            promptResolved: resolveMediaMentions(value, mentions, mentionMaterials),
+          })}
           placeholder="输入提示词..."
           promptTemplateKind="image"
-          autoCorrect="off"
-          autoCapitalize="off"
-          containerClassName={`relative ${size.h ? 'flex flex-col flex-1 min-h-0' : ''}`}
+          isDark={isDark}
+          isPixel={isPixel}
+          expandable
+          fillHeight={!!size.h}
           className={`w-full resize-none rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-white/30 placeholder:text-white/30 nodrag nowheel ${
-            size.h ? 'flex-1 min-h-[72px]' : 'h-24'
+            size.h ? 'min-h-0 flex-1' : 'h-24'
           }`}
-          // 阻止 reactflow 拖拽冒泡
-          onMouseDown={(e) => e.stopPropagation()}
         />
         <div className="text-[10px] text-white/30 mt-1 flex items-center gap-2 shrink-0">
-          <span className="shrink-0" title="输出到下游节点">{text.length} 字符</span>
+          <span className="shrink-0" title="输出到下游节点">{resolvedPrompt.length} 字符{promptMentions.length ? ` · @${promptMentions.length}` : ''}</span>
           <label
             className="ml-auto flex items-center gap-1 nodrag nowheel"
             title="可选：填 RH 应用 nodeInfoList 里的节点序号，下游 RH 节点会按这个 RH# 自动绑定文本参数"

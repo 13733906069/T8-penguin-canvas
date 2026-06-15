@@ -328,20 +328,43 @@ function normalizeDb(raw) {
   const items = Array.isArray(db.items) ? db.items : [];
   const catMap = new Map();
 
-  for (const c of [...defaults, ...categories]) {
+  const normalizeCategory = (c, fallbackOrder = catMap.size) => {
     const kind = normalizeKind(c?.kind);
     const name = safeText(c?.name);
-    if (!kind || !name) continue;
+    if (!kind || !name) return null;
     const id = safeText(c?.id, genId('rescat')).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 96) || genId('rescat');
-    if (catMap.has(id)) continue;
-    catMap.set(id, {
+    return {
       id,
       kind,
       name,
-      order: Number.isFinite(Number(c?.order)) ? Number(c.order) : catMap.size,
+      order: Number.isFinite(Number(c?.order)) ? Number(c.order) : fallbackOrder,
       system: !!c?.system || id.endsWith('_uncategorized'),
       createdAt: Number(c?.createdAt) || now(),
-    });
+    };
+  };
+
+  for (const c of defaults) {
+    const normalized = normalizeCategory(c);
+    if (!normalized || catMap.has(normalized.id)) continue;
+    catMap.set(normalized.id, normalized);
+  }
+
+  for (const c of categories) {
+    const normalized = normalizeCategory(c);
+    if (!normalized) continue;
+    const existing = catMap.get(normalized.id);
+    if (existing) {
+      if (existing.kind !== normalized.kind) continue;
+      catMap.set(normalized.id, {
+        ...existing,
+        name: normalized.name,
+        order: Number.isFinite(Number(c?.order)) ? normalized.order : existing.order,
+        system: existing.system || normalized.system,
+        createdAt: normalized.createdAt || existing.createdAt,
+      });
+      continue;
+    }
+    catMap.set(normalized.id, normalized);
   }
 
   const normalizedCategories = Array.from(catMap.values())

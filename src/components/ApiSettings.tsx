@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, CloudUpload, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog } from 'lucide-react';
+import { ChevronDown, ChevronRight, CloudUpload, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog, Volume2 } from 'lucide-react';
 import { useApiKeysStore, FIXED_ZHENZHEN_BASE, RH_BASE } from '../stores/apiKeys';
+import { taskCompletionSound as taskCompletionSoundController } from '../stores/taskCompletionSound';
 import { useThemeStore } from '../stores/theme';
 import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings, CloudUploadProvider, CloudUploadTargetConfig } from '../types/canvas';
-import { getRawSettings, testAdvancedProvider, testCloudUploadTarget } from '../services/api';
+import { getRawSettings, resetTaskCompletionSound, testAdvancedProvider, testCloudUploadTarget, uploadTaskCompletionSound } from '../services/api';
+import { playTaskCompletionSound } from '../utils/taskCompletionSound';
 import {
   advancedProviderSummary as summarizeAdvancedProviderForm,
   normalizeModelscopeLoraStrength,
@@ -17,12 +19,15 @@ import {
   analyzeComfyWorkflow,
   buildComfyWorkflowImportChecklist,
   canonicalizeComfyFieldsByWorkflow,
+  createComfyFieldExcludeRulesBackup,
   filterComfyFieldsByExcludeRules,
   parseComfyFieldExcludeRules,
+  parseComfyFieldExcludeRulesBackup,
   stringifyBasicComfyTextToImageWorkflow,
   type ComfyFieldMapping,
 } from '../utils/comfyuiWorkflow';
 import PromptTextarea from './PromptTextarea';
+import { LocalSettingsAddonSlot } from 'virtual:t8-local-extensions';
 
 interface ApiSettingsModalProps {
   open: boolean;
@@ -38,6 +43,7 @@ type KeyField =
   | 'nanoBananaApiKey'
   | 'mjApiKey'
   | 'veoApiKey'
+  | 'soraApiKey'
   | 'grokApiKey'
   | 'seedanceApiKey'
   | 'sunoApiKey';
@@ -59,7 +65,8 @@ const CLASSIFIED_KEYS: KeySpec[] = [
   { field: 'gptImageApiKey', label: 'gpt-image 系列', desc: 'GPT2 / gpt-image-1 等图像任务专用', bullet: 'bg-pink-400' },
   { field: 'nanoBananaApiKey', label: 'nano-banana 系列', desc: 'nano-banana / nano-banana-pro 专用', bullet: 'bg-yellow-400' },
   { field: 'mjApiKey', label: 'mj 系列', desc: 'Midjourney (turbo/fast/relax) 专用', bullet: 'bg-purple-400' },
-  { field: 'veoApiKey', label: 'veo / sora 系列', desc: 'Veo / Veo3.1 / Sora2 视频专用', bullet: 'bg-blue-400' },
+  { field: 'veoApiKey', label: 'veo 系列', desc: 'Veo 系列视频专用', bullet: 'bg-blue-400' },
+  { field: 'soraApiKey', label: 'sora2 系列', desc: 'Sora2 FAL / Zhenzhen API 视频专用', bullet: 'bg-sky-400' },
   { field: 'grokApiKey', label: 'grok 系列', desc: 'Grok Image / Grok Imagine Video 专用', bullet: 'bg-orange-400' },
   { field: 'seedanceApiKey', label: 'seedance 系列', desc: 'Seedance 视频专用', bullet: 'bg-teal-400' },
   { field: 'sunoApiKey', label: 'suno 系列', desc: 'Suno 音乐专用', bullet: 'bg-rose-400' },
@@ -85,7 +92,7 @@ const ADVANCED_PROVIDER_LABELS: Record<AdvancedProviderProtocol, string> = {
   'openai-compatible': 'OpenAI 兼容',
   modelscope: 'ModelScope',
   volcengine: '火山引擎',
-  comfyui: '本地 ComfyUI',
+  comfyui: 'ComfyUI',
   'jimeng-cli': '即梦 CLI',
 };
 
@@ -118,18 +125,18 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
   },
   volcengine: {
     subtitle: '接入火山方舟 / Seedream / Seedance',
-    description: '适合用火山引擎做 Seedream 图像、Seedance 视频或方舟聊天模型。只在节点里选择高级来源时才会走这里。',
+    description: '适合用火山引擎做 Seedream 图像、Seedance 视频或方舟聊天模型。生成调用使用方舟 Ark API Key，不使用 Access Key ID / Secret Access Key；使用 Seedance2.0 前需要先在火山方舟控制台开通对应模型服务。',
     nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
-    connectionHint: 'Base URL 填火山方舟 API 地址；常规生成使用 API Key，素材上传能力可补充 AK/SK。',
-    modelHint: '图像、视频、聊天模型分别按火山控制台里的模型接入点填写，每行一个。',
+    connectionHint: 'Base URL 填火山方舟 API 地址；Seedream / Seedance / LLM 生成必须填方舟 Ark API Key。Access Key ID / Secret Access Key 是另一类凭证，请放到下方火山 AK/SK 高级项。',
+    modelHint: '图像、视频、聊天模型分别按火山控制台里的模型接入点填写，每行一个。Seedance2.0 / Seedance2.0 Fast 如果未在方舟控制台开通，提交会返回 ModelNotOpen / HTTP 404。',
     baseUrlPlaceholder: 'https://ark.cn-beijing.volces.com/api/v3',
-    keyLabel: '火山 API Key',
+    keyLabel: '方舟 Ark API Key（生成用，不是 AK/SK）',
   },
   comfyui: {
-    subtitle: '接入本机 ComfyUI 工作流',
-    description: '适合把本机 ComfyUI 的 API Workflow 接到图像节点。为安全起见这里只允许本机地址。',
+    subtitle: '接入 ComfyUI 工作流',
+    description: '默认适合把本机 ComfyUI 的 API Workflow 接到图像节点；开启高危远端开关或由后端环境启用后，也可接入其他可信 ComfyUI 地址。',
     nodeScopes: ['图像节点'],
-    connectionHint: '实例地址填本机 ComfyUI，例如 http://127.0.0.1:8188。多个实例可一行一个。',
+    connectionHint: '默认填写本机 ComfyUI，例如 http://127.0.0.1:8188；如需其他地址，可开启下方高危开关，或由后端设置 T8_COMFYUI_ALLOW_REMOTE=1。多个实例可一行一个。',
     modelHint: '图像节点里选择的是工作流 ID/名称，不需要填写模型列表。',
     baseUrlPlaceholder: 'http://127.0.0.1:8188',
   },
@@ -138,7 +145,7 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     description: '适合已经在本机配置好即梦 CLI 的用户。它不走 API Key，而是调用本地命令并轮询任务结果。',
     nodeScopes: ['图像节点', '视频节点', 'SD2.0 节点'],
     connectionHint: '填写 dreamina 可执行文件路径；如果 CLI 装在 WSL 里，再打开 WSL 并填写发行版名称。',
-    modelHint: '模型名按 CLI 支持的命令参数填写，例如 seedance2.0fast_vip。每行一个。',
+    modelHint: '模型名按 CLI 支持的命令参数填写；图像可填 seedream-4.7，视频可填 seedance2.0fast_vip、seedance2.0_vip、seedance2.0fast、seedance2.0。每行一个。',
   },
 };
 
@@ -172,14 +179,14 @@ const CLOUD_UPLOAD_GUIDES: Record<CloudUploadProvider, {
     status: '已支持上传',
   },
   'baidu-netdisk': {
-    subtitle: '保留百度网盘配置位，等待稳定 OAuth / PCS 上传方案接入。',
-    description: '后续会优先接入正式授权流程，避免让用户手填不稳定 Cookie 或抓包字段。',
-    status: '规划中',
+    subtitle: '通过 WebDAV 网关上传到百度网盘，适合 Alist / CloudDrive2 / rclone 等挂载方案。',
+    description: '填写 WebDAV 地址、用户名和密码/令牌；配置检查会创建临时目录并上传小文件，确认账号和写入权限真实可用。',
+    status: '已支持上传',
   },
   'quark-netdisk': {
-    subtitle: '保留夸克网盘配置位，等待稳定 CLI / 授权方案接入。',
-    description: '后续若接入外部 CLI，会在这里填写命令路径并统一走同一个右键上传入口。',
-    status: '实验位',
+    subtitle: '通过 WebDAV 网关上传到夸克网盘，避免依赖不稳定 Cookie 抓包接口。',
+    description: '填写 WebDAV 地址、用户名和密码/令牌；推荐先在 WebDAV 客户端确认可写，再在这里点配置检查。',
+    status: '已支持上传',
   },
 };
 
@@ -193,10 +200,10 @@ function summarizeCloudUploadForm(targets: CloudUploadTargetConfig[]) {
       return !!(target.aliyunOss?.bucket && target.aliyunOss?.endpoint && (target.aliyunOss?.accessKeyId || target.aliyunOss?.hasAccessKeyId) && (target.aliyunOss?.accessKeySecret || target.aliyunOss?.hasAccessKeySecret));
     }
     if (target.provider === 'baidu-netdisk') {
-      return !!(target.baiduNetdisk?.accessToken || target.baiduNetdisk?.hasAccessToken || target.baiduNetdisk?.refreshToken || target.baiduNetdisk?.hasRefreshToken);
+      return !!target.baiduNetdisk?.webdavUrl;
     }
     if (target.provider === 'quark-netdisk') {
-      return !!(target.quarkNetdisk?.commandPath || target.quarkNetdisk?.cookie || target.quarkNetdisk?.hasCookie);
+      return !!target.quarkNetdisk?.webdavUrl;
     }
     return false;
   }).length;
@@ -249,13 +256,23 @@ function AdvancedProviderFormBlock({
 const emptyMap = (): Record<KeyField, string> => ({
   zhenzhenApiKey: '', rhApiKey: '', llmApiKey: '',
   gptImageApiKey: '', nanoBananaApiKey: '', mjApiKey: '', veoApiKey: '',
-  grokApiKey: '', seedanceApiKey: '', sunoApiKey: '',
+  soraApiKey: '', grokApiKey: '', seedanceApiKey: '', sunoApiKey: '',
 });
 const emptyShow = (): Record<KeyField, boolean> => ({
   zhenzhenApiKey: false, rhApiKey: false, llmApiKey: false,
   gptImageApiKey: false, nanoBananaApiKey: false, mjApiKey: false, veoApiKey: false,
-  grokApiKey: false, seedanceApiKey: false, sunoApiKey: false,
+  soraApiKey: false, grokApiKey: false, seedanceApiKey: false, sunoApiKey: false,
 });
+
+function formatCloudError(error: string, data?: any) {
+  const parts = [
+    error,
+    data?.hint,
+    data?.providerCode ? `Code: ${data.providerCode}` : '',
+    data?.requestId ? `RequestId: ${data.requestId}` : '',
+  ].filter(Boolean);
+  return parts.join('；');
+}
 
 export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProps) {
   const { theme, style } = useThemeStore();
@@ -265,6 +282,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   const [inputs, setInputs] = useState<Record<KeyField, string>>(emptyMap());
   const [shows, setShows] = useState<Record<KeyField, boolean>>(emptyShow());
+  const [clearedFields, setClearedFields] = useState<Partial<Record<KeyField, boolean>>>({});
   const [saved, setSaved] = useState(false);
   // v1.2.10.2: 文件自动保存路径输入
   const [fileSavePathInput, setFileSavePathInput] = useState<string>('');
@@ -290,7 +308,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [cloudUploadDirty, setCloudUploadDirty] = useState(false);
   const [cloudTestStatus, setCloudTestStatus] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({});
   const [backupMessage, setBackupMessage] = useState<string>('');
+  const [taskSoundMessage, setTaskSoundMessage] = useState<string>('');
+  const [taskSoundBusy, setTaskSoundBusy] = useState(false);
+  const [taskSoundTesting, setTaskSoundTesting] = useState(false);
   const backupFileInputRef = useRef<HTMLInputElement | null>(null);
+  const taskCompletionSoundFileInputRef = useRef<HTMLInputElement | null>(null);
   // 眼睛预览拉取的明文（仅缓存，不提交）
   const revealedRef = useRef<Partial<Record<KeyField, string>>>({});
 
@@ -303,6 +325,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     if (open) {
       setInputs(emptyMap());
       setShows(emptyShow());
+      setClearedFields({});
       revealedRef.current = {};
       setSaved(false);
       setBackupMessage('');
@@ -324,6 +347,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setActiveCloudTargetId(cloudTargets[0]?.id || '');
       setCloudUploadDirty(false);
       setCloudTestStatus({});
+      setTaskSoundMessage('');
+      setTaskSoundBusy(false);
+      setTaskSoundTesting(false);
       // 回填文件自动保存路径(明文字段，不脱敏)
       setFileSavePathInput((settings as any)?.fileSavePath || '');
       setCanvasAutoSavePathInput((settings as any)?.canvasAutoSavePath || '');
@@ -337,6 +363,14 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   const setInputAt = (f: KeyField, v: string) => {
     setInputs((prev) => ({ ...prev, [f]: v }));
+    if (v.trim()) {
+      setClearedFields((prev) => {
+        if (!prev[f]) return prev;
+        const next = { ...prev };
+        delete next[f];
+        return next;
+      });
+    }
   };
 
   const getCurrentEditableSettings = (): Partial<ApiSettings> => ({
@@ -347,6 +381,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     nanoBananaApiKey: inputs.nanoBananaApiKey.trim(),
     mjApiKey: inputs.mjApiKey.trim(),
     veoApiKey: inputs.veoApiKey.trim(),
+    soraApiKey: inputs.soraApiKey.trim(),
     grokApiKey: inputs.grokApiKey.trim(),
     seedanceApiKey: inputs.seedanceApiKey.trim(),
     sunoApiKey: inputs.sunoApiKey.trim(),
@@ -454,6 +489,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       return nextInputs;
     });
     setShows(emptyShow());
+    setClearedFields({});
     revealedRef.current = {};
     if (typeof patch.fileSavePath === 'string') setFileSavePathInput(patch.fileSavePath);
     if (typeof patch.canvasAutoSavePath === 'string') setCanvasAutoSavePathInput(patch.canvasAutoSavePath);
@@ -498,6 +534,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   // 眼睛点击: 如果要切为“显示”且当前 input 为空但后端已存在 key,
   // 调 /api/settings/raw 拿明文填充。
   const handleToggleShow = async (f: KeyField) => {
+    if (clearedFields[f]) {
+      setClearedFields((prev) => {
+        const next = { ...prev };
+        delete next[f];
+        return next;
+      });
+    }
     const newShow = !shows[f];
     if (newShow && !inputs[f].trim() && (settings as any)[f]) {
       try {
@@ -514,9 +557,33 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     setShows((prev) => ({ ...prev, [f]: newShow }));
   };
 
+  const handleClearClassifiedKey = (f: KeyField) => {
+    if (clearedFields[f]) {
+      setClearedFields((prev) => {
+        const next = { ...prev };
+        delete next[f];
+        return next;
+      });
+      return;
+    }
+    setInputs((prev) => ({ ...prev, [f]: '' }));
+    setShows((prev) => ({ ...prev, [f]: false }));
+    if (revealedRef.current) {
+      delete (revealedRef.current as any)[f];
+    }
+    const hasSaved = !!String((settings as any)?.[f] || '').trim();
+    if (hasSaved) {
+      setClearedFields((prev) => ({ ...prev, [f]: true }));
+    }
+  };
+
   const handleSave = async () => {
     const patch: Partial<ApiSettings> = {};
     for (const f of ALL_FIELDS) {
+      if (clearedFields[f]) {
+        (patch as any)[f] = '';
+        continue;
+      }
       const v = inputs[f].trim();
       if (!v) continue;
       // 眼睛拉出明文未修改 → 跳过，不走一道上行请求
@@ -561,6 +628,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       return;
     }
     await save(patch);
+    setClearedFields({});
     setSaved(true);
     setTimeout(() => {
       setSaved(false);
@@ -602,6 +670,71 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch {
       // 志忘
+    }
+  };
+
+  const isTaskCompletionSoundFile = (file: File): boolean => {
+    const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
+    return file.type.startsWith('audio/') || ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.webm'].includes(ext);
+  };
+
+  const formatTaskCompletionSoundSize = (size?: number): string => {
+    const n = Number(size || 0);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(n / 1024))} KB`;
+  };
+
+  const refreshTaskCompletionSoundSettings = async () => {
+    await load();
+    await taskCompletionSoundController.refreshSettings();
+  };
+
+  const handleTaskCompletionSoundUpload = async (file: File | null) => {
+    if (!file) return;
+    if (!isTaskCompletionSoundFile(file)) {
+      setTaskSoundMessage('请选择音频文件：mp3 / wav / ogg / m4a / aac / flac / webm。');
+      if (taskCompletionSoundFileInputRef.current) taskCompletionSoundFileInputRef.current.value = '';
+      return;
+    }
+    setTaskSoundBusy(true);
+    setTaskSoundMessage('');
+    try {
+      const result = await uploadTaskCompletionSound(file);
+      await refreshTaskCompletionSoundSettings();
+      const sizeLabel = formatTaskCompletionSoundSize(result.size || file.size);
+      setTaskSoundMessage(`已使用自定义提示音：${result.name || file.name}${sizeLabel ? ` · ${sizeLabel}` : ''}`);
+    } catch (e: any) {
+      setTaskSoundMessage(e?.message || '上传提示音失败');
+    } finally {
+      setTaskSoundBusy(false);
+      if (taskCompletionSoundFileInputRef.current) taskCompletionSoundFileInputRef.current.value = '';
+    }
+  };
+
+  const handleResetTaskCompletionSound = async () => {
+    setTaskSoundBusy(true);
+    setTaskSoundMessage('');
+    try {
+      await resetTaskCompletionSound();
+      await refreshTaskCompletionSoundSettings();
+      setTaskSoundMessage('已恢复默认任务完成提示音。');
+    } catch (e: any) {
+      setTaskSoundMessage(e?.message || '恢复默认提示音失败');
+    } finally {
+      setTaskSoundBusy(false);
+    }
+  };
+
+  const handlePreviewTaskCompletionSound = async () => {
+    setTaskSoundTesting(true);
+    setTaskSoundMessage('');
+    try {
+      await playTaskCompletionSound((settings as any)?.taskCompletionSound);
+    } catch (e: any) {
+      setTaskSoundMessage(e?.message || '试听提示音失败，请先与页面交互后重试。');
+    } finally {
+      setTaskSoundTesting(false);
     }
   };
 
@@ -652,6 +785,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const activeCloudTarget = cloudUploadTargetsInput.find((target) => target.id === activeCloudTargetId)
     || cloudUploadTargetsInput[0]
     || null;
+  const taskCompletionSoundSettings = (settings as any)?.taskCompletionSound || { mode: 'default', url: '' };
+  const hasCustomTaskCompletionSound = taskCompletionSoundSettings.mode === 'custom' && !!taskCompletionSoundSettings.url;
+  const taskCompletionSoundSizeLabel = formatTaskCompletionSoundSize(taskCompletionSoundSettings.size);
 
   const updateAdvancedProvider = (id: string, patch: Partial<AdvancedProviderConfig>) => {
     setAdvancedProvidersInput((prev) => prev.map((provider) => (
@@ -727,7 +863,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           ok: result.success ? result.data.ok : false,
           message: result.success
             ? (result.data.message || '配置可用')
-            : (result.error || '配置检查失败'),
+            : formatCloudError(result.error || '配置检查失败', result.data),
         },
       }));
     } catch (e: any) {
@@ -754,7 +890,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const smallPillCls = isPixel
       ? 't8-api-settings-pill inline-flex items-center px-1.5 py-0.5 border text-[10px] font-bold'
       : 't8-api-settings-pill inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] font-semibold';
-    const supported = target.provider === 'tencent-cos' || target.provider === 'aliyun-oss';
+    const supported = true;
     const test = cloudTestStatus[target.id];
     return (
       <div className={sectionCls}>
@@ -848,17 +984,19 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 placeholder="t8-canvas/{kind}/{yyyy-mm}"
               />
             </label>
-            {supported && (
-              <label className="space-y-1 lg:col-span-2">
-                <span className={`text-[11px] ${labelCls}`}>公共域名（可选）</span>
-                <input
-                  value={target.publicBaseUrl || ''}
-                  onChange={(e) => updateCloudTarget(target.id, { publicBaseUrl: e.target.value })}
-                  className={fieldInputCls}
-                  placeholder="https://cdn.example.com/path · 留空返回默认对象 URL"
-                />
-              </label>
-            )}
+            <label className="space-y-1 lg:col-span-2">
+              <span className={`text-[11px] ${labelCls}`}>公共域名（可选）</span>
+              <input
+                value={target.publicBaseUrl || ''}
+                onChange={(e) => updateCloudTarget(target.id, { publicBaseUrl: e.target.value })}
+                className={fieldInputCls}
+                placeholder={
+                  target.provider === 'tencent-cos' || target.provider === 'aliyun-oss'
+                    ? 'https://cdn.example.com/path · 留空返回默认对象 URL'
+                    : 'https://cdn.example.com/path · 留空返回 WebDAV 文件地址'
+                }
+              />
+            </label>
           </div>
         </AdvancedProviderFormBlock>
 
@@ -868,7 +1006,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             labelClassName={labelCls}
             hintClassName={hintCls}
             title="2. 腾讯云 COS"
-            note="SecretId / SecretKey 留空或保留 **** 表示不覆盖后端已保存密钥。"
+            note="SecretId / SecretKey 留空或保留 **** 表示不覆盖后端已保存密钥；SecretKey 只在创建密钥时显示一次。"
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <label className="space-y-1">
@@ -909,6 +1047,28 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   placeholder={target.tencentCos?.hasSecretKey ? '留空保持不变' : '请输入 SecretKey'}
                 />
               </label>
+            </div>
+            <div className={`text-[11px] leading-relaxed ${hintCls}`}>
+              <div className="font-bold">控制台入口</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                <a
+                  href="https://console.cloud.tencent.com/cam/capi"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 underline"
+                >
+                  腾讯云 API 控制台 <ExternalLink size={11} />
+                </a>
+                <a
+                  href="https://console.cloud.tencent.com/lighthouse/cos/index?rid=5"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 underline"
+                >
+                  腾讯云对象存储 <ExternalLink size={11} />
+                </a>
+              </div>
+              <div>提醒：腾讯云 SecretKey 只会在新建密钥时显示一次，后续列表只能看到 SecretId，找不到就需要新建一组密钥。</div>
             </div>
           </AdvancedProviderFormBlock>
         )}
@@ -961,6 +1121,28 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 />
               </label>
             </div>
+            <div className={`text-[11px] leading-relaxed ${hintCls}`}>
+              <div className="font-bold">控制台入口</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                <a
+                  href="https://ram.console.aliyun.com/manage/ak"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 underline"
+                >
+                  阿里云 AccessKey 控制台 <ExternalLink size={11} />
+                </a>
+                <a
+                  href="https://oss.console.aliyun.com/bucket"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 underline"
+                >
+                  阿里云对象存储 OSS <ExternalLink size={11} />
+                </a>
+              </div>
+              <div>提醒：阿里云 AccessKey Secret 只会在创建时显示一次，后续找不到明文时需要新建或改用已保存的密钥。</div>
+            </div>
           </AdvancedProviderFormBlock>
         )}
 
@@ -969,39 +1151,50 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             className={formBlockCls}
             labelClassName={labelCls}
             hintClassName={hintCls}
-            title="2. 百度网盘（预留）"
-            note="第一版不执行真实上传，字段用于后续 OAuth / PCS 接入时平滑迁移。"
+            title="2. 百度网盘 WebDAV"
+            note="百度网盘官方直传需要开放平台授权；当前推荐用 Alist / CloudDrive2 / rclone 把百度网盘挂成 WebDAV 后上传。"
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <label className="space-y-1 lg:col-span-2">
+                <span className={`text-[11px] ${labelCls}`}>WebDAV 地址</span>
+                <input
+                  value={target.baiduNetdisk?.webdavUrl || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { webdavUrl: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="http://127.0.0.1:5244/dav/百度网盘"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>用户名</span>
+                <input
+                  value={target.baiduNetdisk?.username || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { username: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="WebDAV 用户名，可留空"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>密码 / 令牌</span>
+                <input
+                  type="password"
+                  value={target.baiduNetdisk?.password || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { password: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.baiduNetdisk?.hasPassword ? '留空保持不变' : 'WebDAV 密码或访问令牌'}
+                />
+              </label>
               <label className="space-y-1 lg:col-span-2">
                 <span className={`text-[11px] ${labelCls}`}>网盘目录</span>
                 <input
                   value={target.baiduNetdisk?.folder || ''}
                   onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { folder: e.target.value })}
                   className={fieldInputCls}
-                  placeholder="/apps/T8PenguinCanvas"
+                  placeholder="/T8PenguinCanvas"
                 />
               </label>
-              <label className="space-y-1">
-                <span className={`text-[11px] ${labelCls}`}>Access Token</span>
-                <input
-                  type="password"
-                  value={target.baiduNetdisk?.accessToken || ''}
-                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { accessToken: e.target.value })}
-                  className={fieldInputCls}
-                  placeholder={target.baiduNetdisk?.hasAccessToken ? '留空保持不变' : '后续接入时使用'}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className={`text-[11px] ${labelCls}`}>Refresh Token</span>
-                <input
-                  type="password"
-                  value={target.baiduNetdisk?.refreshToken || ''}
-                  onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { refreshToken: e.target.value })}
-                  className={fieldInputCls}
-                  placeholder={target.baiduNetdisk?.hasRefreshToken ? '留空保持不变' : '后续接入时使用'}
-                />
-              </label>
+            </div>
+            <div className={`text-[11px] leading-relaxed ${hintCls}`}>
+              使用说明：Endpoint 填 WebDAV 根地址，网盘目录填要保存素材的目录。配置检查会创建一个 .t8-upload-check 临时目录，上传 connection.txt 后删除，用来确认真实写入权限。
             </div>
           </AdvancedProviderFormBlock>
         )}
@@ -1011,10 +1204,38 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             className={formBlockCls}
             labelClassName={labelCls}
             hintClassName={hintCls}
-            title="2. 夸克网盘（预留）"
-            note="第一版不执行真实上传，字段用于后续稳定 CLI / 授权方案接入。"
+            title="2. 夸克网盘 WebDAV"
+            note="夸克网盘没有稳定公开直传接口；当前推荐用 Alist / CloudDrive2 / rclone 把夸克挂成 WebDAV 后上传。"
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <label className="space-y-1 lg:col-span-2">
+                <span className={`text-[11px] ${labelCls}`}>WebDAV 地址</span>
+                <input
+                  value={target.quarkNetdisk?.webdavUrl || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { webdavUrl: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="http://127.0.0.1:5244/dav/夸克网盘"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>用户名</span>
+                <input
+                  value={target.quarkNetdisk?.username || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { username: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder="WebDAV 用户名，可留空"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>密码 / 令牌</span>
+                <input
+                  type="password"
+                  value={target.quarkNetdisk?.password || ''}
+                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { password: e.target.value })}
+                  className={fieldInputCls}
+                  placeholder={target.quarkNetdisk?.hasPassword ? '留空保持不变' : 'WebDAV 密码或访问令牌'}
+                />
+              </label>
               <label className="space-y-1">
                 <span className={`text-[11px] ${labelCls}`}>网盘目录</span>
                 <input
@@ -1024,25 +1245,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   placeholder="/T8PenguinCanvas"
                 />
               </label>
-              <label className="space-y-1">
-                <span className={`text-[11px] ${labelCls}`}>外部命令路径</span>
-                <input
-                  value={target.quarkNetdisk?.commandPath || ''}
-                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { commandPath: e.target.value })}
-                  className={fieldInputCls}
-                  placeholder="后续 CLI 接入时使用"
-                />
-              </label>
-              <label className="space-y-1 lg:col-span-2">
-                <span className={`text-[11px] ${labelCls}`}>Cookie / 授权信息（不推荐长期依赖）</span>
-                <input
-                  type="password"
-                  value={target.quarkNetdisk?.cookie || ''}
-                  onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { cookie: e.target.value })}
-                  className={fieldInputCls}
-                  placeholder={target.quarkNetdisk?.hasCookie ? '留空保持不变' : '等待稳定方案后再填写'}
-                />
-              </label>
+            </div>
+            <div className={`text-[11px] leading-relaxed ${hintCls}`}>
+              使用说明：不要在这里粘贴浏览器 Cookie。请先用 WebDAV 网关完成夸克登录，再把网关提供的 WebDAV 地址和账号填到这里。
             </div>
           </AdvancedProviderFormBlock>
         )}
@@ -1149,6 +1354,31 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     };
     const appendComfyExcludeRules = (items: string[]) => {
       updateComfyExcludeRules([...parseComfyFieldExcludeRules(comfyExcludeRulesRaw), ...items].join('\n'));
+    };
+    const exportComfyExcludeRules = () => {
+      const payload = createComfyFieldExcludeRulesBackup(comfyExcludeRulesRaw, `api-settings:${provider.id}`);
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      downloadJson(`t8-comfyui-exclude-rules-${provider.id || 'provider'}-${date}.json`, payload);
+      setAdvancedTestStatus((prev) => ({
+        ...prev,
+        [provider.id]: { ok: true, message: `已导出 ${payload.rules.length} 条 ComfyUI 排除规则` },
+      }));
+    };
+    const handleComfyExcludeRulesFile = (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rules = parseComfyFieldExcludeRulesBackup(String(reader.result || ''));
+        updateComfyExcludeRules(rules.join('\n'));
+        setAdvancedTestStatus((prev) => ({
+          ...prev,
+          [provider.id]: { ok: true, message: `已导入 ${rules.length} 条 ComfyUI 排除规则` },
+        }));
+      };
+      reader.onerror = () => setAdvancedTestStatus((prev) => ({
+        ...prev,
+        [provider.id]: { ok: false, message: '读取排除规则 JSON 文件失败' },
+      }));
+      reader.readAsText(file, 'utf-8');
     };
     const handleComfyWorkflowFile = (file: File) => {
       const reader = new FileReader();
@@ -1386,7 +1616,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             className={formBlockCls}
             labelClassName={labelCls}
             hintClassName={hintCls}
-            title="2. 连接密钥"
+            title={isVolc ? '2. 生成连接密钥' : '2. 连接密钥'}
             note={guide?.connectionHint}
           >
             <label className="space-y-1 block">
@@ -1396,9 +1626,32 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 value={provider.apiKey || ''}
                 onChange={(e) => updateAdvancedProvider(provider.id, { apiKey: e.target.value })}
                 className={fieldInputCls}
-                placeholder={provider.hasApiKey || provider.apiKey ? '留空或保留 **** 表示不覆盖后端密钥' : '请输入 API Key'}
+                placeholder={
+                  provider.hasApiKey || provider.apiKey
+                    ? '留空或保留 **** 表示不覆盖后端密钥'
+                    : isVolc
+                      ? '请输入方舟 Ark API Key，不要填 Access Key ID / Secret'
+                      : '请输入 API Key'
+                }
               />
             </label>
+            {isVolc && (
+              <div className={guideBoxCls}>
+                <div className="font-bold">该填哪个 Key？</div>
+                <p>
+                  图像 Seedream、视频 Seedance 和方舟 LLM 生成使用「方舟 Ark API Key」。
+                  你在火山账号里看到的 Access Key ID / Secret Access Key 不能填在这里，
+                  需要放到下方「火山 AK/SK」高级项；目前它只作为素材签名类能力的预留凭证。
+                </p>
+                <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-400/15 px-3 py-2">
+                  <div className="font-bold">Seedance2.0 开通提醒</div>
+                  <p>
+                    使用 doubao-seedance-2-0-260128 或 doubao-seedance-2-0-fast-260128 前，
+                    需要先在火山方舟控制台开通对应模型服务；未开通时上游会返回 ModelNotOpen / HTTP 404。
+                  </p>
+                </div>
+              </div>
+            )}
             {provider.protocol === 'modelscope' && (
               <div className="flex flex-wrap gap-2">
                 <button
@@ -1427,8 +1680,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             className={formBlockCls}
             labelClassName={labelCls}
             hintClassName={hintCls}
-            title="3. 火山高级项（可选）"
-            note="普通 Ark / Seedream / Seedance 调用通常只需要上面的 API Key。只有需要素材上传或特定项目隔离时，再补充这些字段。"
+            title="3. 火山 AK/SK（可选，素材签名）"
+            note="这里不是生成 Key。普通 Ark / Seedream / Seedance 调用只需要上方的方舟 Ark API Key；AK/SK 仅用于素材上传、私域资产或签名类 OpenAPI。"
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <label className="space-y-1">
@@ -1450,23 +1703,23 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 />
               </label>
               <label className="space-y-1">
-                <span className={`text-[11px] ${labelCls}`}>素材 Access Key ID</span>
+                <span className={`text-[11px] ${labelCls}`}>Access Key ID（AK，素材签名）</span>
                 <input
                   type="password"
                   value={provider.volcengineConfig?.accessKeyId || ''}
                   onChange={(e) => updateAdvancedProviderNested(provider.id, 'volcengineConfig', { accessKeyId: e.target.value })}
                   className={fieldInputCls}
-                  placeholder={provider.volcengineConfig?.hasAccessKeyId ? '留空保持不变' : '可选'}
+                  placeholder={provider.volcengineConfig?.hasAccessKeyId ? '留空保持不变' : '可选，不是方舟 API Key'}
                 />
               </label>
               <label className="space-y-1">
-                <span className={`text-[11px] ${labelCls}`}>素材 Secret Access Key</span>
+                <span className={`text-[11px] ${labelCls}`}>Secret Access Key（SK，素材签名）</span>
                 <input
                   type="password"
                   value={provider.volcengineConfig?.secretAccessKey || ''}
                   onChange={(e) => updateAdvancedProviderNested(provider.id, 'volcengineConfig', { secretAccessKey: e.target.value })}
                   className={fieldInputCls}
-                  placeholder={provider.volcengineConfig?.hasSecretAccessKey ? '留空保持不变' : '可选'}
+                  placeholder={provider.volcengineConfig?.hasSecretAccessKey ? '留空保持不变' : '可选，不是方舟 API Key'}
                 />
               </label>
             </div>
@@ -1494,6 +1747,28 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 className={textareaCls}
                 placeholder={guide?.baseUrlPlaceholder || 'http://127.0.0.1:8188'}
               />
+            </label>
+            <label
+              className={
+                isPixel
+                  ? `t8-api-settings-guide border p-3 flex items-start gap-2 text-[11px] leading-relaxed ${labelCls}`
+                  : `t8-api-settings-guide rounded-lg border p-3 flex items-start gap-2 text-[11px] leading-relaxed ${labelCls}`
+              }
+            >
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!provider.allowRemote}
+                onChange={(e) => updateAdvancedProvider(provider.id, { allowRemote: e.target.checked })}
+              />
+              <span className="min-w-0">
+                <span className="font-black inline-flex items-center gap-1">
+                  <Lock size={11} /> 高危：允许此 ComfyUI 配置访问远端地址
+                </span>
+                <span className={`block mt-1 ${hintCls}`}>
+                  默认关闭，仅允许 127.0.0.1 / localhost。开启后后端会按这里填写的 URL 访问局域网或公网 ComfyUI，请只连接你信任和有权限使用的服务；Docker 也可通过环境变量 T8_COMFYUI_ALLOW_REMOTE=1 统一开启。
+                </span>
+              </span>
             </label>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <label className="space-y-1">
@@ -1562,8 +1837,36 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               />
               <p className={`text-[11px] ${hintCls}`}>不是普通前端 workflow 文件，需要在 ComfyUI 开启 dev mode 后导出的 API workflow。</p>
             </label>
-            <label className="space-y-1 block">
-              <span className={`text-[11px] ${labelCls}`}>自动映射排除规则（可选）</span>
+            <div className="space-y-1 block">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className={`text-[11px] ${labelCls}`}>自动映射排除规则（可选）</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={exportComfyExcludeRules}
+                    className={isPixel ? 'px-btn text-[11px] px-2 py-1 inline-flex items-center gap-1' : 'rounded border px-2 py-1 text-[11px] inline-flex items-center gap-1'}
+                    title="导出当前 ComfyUI 自动映射排除规则"
+                  >
+                    <Download size={12} /> 导出规则
+                  </button>
+                  <label
+                    className={isPixel ? 'px-btn text-[11px] px-2 py-1 inline-flex cursor-pointer items-center gap-1' : 'rounded border px-2 py-1 text-[11px] inline-flex cursor-pointer items-center gap-1'}
+                    title="导入 ComfyUI 自动映射排除规则 JSON"
+                  >
+                    <FileUp size={12} /> 导入规则
+                    <input
+                      type="file"
+                      accept="application/json,.json,.txt"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (file) handleComfyExcludeRulesFile(file);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
               <PromptTextarea
                 title="ComfyUI 自动映射排除规则"
                 value={comfyExcludeRulesRaw}
@@ -1602,7 +1905,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               <p className={`text-[11px] ${hintCls}`}>
                 支持 source/字段名/节点类名/节点编号，例如 source:cfg、field:width、class:KSampler、node:86、#86.width。
               </p>
-            </label>
+            </div>
             <div className={guideBoxCls}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1793,7 +2096,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   editorKind="lines"
                   mono
                   className={textareaCls}
-                  placeholder="例如 gpt-image-1"
+                  placeholder={isJimeng ? '例如 seedream-4.7' : '例如 gpt-image-1'}
                 />
               </label>
               <label className="space-y-1 min-w-0">
@@ -1805,7 +2108,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   editorKind="lines"
                   mono
                   className={textareaCls}
-                  placeholder={isJimeng ? '例如 seedance2.0fast_vip' : '例如 video-model-name'}
+                  placeholder={isJimeng ? '例如 seedance2.0fast_vip / seedance2.0' : '例如 video-model-name'}
                 />
               </label>
               <label className="space-y-1 min-w-0">
@@ -1968,13 +2271,20 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const rawVal = (settings as any)[f] as string | undefined;
     const hasSaved = !!rawVal;
     const maskedDisplay = toMaskedDisplay(rawVal);
+    const pendingClear = !!clearedFields[f];
+    const showClearButton = !!opts.fallbackHint;
+    const clearDisabled = showClearButton && !pendingClear && !hasSaved && !inputs[f].trim();
     return (
       <div key={f} className="space-y-2">
         <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
           <span className={`w-2 h-2 rounded-full ${spec.bullet}`} />
           {spec.label}
           <span className={`text-[11px] font-normal ${hintCls}`}>{spec.desc}</span>
-          {hasSaved && (
+          {pendingClear ? (
+            <span className="t8-api-settings-badge text-[10px] font-bold px-1.5 py-0.5 rounded border" data-tone="muted">
+              保存后清空
+            </span>
+          ) : hasSaved && (
             <span className="t8-api-settings-badge text-[10px] font-bold px-1.5 py-0.5 rounded border" data-tone="success">
               ✓ 已保存 {maskedDisplay}
             </span>
@@ -1990,17 +2300,31 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             type={shows[f] ? 'text' : 'password'}
             value={inputs[f]}
             onChange={(e) => setInputAt(f, e.target.value)}
-            placeholder={hasSaved ? '留空保持不变 / 输入新值覆盖' : (opts.fallbackHint ? '留空则使用通用 Key / 输入独立 Key' : '请输入 sk-...')}
+            placeholder={pendingClear ? '已标记清空，保存后回到通用 Key' : (hasSaved ? '留空保持不变 / 输入新值覆盖' : (opts.fallbackHint ? '留空则使用通用 Key / 输入独立 Key' : '请输入 sk-...'))}
             className={inputCls}
             autoComplete="off"
           />
           <button
+            type="button"
             onClick={() => handleToggleShow(f)}
             className={eyeBtnCls}
             title={shows[f] ? '隐藏' : '显示明文'}
+            aria-label={`${spec.label}${shows[f] ? '隐藏' : '显示明文'}`}
           >
             {shows[f] ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
+          {showClearButton && (
+            <button
+              type="button"
+              onClick={() => handleClearClassifiedKey(f)}
+              className={`${eyeBtnCls} disabled:opacity-40 disabled:cursor-not-allowed`}
+              title={clearDisabled ? '当前没有可清空的分类独立 Key' : (pendingClear ? '取消清空' : '清空该分类独立 Key')}
+              aria-label={`${spec.label}${pendingClear ? '取消清空' : '清空'}`}
+              disabled={clearDisabled}
+            >
+              {pendingClear ? <X size={16} /> : <Trash2 size={16} />}
+            </button>
+          )}
         </div>
         {(opts.baseUrlNote || renderGetKeyButtons(spec.field)) && (
           <div className={`flex items-center gap-2 flex-wrap text-[11px] ${hintCls}`}>
@@ -2067,6 +2391,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         <div className="t8-api-settings-body p-5 space-y-5 overflow-y-auto">
           {/* 三套通用 Key */}
           {renderKey(COMMON_KEYS[0], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE}` })}
+          <LocalSettingsAddonSlot
+            open={open}
+            isPixel={isPixel}
+            isDark={isDark}
+            settings={settings as any}
+            onSaved={load}
+          />
           {renderKey(COMMON_KEYS[1], { baseUrlNote: `Base URL: ${RH_BASE}` })}
           {renderKey(COMMON_KEYS[2], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与贞贞同地址, Key 独立)` })}
 
@@ -2160,7 +2491,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             {advancedOpen && (
               <div className="mt-3 space-y-3">
                 <div className={`text-[11px] leading-relaxed ${hintCls}`}>
-                  这里不是必填项。它只用于 ModelScope、火山引擎、本地 ComfyUI、即梦 CLI 和 OpenAI 兼容接口；平台开启后，还需要在具体节点的“高级来源”里选择它才会生效。
+                  这里不是必填项。它只用于 ModelScope、火山引擎、ComfyUI、即梦 CLI 和 OpenAI 兼容接口；平台开启后，还需要在具体节点的“高级来源”里选择它才会生效。
                   当前状态：已启用 {advancedSummary.enabledCount} 个，已配置密钥 {advancedSummary.configuredKeyCount} 个，ComfyUI {advancedSummary.comfyuiConfigured ? '已填写地址' : '未填写地址'}，即梦 CLI {advancedSummary.jimengConfigured ? '已填写路径' : '未填写路径'}。
                 </div>
                 {advancedProvidersInput.length === 0 ? (
@@ -2241,7 +2572,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             {cloudUploadOpen && (
               <div className="mt-3 space-y-3">
                 <div className={`text-[11px] leading-relaxed ${hintCls}`}>
-                  这里用于外部归档与分享。第一版腾讯云 COS 和阿里云 OSS 支持真实上传；百度网盘和夸克网盘先保留配置位，等稳定授权或 CLI 方案接入后会复用同一个入口。
+                  这里用于外部归档与分享。腾讯云 COS、阿里云 OSS、百度网盘 WebDAV 和夸克网盘 WebDAV 均支持真实上传；网盘目标需要先用 Alist / CloudDrive2 / rclone 等工具提供 WebDAV 地址。
                   {cloudSummary.defaultLabel ? ` 当前默认目标：${cloudSummary.defaultLabel}。` : ''}
                 </div>
                 {cloudUploadTargetsInput.length === 0 ? (
@@ -2283,6 +2614,99 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 )}
               </div>
             )}
+          </div>
+
+          {/* 任务完成提示音 */}
+          <div className="t8-api-settings-divider pt-3 border-t">
+            <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
+              <Volume2 size={14} className="t8-api-settings-icon" />
+              任务完成提示音
+              <span className={`text-[11px] font-normal ${hintCls}`}>· 生成任务完成时播放；未上传时使用默认短提示音</span>
+            </label>
+            <div
+              className={
+                isPixel
+                  ? 't8-api-settings-section mt-2 p-3 space-y-3 border'
+                  : 't8-api-settings-section mt-2 p-3 space-y-3 rounded-lg border'
+              }
+            >
+              <div className="flex items-start gap-3 justify-between flex-wrap">
+                <div className="min-w-0">
+                  <div className={`text-xs font-black ${labelCls}`}>
+                    当前：{hasCustomTaskCompletionSound ? (taskCompletionSoundSettings.name || '自定义提示音') : '默认提示音'}
+                  </div>
+                  <div className={`mt-1 text-[11px] leading-relaxed ${hintCls}`}>
+                    支持 mp3 / wav / ogg / m4a / aac / flac / webm，最大 20MB。
+                    {hasCustomTaskCompletionSound && taskCompletionSoundSizeLabel ? ` 当前文件 ${taskCompletionSoundSizeLabel}。` : ''}
+                  </div>
+                </div>
+                <span
+                  className="t8-api-settings-badge px-2 py-1 text-[10px] rounded border shrink-0"
+                  data-tone={hasCustomTaskCompletionSound ? 'success' : 'muted'}
+                >
+                  {hasCustomTaskCompletionSound ? '自定义' : '默认'}
+                </span>
+              </div>
+              <input
+                ref={taskCompletionSoundFileInputRef}
+                type="file"
+                accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm"
+                className="hidden"
+                onChange={(e) => handleTaskCompletionSoundUpload(e.target.files?.[0] || null)}
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => taskCompletionSoundFileInputRef.current?.click()}
+                  disabled={taskSoundBusy}
+                  className={
+                    isPixel
+                      ? 't8-api-settings-secondary-btn px-btn flex items-center gap-2 disabled:opacity-50'
+                      : 't8-api-settings-secondary-btn px-3 py-2 text-xs rounded-md border flex items-center gap-2 disabled:opacity-50'
+                  }
+                >
+                  <FileUp size={13} />
+                  {taskSoundBusy ? '处理中...' : '上传音频'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePreviewTaskCompletionSound}
+                  disabled={taskSoundBusy || taskSoundTesting}
+                  className={
+                    isPixel
+                      ? 't8-api-settings-action-btn px-btn flex items-center gap-2 disabled:opacity-50'
+                      : 't8-api-settings-action-btn px-3 py-2 text-xs rounded-md border flex items-center gap-2 disabled:opacity-50'
+                  }
+                >
+                  <Volume2 size={13} />
+                  {taskSoundTesting ? '试听中...' : '试听'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetTaskCompletionSound}
+                  disabled={taskSoundBusy || !hasCustomTaskCompletionSound}
+                  className={
+                    isPixel
+                      ? 't8-api-settings-secondary-btn px-btn flex items-center gap-2 disabled:opacity-50'
+                      : 't8-api-settings-secondary-btn px-3 py-2 text-xs rounded-md border flex items-center gap-2 disabled:opacity-50'
+                  }
+                >
+                  <Trash2 size={13} />
+                  恢复默认
+                </button>
+              </div>
+              {taskSoundMessage && (
+                <div
+                  className={
+                    taskSoundMessage.includes('失败') || taskSoundMessage.includes('请选择')
+                      ? 'text-[11px] text-red-400'
+                      : 'text-[11px] text-emerald-500'
+                  }
+                >
+                  {taskSoundMessage}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* v1.2.10.2: 文件自动保存路径 */}

@@ -7,6 +7,7 @@ export type AiWatermarkMode =
   | 'visible'
   | 'erase'
   | 'invisible'
+  | 'all'
   | 'metadata-check'
   | 'metadata-remove'
   | 'identify';
@@ -30,13 +31,16 @@ export interface AiWatermarkOptions {
   backend?: 'cv2' | 'lama';
   eraseMethod?: 'telea' | 'ns';
   dilate?: number;
-  pipeline?: 'default' | 'controlnet' | 'ctrlregen';
+  pipeline?: 'controlnet' | 'sdxl' | 'default' | 'ctrlregen';
   device?: 'auto' | 'cpu' | 'mps' | 'cuda' | 'xpu';
   strength?: number;
   steps?: number;
   seed?: number | '';
   humanize?: number;
   unsharp?: number;
+  upscaler?: 'lanczos' | 'esrgan';
+  model?: string;
+  guidanceScale?: number | '';
   maxResolution?: number;
   minResolution?: number;
   controlnetScale?: number;
@@ -74,6 +78,9 @@ export interface AiWatermarkStatus {
     auto?: boolean;
     controlnet?: boolean;
     adaptivePolish?: boolean;
+    esrgan?: boolean;
+    model?: boolean;
+    guidanceScale?: boolean;
   };
   setupHints: string[];
   errors?: string[];
@@ -85,12 +92,27 @@ export interface AiWatermarkProcessResult {
   outputUrl?: string;
   outputText?: string;
   report?: any;
+  warnings?: string[];
+  deviceFallback?: {
+    requested?: string;
+    resolved?: string;
+    reason?: string;
+    torchVersion?: string;
+    torchCuda?: string | null;
+    cudaAvailable?: boolean;
+    deviceCount?: number;
+    deviceName?: string;
+  } | null;
   logs?: Array<{ step: string; ok: boolean; stdout?: string; stderr?: string }>;
   input?: {
     kind?: MediaKind;
     mime?: string;
     source?: string;
   };
+}
+
+export interface AiWatermarkRequestOptions {
+  signal?: AbortSignal;
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -114,9 +136,10 @@ export function processAiWatermark(payload: {
   kind?: MediaKind;
   mode: AiWatermarkMode;
   options?: AiWatermarkOptions;
-}): Promise<AiWatermarkProcessResult> {
+}, options: AiWatermarkRequestOptions = {}): Promise<AiWatermarkProcessResult> {
   return requestJson<AiWatermarkProcessResult>(`${BASE}/process`, {
     method: 'POST',
+    signal: options.signal,
     body: JSON.stringify(payload),
   });
 }

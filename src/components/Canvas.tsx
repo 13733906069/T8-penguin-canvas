@@ -26,10 +26,11 @@ import * as LucideIcons from 'lucide-react';
 import { useCanvasStore } from '../stores/canvas';
 import { useThemeStore } from '../stores/theme';
 import { useShortcutStore } from '../stores/shortcuts';
-import { trackAchievementEvent } from '../stores/achievements';
+import { trackAchievementEvent, useAchievementStore } from '../stores/achievements';
 import { getTemplateMode, resolveThemeTemplate } from '../theme/defaultTemplates';
 import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
+import { useRadialMenuStore } from '../stores/radialMenu';
 import { topologicalSort } from '../utils/topologicalSort';
 import { installGlobalWheelBlockObserver } from '../utils/wheelBlock';
 // v1.2.10.5: 节点落点防重叠解析器 (单节点/整组双模式 + 兜底+toast+飞镜)
@@ -38,6 +39,7 @@ import {
   placeBatchNodes,
   defaultSizeOf,
   rectOf,
+  rectsIntersect,
   type Rect as PlacementRect,
 } from '../utils/nodePlacement';
 import {
@@ -49,6 +51,12 @@ import {
   type MediaItem,
   type MediaKind,
 } from '../utils/mediaCollection';
+import {
+  buildPersistentOutputSnapshotData,
+  readOutputMaterialPersistenceSetting,
+  shouldPreserveAutoOutputMaterialNode,
+  writeOutputMaterialPersistenceSetting,
+} from '../utils/outputMaterialPersistence';
 import { markCanvasNodesDeleted } from '../utils/deletedNodeRegistry';
 import {
   bucketSendableMaterials,
@@ -80,6 +88,15 @@ import { resolveConnectionByNodeSerialId } from '../utils/connectByNodeSerialId'
 import { formatShortcutList, matchesAnyShortcut } from '../utils/keyboardShortcuts';
 import { applyNodeAlignment, type NodeAlignAction } from '../utils/nodeAlign';
 import {
+  RADIAL_MENU_MOVE_TOLERANCE,
+  clampRadialMenuCenter,
+  distanceBetween,
+  normalizeRadialMenuSlots,
+  radialSlotIndexFromPointer,
+  visibleRadialMenuNodeOptions,
+  type RadialMenuPoint,
+} from '../utils/radialMenu';
+import {
   collectMaterialSetBucketsFromData,
   isMaterialSetKind,
   materialSetItemsToData,
@@ -94,15 +111,28 @@ import { logBus } from '../stores/logs';
 import CanvasToolbar from './CanvasToolbar';
 import TerminalPanel from './TerminalPanel';
 import NodeActionBar from './NodeActionBar';
+import RadialNodeMenu from './RadialNodeMenu';
+import RadialMenuSettingsModal from './RadialMenuSettingsModal';
 import MaterialDragOverlay from './MaterialDragOverlay';
 import ThemeMusicToggle from './ThemeMusicToggle';
+import CreativeDeskLayer from './CreativeDeskLayer';
+import DragonBallRadar from './DragonBallRadar';
+import SaintSeiyaSanctuary from './SaintSeiyaSanctuary';
+import TetrisPanel from './TetrisPanel';
 import SendMaterialsModal from './SendMaterialsModal';
+import SmartImage from './SmartImage';
 import { useCanvasHistory } from '../hooks/useCanvasHistory';
 import type { CanvasTemplate } from '../config/canvasTemplates';
 import PlaceholderNode from './nodes/PlaceholderNode';
 import DeletableEdge from './edges/DeletableEdge';
 import { NODE_REGISTRY } from '../config/nodeRegistry';
-import type { NodeType, NodeMeta } from '../types/canvas';
+import type { CreativeDeskState, NodeType, NodeMeta } from '../types/canvas';
+import {
+  appendCreativeDeskItem,
+  createCreativeDeskImageItem,
+  createDefaultCreativeDeskState,
+  sanitizeCreativeDeskState,
+} from '../utils/creativeDesk';
 import {
   isConnectionValid,
   getNodeOutputs,
@@ -113,6 +143,10 @@ import {
   NODE_PORTS,
   type PortType,
 } from '../config/portTypes';
+
+const CANVAS_PAN_MOUSE_BUTTONS = [0, 1] as const;
+const RADIAL_MENU_MOUSE_BUTTON = 2;
+const RADIAL_MENU_CONTEXT_SUPPRESS_MS = 700;
 
 function lazyCanvasNode(load: () => Promise<any>, displayName: string): ComponentType<any> {
   const LazyNode = lazy(load);
@@ -135,6 +169,13 @@ const RunningHubNode = lazyCanvasNode(() => import('./nodes/RunningHubNode'), 'R
 const RhConfigNode = lazyCanvasNode(() => import('./nodes/RhConfigNode'), 'RhConfigNode');
 const RHToolsNode = lazyCanvasNode(() => import('./nodes/RHToolsNode'), 'RHToolsNode');
 const RHToolboxNode = lazyCanvasNode(() => import('./nodes/RHToolboxNode'), 'RHToolboxNode');
+const FalToolboxNode = lazyCanvasNode(() => import('./nodes/FalToolboxNode'), 'FalToolboxNode');
+const Model3DPreviewNode = lazyCanvasNode(() => import('./nodes/Model3DPreviewNode'), 'Model3DPreviewNode');
+const GrokOAuthAgentNode = lazyCanvasNode(() => import('./nodes/GrokOAuthAgentNode'), 'GrokOAuthAgentNode');
+const CodexCliAgentNode = lazyCanvasNode(() => import('./nodes/CodexCliAgentNode'), 'CodexCliAgentNode');
+const CodexImageConjureNode = lazyCanvasNode(() => import('./nodes/CodexImageConjureNode'), 'CodexImageConjureNode');
+const ArtistStyleMasterNode = lazyCanvasNode(() => import('./nodes/ArtistStyleMasterNode'), 'ArtistStyleMasterNode');
+const AnimeTagMasterNode = lazyCanvasNode(() => import('./nodes/AnimeTagMasterNode'), 'AnimeTagMasterNode');
 const ComfyUIStoreNode = lazyCanvasNode(() => import('./nodes/ComfyUIStoreNode'), 'ComfyUIStoreNode');
 const ComfyUIAppMakerNode = lazyCanvasNode(() => import('./nodes/ComfyUIAppMakerNode'), 'ComfyUIAppMakerNode');
 const ResizeNode = lazyCanvasNode(() => import('./nodes/ResizeNode'), 'ResizeNode');
@@ -149,6 +190,7 @@ const PortraitMasterNode = lazyCanvasNode(() => import('./nodes/PortraitMasterNo
 const PoseMasterNode = lazyCanvasNode(() => import('./nodes/PoseMasterNode'), 'PoseMasterNode');
 const Panorama3DNode = lazyCanvasNode(() => import('./nodes/Panorama3DNode'), 'Panorama3DNode');
 const AggregateParserNode = lazyCanvasNode(() => import('./nodes/AggregateParserNode'), 'AggregateParserNode');
+const BatchProcessorNode = lazyCanvasNode(() => import('./nodes/BatchProcessorNode'), 'BatchProcessorNode');
 const TopazImageUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazImageUpscaleNode'), 'TopazImageUpscaleNode');
 const TopazVideoUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazVideoUpscaleNode'), 'TopazVideoUpscaleNode');
 const IdeaNode = lazyCanvasNode(() => import('./nodes/IdeaNode'), 'IdeaNode');
@@ -172,8 +214,13 @@ const MaterialSetNode = lazyCanvasNode(() => import('./nodes/MaterialSetNode'), 
 const UploadNode = lazyCanvasNode(() => import('./nodes/UploadNode'), 'UploadNode');
 const OutputNode = lazyCanvasNode(() => import('./nodes/OutputNode'), 'OutputNode');
 const GroupBoxNode = lazyCanvasNode(() => import('./nodes/GroupBoxNode'), 'GroupBoxNode');
+const RH_TOOLBOX_MAKER_MODULE = './nodes/RHToolboxMakerNode';
+const FAL_TOOLBOX_MAKER_MODULE = './nodes/FalToolboxMakerNode';
 const RHToolboxMakerNode = import.meta.env?.DEV
-  ? lazyCanvasNode(() => import('./nodes/RHToolboxMakerNode'), 'RHToolboxMakerNode')
+  ? lazyCanvasNode(() => import(/* @vite-ignore */ RH_TOOLBOX_MAKER_MODULE), 'RHToolboxMakerNode')
+  : PlaceholderNode;
+const FalToolboxMakerNode = import.meta.env?.DEV
+  ? lazyCanvasNode(() => import(/* @vite-ignore */ FAL_TOOLBOX_MAKER_MODULE), 'FalToolboxMakerNode')
   : PlaceholderNode;
 
 // Phase 4 阶段:全部 24 个节点均已实现业务逻辑
@@ -193,6 +240,15 @@ const SPECIFIC_NODES: Record<string, any> = {
   'rh-tools': RHToolsNode,
   'rh-toolbox': RHToolboxNode,
   ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerNode } : {}),
+  'fal-toolbox': FalToolboxNode,
+  'model-3d-preview': Model3DPreviewNode,
+  'model-3d-upload': UploadNode,
+  'grok-oauth-agent': GrokOAuthAgentNode,
+  'codex-cli-agent': CodexCliAgentNode,
+  'codex-image-conjure': CodexImageConjureNode,
+  'artist-style-master': ArtistStyleMasterNode,
+  'anime-tag-master': AnimeTagMasterNode,
+  ...(import.meta.env?.DEV ? { 'fal-toolbox-maker': FalToolboxMakerNode } : {}),
   'comfyui-store': ComfyUIStoreNode,
   'comfyui-app-maker': ComfyUIAppMakerNode,
   // 国漫角色制作
@@ -234,10 +290,11 @@ const SPECIFIC_NODES: Record<string, any> = {
   'portrait-master': PortraitMasterNode,
   'pose-master': PoseMasterNode,
   'aggregate-parser': AggregateParserNode,
+  'batch-processor': BatchProcessorNode,
   'topaz-image-upscale': TopazImageUpscaleNode,
   'topaz-video-upscale': TopazVideoUpscaleNode,
   'panorama-3d': Panorama3DNode,
-  // Input (1) - 上传素材
+  // Input - 上传素材
   upload: UploadNode,
   // Output (1) - 输出素材(文本/图像/视频/音频 预览 + 文本双击编辑)
   output: OutputNode,
@@ -415,6 +472,34 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     audioUrls: [],
     status: 'idle',
   },
+  'batch-processor': {
+    batchProcessorItems: [],
+    batchProcessorResults: [],
+    batchProcessorProgress: { total: 0, done: 0, ok: 0, fail: 0, running: 0, pending: 0, percent: 0, status: 'idle' },
+    batchProcessorNameMode: 'original',
+    batchProcessorRenamePattern: 'batch-{index}-{name}',
+    batchProcessorSequenceStart: 1,
+    batchProcessorIndexPadding: 3,
+    batchProcessorOutputFormat: 'keep',
+    batchProcessorTrimBlackBars: true,
+    batchProcessorTrimMode: 'auto',
+    batchProcessorTrimAxis: 'vertical',
+    batchProcessorTrimStrategy: 'auto',
+    batchProcessorTrimThreshold: 18,
+    batchProcessorTrimManualTop: 0,
+    batchProcessorTrimManualRight: 0,
+    batchProcessorTrimManualBottom: 0,
+    batchProcessorTrimManualLeft: 0,
+    batchProcessorRemoveBg: false,
+    batchProcessorExpandCanvas: false,
+    batchProcessorTargetRatio: 'keep',
+    batchProcessorPadBackground: '#00000000',
+    batchProcessorUpscale: false,
+    batchProcessorUpscaleScale: 2,
+    batchProcessorQuality: 90,
+    status: 'idle',
+    error: '',
+  },
   'topaz-image-upscale': {
     topazGigapixelPath: '',
     topazGigapixelModel: 'std',
@@ -488,7 +573,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   'penguin-portrait': { preset: 'penguin-portrait' },
   audio: { mode: 'generate', version: 'v5.5', title: '', tags: '', seed: 0, continueAt: 28 },
   llm: {
-    model: 'gemini-3.1-flash-lite-preview',
+    model: 'gemini-3.5-flash',
     system: '',
     prompt: '',
     temperature: 0.7,
@@ -497,6 +582,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     history: [],
   },
   upload: { uploadType: null },
+  'model-3d-upload': { uploadType: 'model3d', lockedUploadType: 'model3d' },
   'material-set': { materialSetKind: null, materialSetItems: [] },
   // RH 工具节点（v1.2.10.1+）：启动器状态字段 + 运行状态字段（与 RunningHubNode 对齐）
   // 启动器：rhToolsActiveCategoryId / rhToolsActiveAppId / rhToolsSearchQuery
@@ -538,6 +624,122 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     audioUrls: [],
     outputText: '',
     error: '',
+  },
+  'fal-toolbox': {
+    falToolboxCategoryId: 'all',
+    falToolboxActiveToolId: '',
+    falToolboxSearchQuery: '',
+    falToolboxUserParams: {},
+    materialOrder: [],
+    excludedMaterialIds: [],
+    status: 'idle',
+    requestId: '',
+    responseUrl: '',
+    statusUrl: '',
+    urls: [],
+    imageUrl: '',
+    imageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    audioUrl: '',
+    audioUrls: [],
+    modelUrls: [],
+    modelUrl: '',
+    directModelUrl: '',
+    directModelUrls: [],
+    outputText: '',
+    error: '',
+  },
+  'codex-cli-agent': {
+    codexMode: 'chat',
+    codexPreset: '提示词增强',
+    codexModel: '',
+    codexProfile: '',
+    codexSandbox: 'workspace-write',
+    codexApprovalPolicy: 'never',
+    codexReasoningEffort: '',
+    codexWebSearch: false,
+    codexIncludePlanTool: true,
+    codexExecutablePath: '',
+    codexExtraArgs: '',
+    codexSessionId: '',
+    codexSelectedSkillNames: [],
+    codexMessages: [],
+    codexArtifacts: [],
+    codexVersions: [],
+    materialOrder: [],
+    excludedMaterialIds: [],
+    codexQuickPrompt: '',
+    codexQuickPromptMentions: [],
+    codexPersistPrompt: false,
+    codexBriefSubject: '',
+    codexBriefStyle: '',
+    codexBriefCamera: '',
+    codexBriefLighting: '',
+    codexBriefComposition: '',
+    codexTargetPlatform: '通用',
+    codexAspectRatio: '自动',
+    codexStyleLock: '',
+    codexNegativePrompt: '',
+    codexAutoNegativePrompt: true,
+    codexBatchVariantCount: 1,
+    codexLastRunSummary: '',
+    outputText: '',
+    imageUrl: '',
+    imageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    audioUrl: '',
+    audioUrls: [],
+    modelUrl: '',
+    modelUrls: [],
+    status: 'idle',
+    error: '',
+  },
+  'codex-image-conjure': {
+    codexConjurePrompt: '',
+    codexConjurePromptMentions: [],
+    codexConjureTemplateId: '',
+    codexConjureSnippetQuery: '',
+    codexConjureSelectedSkillNames: ['imagegen'],
+    codexConjureModel: 'gpt-5.5',
+    codexConjureAspectRatio: '9:16',
+    codexConjureSize: '2K',
+    codexConjureQuality: '高',
+    codexConjureCount: 1,
+    codexConjureBatchCount: 1,
+    codexConjureConcurrency: 1,
+    codexConjurePromptMode: '原始模式',
+    codexConjureFormat: 'png',
+    codexConjureBackground: '自动',
+    codexConjureNegativePrompt: '',
+    codexConjureAutoPublish: true,
+    codexConjurePersistPrompt: true,
+    codexConjurePersistRefs: true,
+    codexConjureGalleryQuery: '',
+    codexConjureGalleryRefs: [],
+    codexConjureMaterialOrder: [],
+    codexConjureExcludedMaterialIds: [],
+    codexConjureTasks: [],
+    codexConjureLastRunSummary: '',
+    outputText: '',
+    imageUrl: '',
+    imageUrls: [],
+    status: 'idle',
+    error: '',
+  },
+  'model-3d-preview': {
+    modelUrl: '',
+    modelUrls: [],
+    modelPreviewIndex: 0,
+    modelPreviewAutoRotate: true,
+    imageUrl: '',
+    imageUrls: [],
+    urls: [],
+    outputText: '',
+    status: 'idle',
+    error: '',
+    size: { w: 520, h: 440 },
   },
   'comfyui-store': {
     comfyuiStoreProviderId: '',
@@ -604,6 +806,21 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
       text: '',
       outputText: '',
     },
+    'fal-toolbox-maker': {
+      falToolboxMakerUrl: 'https://fal.ai/models/xai/grok-imagine-image/quality/edit/api',
+      falToolboxMakerEndpoint: 'xai/grok-imagine-image/quality/edit',
+      falToolboxMakerTitle: 'Grok Imagine Image Edit',
+      falToolboxMakerId: 'grok-imagine-image-edit',
+      falToolboxMakerCategoryId: 'image-edit',
+      falToolboxMakerDescription: '从 fal.ai API 文档生成的 Fal 超市草稿',
+      falToolboxMakerCapabilities: 'image.edit\nimage.generate',
+      falToolboxMakerOutputKind: 'image',
+      falToolboxMakerHasImageInput: true,
+      falToolboxMakerImageMultiple: false,
+      falToolboxMakerImageBase64: true,
+      text: '',
+      outputText: '',
+    },
   } : {}),
   // 循环器: 默认串联 + image kind
   loop: { mode: 'serial', kind: 'image', outputs: [], progress: { done: 0, total: 0, ok: 0, fail: 0 } },
@@ -623,10 +840,41 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     panoramaSizeLevel: '1K',
     panoramaPrompt: '',
     panoramaPromptFinal: '',
+    panoramaViewerPosition: '',
+    panoramaViewCenter: '',
     panoramaSourceUrl: '',
     panoramaGeneratedUrl: '',
     panoramaReferenceUrl: '',
     panoramaGeneratedHistory: [],
+    panoramaCameraViews: [],
+    panoramaActiveCameraViewId: '',
+    panoramaHotspots: [],
+    panoramaAvatars: [],
+    panoramaAvatarKeyframes: [],
+    panoramaKeyframeSequenceCount: 8,
+    panoramaOcclusionMasks: [],
+    panoramaOcclusionMaskVisible: true,
+    panoramaActiveAvatarId: '',
+    panoramaSceneSnapshot: null,
+    panoramaControlSnapshotUrl: '',
+    panoramaActionPrompt: '',
+    panoramaActionPlan: null,
+    panoramaAvatarPanelOpen: true,
+    panoramaAvatarPickMode: false,
+    panoramaAvatarIkEditMode: false,
+    panoramaActorOverlayVisible: true,
+    panoramaCompositionGuide: 'off',
+    panoramaSceneLegendVisible: true,
+    panoramaScenePrompt: '',
+    panoramaShotCamera: {
+      mode: 'panorama-view',
+      presetId: 'full-body',
+      targetAvatarId: '',
+      targetBone: 'body',
+      framingRatio: '16:9',
+      closeupStrength: 28,
+      lowAngle: 10,
+    },
     imageUrl: '',
     imageUrls: [],
     urls: [],
@@ -662,16 +910,19 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
       backend: 'cv2',
       eraseMethod: 'telea',
       dilate: 3,
-      pipeline: 'default',
+      pipeline: 'controlnet',
       device: 'auto',
       steps: 50,
       humanize: 0,
       unsharp: 0,
+      upscaler: 'lanczos',
+      model: '',
+      guidanceScale: '',
       maxResolution: 0,
       minResolution: 1024,
       controlnetScale: 1,
       auto: false,
-      adaptivePolish: false,
+      adaptivePolish: true,
       restoreFaces: false,
       restoreFacesWeight: 0.5,
       keepStandardMetadata: true,
@@ -687,7 +938,8 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
-  'rh-tools', 'rh-toolbox', 'comfyui-store',
+  'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
+  'grok-oauth-agent', 'codex-cli-agent', 'codex-image-conjure',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
   'panorama-3d',
   'frame-extractor', 'frame-pair',
@@ -695,7 +947,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   // v1.2.8 工具节点 (循环器 / 从合集获取)
   'loop', 'pick-from-set',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
-  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser',
+  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor',
   'topaz-image-upscale', 'topaz-video-upscale',
   'remove-ai-watermark',
 ]);
@@ -711,7 +963,9 @@ interface SendNodeSpec {
   data: Record<string, any>;
 }
 
-function mediaItemsFromSendables(items: SendableMaterial[], kind: MediaKind): MediaItem[] {
+type BasicMediaKind = Exclude<MediaKind, 'model3d'>;
+
+function mediaItemsFromSendables(items: SendableMaterial[], kind: BasicMediaKind): MediaItem[] {
   return items
     .map(sendableToMediaItem)
     .filter((item): item is MediaItem => !!item && item.kind === kind);
@@ -758,7 +1012,7 @@ function buildSendNodeSpecs(materials: SendableMaterial[], mode: SendTargetMode)
   const buckets = bucketSendableMaterials(materials);
   const specs: SendNodeSpec[] = [];
   const textValues = buckets.text.map((item) => (item.text || '').trim()).filter(Boolean);
-  const mediaKinds: MediaKind[] = ['image', 'video', 'audio'];
+  const mediaKinds: BasicMediaKind[] = ['image', 'video', 'audio'];
 
   if (mode === 'portrait-master') {
     const seen = new Set<string>();
@@ -986,6 +1240,18 @@ function centerOfMaterialNodes(nodes: Node[]): { x: number; y: number } | null {
   return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
 }
 
+function centerOfNavigableNodes(nodes: Node[]): { x: number; y: number } {
+  const valid = (node: Node, includeGroups: boolean) => {
+    if (!node.id || node.id === BULK_PHANTOM_ID) return false;
+    if ((node as any).hidden) return false;
+    if (!includeGroups && node.type === 'groupBox') return false;
+    return true;
+  };
+  const normalNodes = nodes.filter((node) => valid(node, false));
+  const fallbackNodes = normalNodes.length > 0 ? normalNodes : nodes.filter((node) => valid(node, true));
+  return centerOfMaterialNodes(fallbackNodes) || { x: 0, y: 0 };
+}
+
 // 把所有节点类型都注册到对应组件(已实现的用业务组件,其余用 Placeholder)
 const nodeTypes = NODE_REGISTRY.reduce<Record<string, any>>((acc, m) => {
   acc[m.type] = withNodeSerialBadge(SPECIFIC_NODES[m.type] || PlaceholderNode);
@@ -1059,6 +1325,28 @@ export interface AddNodeOptions {
 
 export type AddNodeFn = (type: NodeType, options?: AddNodeOptions) => void;
 
+interface RadialMenuSession {
+  anchor: RadialMenuPoint;
+  center: RadialMenuPoint;
+  cursor: RadialMenuPoint;
+  activeIndex: number | null;
+}
+
+interface RadialPressState {
+  pointerId: number;
+  start: RadialMenuPoint;
+  timer: number;
+  open: boolean;
+}
+
+interface FileDragOutFeedback {
+  x: number;
+  y: number;
+  tone: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  detail: string;
+}
+
 export interface InsertWorkflowOptions {
   atScreen?: { x: number; y: number };
   title?: string;
@@ -1070,8 +1358,10 @@ const MEDIA_EXTENSIONS: Record<MediaKind, string[]> = {
   image: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'],
   video: ['mp4', 'webm', 'mov', 'm4v', 'mkv'],
   audio: ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'],
+  model3d: ['glb', 'gltf', 'obj', 'fbx', 'stl', 'usdz', 'zip'],
 };
 
+const FILE_DRAG_OUT_MOVE_TOLERANCE = 4;
 const INTERNAL_NODE_PASTE_DELAY_MS = 120;
 const EXTERNAL_MEDIA_PASTE_DEDUPE_MS = 900;
 
@@ -1085,12 +1375,13 @@ function inferCanvasMediaKind(file: File): MediaKind | null {
   if (MEDIA_EXTENSIONS.image.includes(ext)) return 'image';
   if (MEDIA_EXTENSIONS.video.includes(ext)) return 'video';
   if (MEDIA_EXTENSIONS.audio.includes(ext)) return 'audio';
+  if (MEDIA_EXTENSIONS.model3d.includes(ext)) return 'model3d';
   return null;
 }
 
 function fallbackMediaName(file: File, kind: MediaKind, index: number): string {
   if (file.name) return file.name;
-  const ext = kind === 'image' ? 'png' : kind === 'video' ? 'mp4' : 'wav';
+  const ext = kind === 'image' ? 'png' : kind === 'video' ? 'mp4' : kind === 'audio' ? 'wav' : 'glb';
   return `canvas-${kind}-${Date.now()}-${index + 1}.${ext}`;
 }
 
@@ -1141,6 +1432,105 @@ function hasFileTransfer(dataTransfer: DataTransfer | null | undefined): boolean
   return Array.from(dataTransfer?.types || []).includes('Files');
 }
 
+type PlacementShelfSource = '粘贴' | '发送' | '生成' | '画布';
+
+interface PlacementShelfItem {
+  id: string;
+  nodeId: string;
+  kind: MediaKind;
+  url: string;
+  title: string;
+  previewUrl?: string;
+  source: PlacementShelfSource;
+  createdAt: number;
+}
+
+function mimeForExternalDrag(kind: string, url: string) {
+  const ext = (url.split(/[?#]/)[0].split('.').pop() || '').toLowerCase();
+  if (kind === 'image') {
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+    if (ext === 'webp') return 'image/webp';
+    if (ext === 'gif') return 'image/gif';
+    return 'image/png';
+  }
+  if (kind === 'video') {
+    if (ext === 'webm') return 'video/webm';
+    if (ext === 'mov') return 'video/quicktime';
+    return 'video/mp4';
+  }
+  if (kind === 'audio') {
+    if (ext === 'wav') return 'audio/wav';
+    if (ext === 'ogg') return 'audio/ogg';
+    if (ext === 'flac') return 'audio/flac';
+    if (ext === 'm4a') return 'audio/mp4';
+    return 'audio/mpeg';
+  }
+  return 'application/octet-stream';
+}
+
+function absoluteMaterialUrl(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return '';
+  if (/^https?:\/\//i.test(clean)) return clean;
+  const origin = typeof window !== 'undefined' && window.location.protocol !== 'file:'
+    ? window.location.origin
+    : 'http://127.0.0.1:18766';
+  try {
+    return new URL(clean, origin).href;
+  } catch {
+    return clean;
+  }
+}
+
+function canUseNativeDragOut(url: string) {
+  const clean = String(url || '').trim();
+  if (!clean) return false;
+  if (/^file:\/\//i.test(clean)) return true;
+  const prefixes = ['/files/input/', '/input/', '/files/output/', '/output/', '/files/thumbnails/', '/thumbnails/'];
+  if (prefixes.some((prefix) => clean.startsWith(prefix))) return true;
+  try {
+    const parsed = new URL(clean, absoluteMaterialUrl('/'));
+    const host = parsed.hostname.toLowerCase();
+    const isLocalHost = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    return isLocalHost && prefixes.some((prefix) => parsed.pathname.startsWith(prefix));
+  } catch {
+    return false;
+  }
+}
+
+function isLeftRightMouseChord(buttons: number | undefined | null) {
+  const mask = Number(buttons || 0);
+  return (mask & 1) !== 0 && (mask & 2) !== 0;
+}
+
+function placementShelfItemFromNode(node: Node, source: PlacementShelfSource): PlacementShelfItem | null {
+  const data = (node.data || {}) as any;
+  for (const kind of ['image', 'video', 'audio', 'model3d'] as MediaKind[]) {
+    const first = getMediaItemsFromData(data, kind)[0];
+    if (!first?.url) continue;
+    return {
+      id: `${node.id}:${kind}:${first.url}`,
+      nodeId: node.id,
+      kind,
+      url: first.url,
+      previewUrl: kind === 'image' || kind === 'video' ? first.url : undefined,
+      title: first.name || fileNameFromUrl(first.url) || PORT_LABEL[kind],
+      source,
+      createdAt: Date.now(),
+    };
+  }
+  return null;
+}
+
+function placementShelfItemsFromCanvasNodes(nodes: Node[], source: PlacementShelfSource): PlacementShelfItem[] {
+  return nodes
+    .slice()
+    .reverse()
+    .map((node) => placementShelfItemFromNode(node, source))
+    .filter((item): item is PlacementShelfItem => !!item)
+    .slice(0, 60);
+}
+
 function findUploadNodeIdFromTarget(target: EventTarget | Element | null | undefined): string {
   if (typeof Element === 'undefined') return '';
   if (!(target instanceof Element)) return '';
@@ -1149,7 +1539,7 @@ function findUploadNodeIdFromTarget(target: EventTarget | Element | null | undef
 }
 
 function chooseUploadReplacementKind(existingKind: any, buckets: Record<MediaKind, File[]>, firstKind: MediaKind | null): MediaKind | null {
-  const current = (['image', 'video', 'audio'] as MediaKind[]).includes(existingKind) ? existingKind as MediaKind : null;
+  const current = (['image', 'video', 'audio', 'model3d'] as MediaKind[]).includes(existingKind) ? existingKind as MediaKind : null;
   if (current && buckets[current].length > 0) return current;
   return firstKind;
 }
@@ -1179,34 +1569,85 @@ function isCanvasOverviewShortcutBlocked(target: EventTarget | null): boolean {
   );
 }
 
-const MODEL_USAGE_HELP_TEXT = `特别注意事项：
+function isRadialMenuPaneTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const el = target as HTMLElement;
+  if (isTextEditingTarget(el)) return false;
+  if (
+    el.closest(
+      [
+        '.react-flow__node',
+        '.react-flow__handle',
+        '.react-flow__edge',
+        '.react-flow__controls',
+        '.react-flow__minimap',
+        '[data-canvas-floating-ui]',
+        '[data-drag-source]',
+        'button',
+        'a',
+        '[role="button"]',
+        '.t8-canvas-toolbar',
+        '.t8-sidebar',
+      ].join(','),
+    )
+  ) {
+    return false;
+  }
+  return !!el.closest('.react-flow__pane, .react-flow__background, .react-flow__renderer');
+}
 
-如果不小心网页崩溃等，但是实际任务没失败，需要去网站异步任务看下，有个蓝色的TASKID，点进去可以看到下载地址，手动下载。另外fal模型会预扣3.4个币，生成结束后会多退少补。seedance2.0模型会预扣10个币，生成结束后多退少补
+type ModelUsageHelpSection = {
+  title: string;
+  paragraphs?: readonly string[];
+  items?: readonly string[];
+};
 
-图像模型注意事项：
-
-gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松
-gpt-image-2模型（default分组）可以出1K，2K，4K图，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上
-gpt-image-2-fal模型，兜底模型，支持2K，4K，价格较贵
-nano-banana-2和nano-banana-pro模型，需要用gemini优质分组，default分组不稳定（尤其4K）
-nano-banana-2-fal和nano-banana-pro-fal模型，兜底模型，支持4K，价格较贵
-grok-4.2-image模型（Default分组），审核最松，可以做各种姿势，支持多图编辑，保持一致性需要单独写保证脸部100%一致性不变
-MJ系列模型（Default分组），不同模型的用法都不一样，参考官方，推荐用fast模式，relax模式封号比较严重
-
-视频模型注意事项：
-seedance2.0（Default分组）非远景推荐480P+FAST模式，质量吊打快乐马，价格只要5个币15秒，后续用flashvsr放大即可，720P满血15秒大概15币，不排队，支持真人
-seedance2.0（sd-global分组）需要联系T8微信单独开通，只支持企业开通，由于除版权外基本无审核，防止有人搞色情，需要签协议才能开通，价格和上面一样
-veo3.1模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是veo&grok备用分组2的veo3.1模型和默认分组的fal模型
-grok-video模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是fal模型，新增支持最新imagine 1.5模型（支持图生视频），最佳SD平替（default分组），以及veo&grok备用分组2，支持15秒多参生视频
-sora-2模型，由于官方下架了，虽然我加上了，但是目前有问题，先不要用
-
-音频模型注意事项：
-
-suno v5.5模型（Default分组）支持生成，翻唱，延长，一次生成两首歌，翻唱模式情况下，如果是版权歌曲大概率会失败，需要做各种前置处理，可以在网站异步任务查看。
-
-LLM模型注意事项：
-
-LLM模型有时候因为官方问题会出现速度慢，失败等现象，这时候换个模型即可，预置了多个模型。`;
+const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
+  {
+    title: '特别注意事项',
+    paragraphs: [
+      '如果不小心网页崩溃等，但是实际任务没失败，需要去网站异步任务看下，有个蓝色的TASKID，点进去可以看到下载地址，手动下载。另外fal模型会预扣3.4个币，生成结束后会多退少补。seedance2.0模型会预扣10个币，生成结束后多退少补',
+    ],
+  },
+  {
+    title: '图像模型注意事项',
+    items: [
+      'gpt-image-2-vip模型（default分组）2026.06.14新增，支持2K，4K，目前稳定速度快，0.1积分',
+      'gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松',
+      'gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上',
+      'gpt-image-2-fal模型，兜底模型，支持2K，4K，价格较贵',
+      'gpt-image-2-2k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0.1积分,2026.06.10新增（default分组）',
+      'gpt-image-2-4k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0.1积分,2026.06.10新增（default分组）',
+      'nano-banana-2和nano-banana-pro模型，需要用gemini优质分组，default分组不稳定（尤其4K）',
+      'nano-banana-2-fal和nano-banana-pro-fal模型，兜底模型，支持4K，价格较贵',
+      'grok-4.2-image模型（Default分组），审核最松，可以做各种姿势，支持多图编辑，保持一致性需要单独写保证脸部100%一致性不变',
+      'MJ系列模型（Default分组），不同模型的用法都不一样，参考官方，推荐用fast模式，relax模式封号比较严重',
+    ],
+  },
+  {
+    title: '视频模型注意事项',
+    items: [
+      'seedance2.0（Default分组）非远景推荐480P+FAST模式，质量吊打快乐马，价格只要5个币15秒，后续用flashvsr放大即可，720P满血15秒大概15币，不排队，支持真人',
+      'seedance2.0（sd-global分组）需要联系T8微信单独开通，只支持企业开通，由于除版权外基本无审核，防止有人搞色情，需要签协议才能开通，价格和上面一样',
+      'veo3.1模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是veo&grok备用分组2的veo3.1模型和默认分组的fal模型',
+      'veo-omni模型，需要使用default分组（veo-omnii模型是2026.06.06刚上架的）',
+      'grok-video模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是fal模型和默认分组，新增支持最新imagine 1.5模型（支持图生视频FAL模型），最佳SD平替（default分组），以及veo&grok备用分组2，支持15秒多参生视频，2026.06.11修复grok-video-3模型的defualt默认分组，直接升级成imagine 1.5模型，0.5积分10秒，2026.06.12新增grok-video-1.5-6s，grok-video-1.5-10s，grok-video-1.5-15s模型，默认720P，分组default，3个模型，分别是0.5，0.7，0.7积分，最佳SD2.0平替',
+      'sora-2模型，支持sora-vip分组以及default默认分组的FAL模型（sora-vip分组是2026.06.06刚修复的）',
+    ],
+  },
+  {
+    title: '音频模型注意事项',
+    paragraphs: [
+      'suno v5.5模型（Default分组）支持生成，翻唱，延长，一次生成两首歌，翻唱模式情况下，如果是版权歌曲大概率会失败，需要做各种前置处理，可以在网站异步任务查看。',
+    ],
+  },
+  {
+    title: 'LLM模型注意事项',
+    paragraphs: [
+      'LLM模型有时候因为官方问题会出现速度慢，失败等现象，这时候换个模型即可或者换一下分组即可，预置了多个模型。',
+    ],
+  },
+];
 
 function getReactFlowHandleInfo(target: EventTarget | null): {
   nodeId: string;
@@ -1229,6 +1670,174 @@ function getReactFlowHandleInfo(target: EventTarget | null): {
     handleType: rawType,
     handleId: handleEl.getAttribute('data-handleid') || null,
   };
+}
+
+function PlacementShelf({
+  items,
+  open,
+  isDark,
+  isPixel,
+  onToggle,
+  onMoveNode,
+  onRemove,
+}: {
+  items: PlacementShelfItem[];
+  open: boolean;
+  isDark: boolean;
+  isPixel: boolean;
+  onToggle: () => void;
+  onMoveNode: (item: PlacementShelfItem, point: { x: number; y: number }) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [drag, setDrag] = useState<{ item: PlacementShelfItem; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (event: PointerEvent) => {
+      setDrag((prev) => (prev ? { ...prev, x: event.clientX, y: event.clientY } : prev));
+    };
+    const onUp = (event: PointerEvent) => {
+      const item = drag.item;
+      setDrag(null);
+      onMoveNode(item, { x: event.clientX, y: event.clientY });
+    };
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onUp, true);
+    return () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onUp, true);
+    };
+  }, [drag, onMoveNode]);
+
+  const visible = items.slice(0, open ? 20 : 5);
+  const displayLimit = Math.min(items.length, open ? 20 : 5);
+  const shellStyle: CSSProperties = isPixel
+    ? {
+        border: '2px solid var(--px-ink, #1A1410)',
+        background: 'var(--px-surface, #fff7c2)',
+        color: 'var(--px-ink, #1A1410)',
+        boxShadow: '4px 4px 0 var(--px-ink, #1A1410)',
+        borderRadius: 12,
+      }
+    : {
+        border: `1px solid ${isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)'}`,
+        background: isDark ? 'rgba(17,24,39,.92)' : 'rgba(255,255,255,.94)',
+        color: isDark ? '#f8fafc' : '#111827',
+        boxShadow: '0 18px 48px rgba(0,0,0,.28)',
+        borderRadius: 14,
+        backdropFilter: 'blur(12px)',
+      };
+  const itemStyle: CSSProperties = isPixel
+    ? {
+        border: '1.5px solid var(--px-ink, #1A1410)',
+        background: 'var(--px-card, #fffdf1)',
+        boxShadow: '1px 1px 0 var(--px-ink, #1A1410)',
+      }
+    : {
+        border: `1px solid ${isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.10)'}`,
+        background: isDark ? 'rgba(255,255,255,.06)' : 'rgba(15,23,42,.04)',
+      };
+
+  return (
+    <>
+      <div
+        data-canvas-floating-ui="placement-shelf"
+        className="t8-placement-shelf p-2"
+        style={shellStyle}
+      >
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            className={isPixel ? 'px-btn px-btn--sm px-btn--ghost !py-1' : 'rounded-md px-2 py-1 text-xs font-bold hover:bg-black/10'}
+            onClick={onToggle}
+            title={open ? '收起放置栏，只显示最近 5 个' : '展开放置栏，显示最近 20 个'}
+          >
+            <LucideIcons.Inbox size={13} className="mr-1 inline-block" />
+            放置栏 {visible.length}/{displayLimit}
+          </button>
+          <button
+            type="button"
+            className="t8-mini-icon-button"
+            onClick={onToggle}
+            title={open ? '收起' : '展开'}
+          >
+            {open ? <LucideIcons.ChevronDown size={14} /> : <LucideIcons.ChevronUp size={14} />}
+          </button>
+        </div>
+        <div className="t8-placement-shelf__grid grid grid-cols-5 gap-2">
+          {visible.length === 0 && (
+            <div className="t8-placement-shelf__empty col-span-5 px-2 py-1 text-[10px] opacity-70">
+              暂无素材
+            </div>
+          )}
+          {visible.map((item) => {
+            const Icon = item.kind === 'image'
+              ? LucideIcons.Image
+              : item.kind === 'video'
+                ? LucideIcons.Video
+                : item.kind === 'model3d'
+                  ? LucideIcons.Box
+                  : LucideIcons.Music;
+            return (
+              <div
+                key={item.id}
+                className="nodrag nopan group relative h-14 w-14 cursor-grab overflow-hidden rounded-md"
+                style={itemStyle}
+                title={`${item.source} · ${item.title}\n拖到画布位置会移动原节点，不会复制。`}
+                data-drag-source
+                data-drag-kind={item.kind}
+                data-drag-url={item.url}
+                data-drag-preview={item.previewUrl || item.url}
+                data-drag-node-id={item.nodeId}
+                data-resource-title={item.title}
+                draggable
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setDrag({ item, x: event.clientX, y: event.clientY });
+                }}
+              >
+                {item.kind === 'image' ? (
+                  <SmartImage src={item.url} alt={item.title} thumbSize={160} className="h-full w-full object-cover" draggable={false} />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-black/65">
+                    <Icon size={22} className="text-white/90" />
+                  </div>
+                )}
+                <div className="absolute left-0 top-0 max-w-full truncate rounded-br bg-black/70 px-1 py-0.5 text-[9px] font-bold text-white">
+                  {item.source}
+                </div>
+                <button
+                  type="button"
+                  className="absolute right-0 top-0 hidden h-4 w-4 items-center justify-center bg-black/70 text-white group-hover:flex"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onRemove(item.id);
+                  }}
+                  title="从放置栏移除映射"
+                >
+                  <LucideIcons.X size={10} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {drag && (
+        <div
+          className="pointer-events-none fixed z-[100] flex h-12 w-12 items-center justify-center rounded-md border bg-black/70 text-white shadow-xl"
+          style={{ left: drag.x + 10, top: drag.y + 10 }}
+        >
+          <LucideIcons.Move size={20} />
+        </div>
+      )}
+    </>
+  );
 }
 
 interface CanvasInnerProps {
@@ -1254,17 +1863,48 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const isSlamdunk = visualStyle === 'slamdunk';
   const isSoccer = visualStyle === 'soccer-hero';
   const isDragonBall = visualStyle === 'dragon-ball';
+  const isTetris = visualStyle === 'tetris';
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
   const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
+  const radialSlotsRaw = useRadialMenuStore((s) => s.slots);
+  const radialLongPressMs = useRadialMenuStore((s) => s.longPressMs);
+  const radialSlots = useMemo(
+    () => normalizeRadialMenuSlots(NODE_REGISTRY, radialSlotsRaw),
+    [radialSlotsRaw],
+  );
+  const radialNodeOptions = useMemo(() => visibleRadialMenuNodeOptions(NODE_REGISTRY), []);
+  const radialNodesByType = useMemo(
+    () => new Map(radialNodeOptions.map((node) => [node.type, node])),
+    [radialNodeOptions],
+  );
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [creativeDesk, setCreativeDesk] = useState<CreativeDeskState>(() => createDefaultCreativeDeskState());
+  const [creativeDeskEditing, setCreativeDeskEditing] = useState(false);
+  const [creativeDeskActiveItemId, setCreativeDeskActiveItemId] = useState<string | null>(null);
+  const [creativeDeskResources, setCreativeDeskResources] = useState<api.ResourceItem[]>([]);
+  const [creativeDeskResourceLoading, setCreativeDeskResourceLoading] = useState(false);
+  const [creativeDeskMessage, setCreativeDeskMessage] = useState('');
+  const [radialMenu, setRadialMenu] = useState<RadialMenuSession | null>(null);
+  const [fileDragOutActive, setFileDragOutActive] = useState(false);
+  const [fileDragOutFeedback, setFileDragOutFeedback] = useState<FileDragOutFeedback | null>(null);
+  const radialPanLocked = Boolean(radialMenu);
+  const canvasPanLocked = radialPanLocked || fileDragOutActive;
+  const memoPanOnDrag = useMemo(() => (canvasPanLocked ? false : [...CANVAS_PAN_MOUSE_BUTTONS]), [canvasPanLocked]);
+  const [placementShelfItems, setPlacementShelfItems] = useState<PlacementShelfItem[]>([]);
+  const [placementShelfOpen, setPlacementShelfOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadedCanvasId, setLoadedCanvasId] = useState<string | null>(null);
   const saveTimersByCanvasRef = useRef<Map<string, number>>(new Map());
-  const pendingSaveByCanvasRef = useRef<Map<string, { nodes: Node[]; edges: Edge[]; snapshot: string; nextNodeSerialId: number }>>(new Map());
+  const pendingSaveByCanvasRef = useRef<Map<string, { nodes: Node[]; edges: Edge[]; creativeDesk: CreativeDeskState; snapshot: string; nextNodeSerialId: number }>>(new Map());
   const lastSavedByCanvasRef = useRef<Map<string, string>>(new Map());
   const lastSavedNodeCountByCanvasRef = useRef<Map<string, number>>(new Map());
   const nextNodeSerialIdRef = useRef(1);
+  const radialMenuRef = useRef<RadialMenuSession | null>(null);
+  const radialPressRef = useRef<RadialPressState | null>(null);
+  const radialViewportLockRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const radialContextMenuSuppressedUntilRef = useRef(0);
+  const fileDragOutFeedbackTimerRef = useRef<number | null>(null);
   const allowEmptySaveCanvasIdsRef = useRef<Set<string>>(new Set());
   const edgeMotionReleaseTimerRef = useRef<number | null>(null);
   const [viewportMoving, setViewportMoving] = useState(false);
@@ -1272,6 +1912,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const [dragSaveTick, setDragSaveTick] = useState(0);
   const lastDone = useRunBusStore((s) => s.lastDone);
   const lastAchievementDoneTsRef = useRef(0);
+  const achievementProfileLoaded = useAchievementStore((state) => Boolean(state.profile));
+  const achievementTrackingEnabled = useAchievementStore((state) => state.profile?.preferences?.enabled !== false);
+  const rhDuckDecodedUnlocked = useAchievementStore((state) => Boolean(state.profile?.unlockedAchievements?.['rh-duck-decoded']));
+  const yyhPortraitOutputUnlocked = useAchievementStore((state) => Boolean(state.profile?.unlockedAchievements?.['yyh-portrait-output']));
+  const hiddenOutputSyncRef = useRef<Set<string>>(new Set());
 
   // 选中节点 / 剪贴板
   const [selectedCount, setSelectedCount] = useState(0);
@@ -1280,7 +1925,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastCanvasPointerRef = useRef<{ x: number; y: number } | null>(null);
   const internalPasteTimerRef = useRef<number | null>(null);
-  const lastExternalMediaPasteRef = useRef<{ signature: string; at: number } | null>(null);
+  const internalClipboardCopiedAtRef = useRef(0);
+  const lastExternalMediaPasteRef = useRef<{ signature: string; mediaSignature: string; at: number } | null>(null);
 
   // 拖线到空白处的候选节点菜单(connection picker)
   const [picker, setPicker] = useState<{
@@ -1298,6 +1944,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const connectionPanPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [connectionPanModeActive, setConnectionPanModeActive] = useState(false);
   const [modelHelpOpen, setModelHelpOpen] = useState(false);
+  const [radialSettingsOpen, setRadialSettingsOpen] = useState(false);
   const altDragCloneRef = useRef<{
     placeholderIds: Map<string, string>; // origId -> placeholderId
   } | null>(null);
@@ -1331,14 +1978,35 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     }, EDGE_MOTION_RELEASE_DELAY_MS);
   }, [clearEdgeMotionReleaseTimer]);
 
+  const restoreRadialViewportLock = useCallback(() => {
+    const locked = radialViewportLockRef.current;
+    if (!locked) return;
+    const current = getViewport();
+    if (
+      Math.abs(current.x - locked.x) > 0.01 ||
+      Math.abs(current.y - locked.y) > 0.01 ||
+      Math.abs(current.zoom - locked.zoom) > 0.0001
+    ) {
+      void setViewport(locked);
+    }
+  }, [getViewport, setViewport]);
+
   const handleViewportMoveStart = useCallback(() => {
+    if (radialViewportLockRef.current) {
+      restoreRadialViewportLock();
+      return;
+    }
     clearEdgeMotionReleaseTimer();
     setViewportMoving(true);
-  }, [clearEdgeMotionReleaseTimer]);
+  }, [clearEdgeMotionReleaseTimer, restoreRadialViewportLock]);
 
   const handleViewportMoveEnd = useCallback(() => {
+    if (radialViewportLockRef.current) {
+      restoreRadialViewportLock();
+      return;
+    }
     releaseEdgeMotionSoon(setViewportMoving);
-  }, [releaseEdgeMotionSoon]);
+  }, [releaseEdgeMotionSoon, restoreRadialViewportLock]);
 
   // ===== SHIFT+拖拽 Handle 批量移线 =====
   // 按住 SHIFT 从节点入口(target handle)拖出，可一次性把所有入边移到另一个节点的入口。
@@ -1358,6 +2026,55 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+  useEffect(() => {
+    radialMenuRef.current = radialMenu;
+  }, [radialMenu]);
+
+  const suppressRadialContextMenu = useCallback(() => {
+    radialContextMenuSuppressedUntilRef.current = Date.now() + RADIAL_MENU_CONTEXT_SUPPRESS_MS;
+  }, []);
+
+  const isRadialMenuContextMenuSuppressed = useCallback(() => (
+    Date.now() < radialContextMenuSuppressedUntilRef.current ||
+    Boolean(radialMenuRef.current) ||
+    Boolean(radialPressRef.current?.open)
+  ), []);
+
+  useEffect(() => {
+    if (!loaded || !achievementProfileLoaded || !achievementTrackingEnabled) return;
+    const syncOnce = (key: string, payload: Parameters<typeof trackAchievementEvent>[0]) => {
+      if (hiddenOutputSyncRef.current.has(key)) return;
+      hiddenOutputSyncRef.current.add(key);
+      trackAchievementEvent(payload);
+    };
+    const hasRhDuckDecodedOutput = nodes.some((node) => Boolean((node.data as any)?.rhDuckDecoded));
+    if (hasRhDuckDecodedOutput && !rhDuckDecodedUnlocked) {
+      syncOnce('rh-duck-used-output', {
+        type: 'hidden_mode.used',
+        theme: 'rh',
+        kind: 'rh-duck',
+        mode: 'used',
+        nodeType: 'upload',
+      });
+    }
+    const hasYyhPortraitHiddenOutput = nodes.some((node) => Boolean((node.data as any)?.yyhPortraitHidden));
+    if (hasYyhPortraitHiddenOutput && !yyhPortraitOutputUnlocked) {
+      syncOnce('yyh-portrait-used-output', {
+        type: 'hidden_mode.used',
+        theme: 'yyh',
+        kind: 'yyh-portrait',
+        mode: 'used',
+        nodeType: 'portrait-master',
+      });
+    }
+  }, [
+    achievementProfileLoaded,
+    achievementTrackingEnabled,
+    loaded,
+    nodes,
+    rhDuckDecodedUnlocked,
+    yyhPortraitOutputUnlocked,
+  ]);
 
   useEffect(() => {
     if (!lastDone?.ok || !lastDone.ts || lastAchievementDoneTsRef.current === lastDone.ts) return;
@@ -1365,6 +2082,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     const node = nodesRef.current.find((item) => item.id === lastDone.id);
     const nodeType = String(node?.type || 'unknown');
     trackAchievementEvent({ type: 'node.run_success', theme: visualStyle, nodeType });
+    window.dispatchEvent(new CustomEvent('t8:tetris-energy-bonus', {
+      detail: { amount: 12, nodeType },
+    }));
     if (nodeType === 'panorama-3d') {
       trackAchievementEvent({ type: 'panorama.generated', theme: visualStyle, nodeType });
     } else if (nodeType === 'aggregate-parser') {
@@ -1377,6 +2097,46 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     nextNodeSerialIdRef.current = result.nextNodeSerialId;
     return result.nodes;
   }, []);
+
+  const registerPlacementShelfNodes = useCallback((incomingNodes: Node[], source: PlacementShelfSource) => {
+    const mapped = incomingNodes
+      .map((node) => placementShelfItemFromNode(node, source))
+      .filter((item): item is PlacementShelfItem => !!item);
+    if (mapped.length === 0) return;
+    setPlacementShelfItems((prev) => {
+      const replacementIds = new Set(mapped.map((item) => item.nodeId));
+      const next = [...mapped, ...prev.filter((item) => !replacementIds.has(item.nodeId))];
+      return next.slice(0, 60);
+    });
+  }, []);
+
+  const movePlacementShelfNode = useCallback((item: PlacementShelfItem, point: { x: number; y: number }) => {
+    const node = nodesRef.current.find((candidate) => candidate.id === item.nodeId);
+    if (!node) {
+      setPlacementShelfItems((prev) => prev.filter((entry) => entry.nodeId !== item.nodeId));
+      logBus.warn('放置栏映射的节点已不存在，已移除该条目', '放置栏');
+      return;
+    }
+    const rect = rectOf(node);
+    const flowPoint = screenToFlowPosition(point);
+    const nextPosition = {
+      x: flowPoint.x - rect.w / 2,
+      y: flowPoint.y - rect.h / 2,
+    };
+    setNodes((prev) =>
+      prev.map((candidate) => (
+        candidate.id === item.nodeId
+          ? {
+              ...candidate,
+              selected: true,
+              position: nextPosition,
+              data: { ...(candidate.data || {}), userMoved: true },
+            }
+          : { ...candidate, selected: false }
+      )),
+    );
+    logBus.success(`已移动放置栏素材：${item.title}`, '放置栏');
+  }, [screenToFlowPosition]);
 
   const markManualNodeDeletion = useCallback(
     (nodeIds: Iterable<string>, beforeNodes?: Node[]) => {
@@ -1420,6 +2180,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
   // 吸附 + 对齐辅助线
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [outputMaterialPersistenceEnabled, setOutputMaterialPersistenceEnabled] = useState(() =>
+    readOutputMaterialPersistenceSetting(),
+  );
+  const toggleOutputMaterialPersistence = useCallback(() => {
+    setOutputMaterialPersistenceEnabled((current) => {
+      const next = !current;
+      writeOutputMaterialPersistenceSetting(next);
+      return next;
+    });
+  }, []);
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({
     vertical: [],
     horizontal: [],
@@ -1437,6 +2207,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     y: number;
     ids: string[];
   } | null>(null);
+  const [selectionContextSubmenu, setSelectionContextSubmenu] = useState<'align' | null>(null);
+  const selectionContextSubmenuCloseTimerRef = useRef<number | null>(null);
   const [sendModal, setSendModal] = useState<{
     materials: SendableMaterial[];
     nodeFragment?: SendNodeFragment;
@@ -1485,6 +2257,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       nextNodeSerialIdRef.current = 1;
       setNodes([]);
       setEdges([]);
+      setCreativeDesk(createDefaultCreativeDeskState());
+      setCreativeDeskEditing(false);
+      setCreativeDeskActiveItemId(null);
+      setPlacementShelfItems([]);
+      setPlacementShelfOpen(false);
       setLoaded(false);
       setLoadedCanvasId(null);
       histReset();
@@ -1501,6 +2278,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         const pendingSave = pendingSaveByCanvasRef.current.get(requestedCanvasId);
         const ns = pendingSave?.nodes || data.nodes || [];
         const es = pendingSave?.edges || data.edges || [];
+        const nextCreativeDesk = pendingSave?.creativeDesk || sanitizeCreativeDeskState(data.creativeDesk);
         const savedNextNodeSerialId = pendingSave?.nextNodeSerialId ?? data.nextNodeSerialId;
         // ⚡ 兑底补丁: 历史画布中可能存在 connectable=false 的旧 groupBox 节点
         // (5656721 事故期间创建的 group), 加载时强制打开可连接以恢复右侧聚合输出口
@@ -1514,13 +2292,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         const fixedNs = normalized.nodes;
         setNodes(fixedNs);
         setEdges(es);
+        setCreativeDesk(nextCreativeDesk);
+        setCreativeDeskEditing(false);
+        setCreativeDeskActiveItemId(null);
         const baselineNodes = normalized.changed ? fixedNsBeforeSerials : fixedNs;
         const baselineNextNodeSerialId = normalized.changed
           ? savedNextNodeSerialId || 1
           : normalized.nextNodeSerialId;
+        setPlacementShelfItems(placementShelfItemsFromCanvasNodes(fixedNs, '画布'));
+        setPlacementShelfOpen(false);
         lastSavedByCanvasRef.current.set(requestedCanvasId, JSON.stringify({
           nodes: baselineNodes,
           edges: es,
+          creativeDesk: nextCreativeDesk,
           nextNodeSerialId: baselineNextNodeSerialId,
         }));
         lastSavedNodeCountByCanvasRef.current.set(requestedCanvasId, baselineNodes.length);
@@ -1535,6 +2319,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         nextNodeSerialIdRef.current = 1;
         setNodes([]);
         setEdges([]);
+        setCreativeDesk(createDefaultCreativeDeskState());
+        setCreativeDeskEditing(false);
+        setCreativeDeskActiveItemId(null);
+        setPlacementShelfItems([]);
+        setPlacementShelfOpen(false);
         histReset();
         setLoadedCanvasId(requestedCanvasId);
         setLoaded(true);
@@ -1606,7 +2395,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       (ed) => ed.source !== BULK_PHANTOM_ID && ed.target !== BULK_PHANTOM_ID
     );
     const nextNodeSerialId = nextNodeSerialIdRef.current;
-    const snapshot = JSON.stringify({ nodes: persistNodes, edges: persistEdges, nextNodeSerialId });
+    const snapshot = JSON.stringify({ nodes: persistNodes, edges: persistEdges, creativeDesk, nextNodeSerialId });
     const canvasIdForSave = activeId;
     const previousSnapshot = lastSavedByCanvasRef.current.get(canvasIdForSave) || '';
     if (snapshot === previousSnapshot) return;
@@ -1621,11 +2410,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     pendingSaveByCanvasRef.current.set(canvasIdForSave, {
       nodes: persistNodes,
       edges: persistEdges,
+      creativeDesk,
       nextNodeSerialId,
       snapshot,
     });
     const timer = window.setTimeout(async () => {
-      const payload = { nodes: persistNodes, edges: persistEdges, viewport: getViewport(), nextNodeSerialId };
+      const payload = { nodes: persistNodes, edges: persistEdges, viewport: getViewport(), nextNodeSerialId, creativeDesk };
       try {
         await api.saveCanvasData(canvasIdForSave, payload, { allowEmpty: allowEmptySave });
         api.autoSaveCanvasData(canvasIdForSave, payload).catch((e) => {
@@ -1653,7 +2443,108 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       }
     }, 800);
     saveTimersByCanvasRef.current.set(canvasIdForSave, timer);
-  }, [nodes, edges, activeId, loaded, loadedCanvasId, getViewport, dragSaveTick]);
+  }, [nodes, edges, creativeDesk, activeId, loaded, loadedCanvasId, getViewport, dragSaveTick]);
+
+  const getCreativeDeskCenter = useCallback(() => {
+    const flowEl = document.querySelector('.react-flow') as HTMLElement | null;
+    const rect = flowEl?.getBoundingClientRect();
+    const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+    return screenToFlowPosition({ x: cx, y: cy });
+  }, [screenToFlowPosition]);
+
+  const loadCreativeDeskResources = useCallback(async () => {
+    setCreativeDeskResourceLoading(true);
+    setCreativeDeskMessage('');
+    try {
+      const result = await api.getResourceItems({ kind: 'image' });
+      if (!result.success) throw new Error(result.error || '资源库读取失败');
+      const items = result.data || [];
+      setCreativeDeskResources(items);
+      setCreativeDeskMessage(items.length > 0 ? `已载入 ${items.length} 张图片` : '资源库暂无图片');
+    } catch (err: any) {
+      setCreativeDeskMessage(err?.message || '资源库读取失败');
+    } finally {
+      setCreativeDeskResourceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!creativeDeskEditing) return;
+    void loadCreativeDeskResources();
+  }, [creativeDeskEditing, loadCreativeDeskResources]);
+
+  const handleCreativeDeskUploadFiles = useCallback(async (files: File[]) => {
+    const images = files.filter((file) => inferCanvasMediaKind(file) === 'image');
+    if (images.length === 0) {
+      setCreativeDeskMessage('请选择图片文件');
+      return;
+    }
+    setCreativeDeskResourceLoading(true);
+    setCreativeDeskMessage('正在上传图片...');
+    const prepared: Array<{ url: string; title?: string; resourceId?: string }> = [];
+    for (let i = 0; i < images.length; i += 1) {
+      const file = images[i];
+      try {
+        const media = await uploadCanvasMediaFile(file, 'image', i);
+        let resource: api.ResourceItem | null = null;
+        try {
+          const resourceResult = await api.addResourceItem({
+            kind: 'image',
+            url: media.url,
+            title: media.name || file.name || '创作台图片',
+            tags: ['创作台背景'],
+            sourceCanvasId: activeId || undefined,
+          });
+          if (resourceResult.success) {
+            resource = resourceResult.data;
+          } else {
+            console.warn('创作台图片入库失败，使用上传文件引用', resourceResult.error);
+          }
+        } catch (resourceErr) {
+          console.warn('创作台图片入库失败，使用上传文件引用', resourceErr);
+        }
+        prepared.push({
+          url: resource?.fileUrl || media.url,
+          title: resource?.title || media.name || file.name,
+          resourceId: resource?.id,
+        });
+      } catch (err: any) {
+        console.warn('创作台图片上传失败', err);
+      }
+    }
+    if (prepared.length === 0) {
+      setCreativeDeskMessage('图片上传失败');
+      setCreativeDeskResourceLoading(false);
+      return;
+    }
+    const center = getCreativeDeskCenter();
+    const preparedWithIds = prepared.map((item, index) => ({
+      ...item,
+      id: `desk-image-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+    }));
+    const lastItemId = preparedWithIds[preparedWithIds.length - 1]?.id || null;
+    setCreativeDesk((prev) => {
+      let next = prev;
+      preparedWithIds.forEach((item, index) => {
+        const created = createCreativeDeskImageItem(item, {
+          x: center.x + index * 36,
+          y: center.y + index * 36,
+        }, next.items);
+        next = appendCreativeDeskItem(next, created);
+      });
+      return next;
+    });
+    if (lastItemId) setCreativeDeskActiveItemId(lastItemId);
+    setCreativeDeskMessage(`已添加 ${prepared.length} 张背景图`);
+    setCreativeDeskResourceLoading(false);
+    void loadCreativeDeskResources();
+  }, [activeId, getCreativeDeskCenter, loadCreativeDeskResources]);
+
+  const handleCreativeDeskResourceTouch = useCallback(async (item: api.ResourceItem) => {
+    const result = await api.updateResourceItem(item.id, { touch: true });
+    if (!result.success) console.warn('创作台资源使用时间更新失败', result.error);
+  }, []);
 
   // 添加节点(供 Sidebar 调用) —— 默认落在当前视口中心
   // 可选 atScreen 传入屏幕坐标，节点会落在该点(用于右键画布空白区添加)
@@ -1702,6 +2593,189 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     [screenToFlowPosition, nodes, getViewport, setCenter, assignActiveNodeSerials, visualStyle]
   );
 
+  useEffect(() => {
+    const stopRadialPointerEvent = (event: PointerEvent | MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    const clearPress = () => {
+      const press = radialPressRef.current;
+      if (press?.timer) window.clearTimeout(press.timer);
+      radialPressRef.current = null;
+      if (!radialMenuRef.current) {
+        radialViewportLockRef.current = null;
+      }
+    };
+
+    const closeRadial = () => {
+      clearPress();
+      restoreRadialViewportLock();
+      radialViewportLockRef.current = null;
+      radialMenuRef.current = null;
+      setRadialMenu(null);
+    };
+
+    const openRadialFromPress = (press: RadialPressState) => {
+      const center = clampRadialMenuCenter(press.start, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+      press.open = true;
+      suppressRadialContextMenu();
+      if (!radialViewportLockRef.current) {
+        radialViewportLockRef.current = getViewport();
+      }
+      setPaneMenu(null);
+      setContextMenu(null);
+      setSelectionContextSubmenu(null);
+      const next = {
+        anchor: press.start,
+        center,
+        cursor: press.start,
+        activeIndex: null,
+      };
+      radialMenuRef.current = next;
+      setRadialMenu(next);
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.defaultPrevented || event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      if (!isRadialMenuPaneTarget(event.target)) return;
+      clearPress();
+      radialViewportLockRef.current = getViewport();
+      const start = { x: event.clientX, y: event.clientY };
+      const press: RadialPressState = {
+        pointerId: event.pointerId,
+        start,
+        open: false,
+        timer: window.setTimeout(() => {
+          if (radialPressRef.current === press) openRadialFromPress(press);
+        }, radialLongPressMs),
+      };
+      radialPressRef.current = press;
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const press = radialPressRef.current;
+      if (!press || press.pointerId !== event.pointerId) return;
+      const point = { x: event.clientX, y: event.clientY };
+      if (!press.open) {
+        if (distanceBetween(press.start, point) > RADIAL_MENU_MOVE_TOLERANCE) clearPress();
+        return;
+      }
+      stopRadialPointerEvent(event);
+      restoreRadialViewportLock();
+      const current = radialMenuRef.current;
+      if (!current) return;
+      const index = radialSlotIndexFromPointer(current.center, point);
+      const activeIndex = index !== null && radialSlots[index]?.enabled ? index : null;
+      const next = { ...current, cursor: point, activeIndex };
+      radialMenuRef.current = next;
+      setRadialMenu(next);
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const press = radialPressRef.current;
+      if (!press || press.pointerId !== event.pointerId) return;
+      if (!press.open) {
+        clearPress();
+        return;
+      }
+      stopRadialPointerEvent(event);
+      suppressRadialContextMenu();
+      const current = radialMenuRef.current;
+      const slot = current?.activeIndex === null || current?.activeIndex === undefined
+        ? null
+        : radialSlots[current.activeIndex];
+      closeRadial();
+      if (slot?.enabled) {
+        addNode(slot.nodeType, { atScreen: current?.anchor || press.start });
+      }
+    };
+
+    const onPointerCancel = (event: PointerEvent) => {
+      const press = radialPressRef.current;
+      if (!press || press.pointerId !== event.pointerId) return;
+      if (press.open) {
+        stopRadialPointerEvent(event);
+        suppressRadialContextMenu();
+      }
+      closeRadial();
+    };
+
+    const onAuxClick = (event: MouseEvent) => {
+      if (event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
+      if (!radialMenuRef.current && !radialPressRef.current?.open) return;
+      stopRadialPointerEvent(event);
+    };
+
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
+      if (!radialMenuRef.current && !radialPressRef.current?.open) return;
+      stopRadialPointerEvent(event);
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      if (!radialMenuRef.current && !radialPressRef.current?.open) return;
+      stopRadialPointerEvent(event);
+    };
+
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
+      if (!radialMenuRef.current && !radialPressRef.current?.open) return;
+      stopRadialPointerEvent(event);
+    };
+
+    const onContextMenu = (event: MouseEvent) => {
+      if (!isRadialMenuContextMenuSuppressed()) return;
+      stopRadialPointerEvent(event);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && radialMenuRef.current) {
+        event.preventDefault();
+        closeRadial();
+      }
+    };
+
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+    window.addEventListener('pointercancel', onPointerCancel, true);
+    window.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('mousemove', onMouseMove, true);
+    window.addEventListener('mouseup', onMouseUp, true);
+    window.addEventListener('auxclick', onAuxClick, true);
+    window.addEventListener('contextmenu', onContextMenu, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('blur', closeRadial);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('pointermove', onPointerMove, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+      window.removeEventListener('pointercancel', onPointerCancel, true);
+      window.removeEventListener('mousedown', onMouseDown, true);
+      window.removeEventListener('mousemove', onMouseMove, true);
+      window.removeEventListener('mouseup', onMouseUp, true);
+      window.removeEventListener('auxclick', onAuxClick, true);
+      window.removeEventListener('contextmenu', onContextMenu, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('blur', closeRadial);
+      closeRadial();
+    };
+  }, [
+    addNode,
+    getViewport,
+    isRadialMenuContextMenuSuppressed,
+    radialLongPressMs,
+    radialSlots,
+    restoreRadialViewportLock,
+    suppressRadialContextMenu,
+  ]);
+
   const createUploadNodesFromFiles = useCallback(
     async (rawFiles: File[], atScreen?: { x: number; y: number }) => {
       const seenFiles = new Set<string>();
@@ -1713,7 +2787,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         seenFiles.add(key);
         return true;
       });
-      const buckets: Record<MediaKind, File[]> = { image: [], video: [], audio: [] };
+      const buckets: Record<MediaKind, File[]> = { image: [], video: [], audio: [], model3d: [] };
       let skipped = 0;
       dedupedFiles.forEach((file) => {
         const kind = inferCanvasMediaKind(file);
@@ -1724,7 +2798,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         buckets[kind].push(file);
       });
 
-      const kinds = (['image', 'video', 'audio'] as MediaKind[]).filter((kind) => buckets[kind].length > 0);
+      const kinds = (['image', 'video', 'audio', 'model3d'] as MediaKind[]).filter((kind) => buckets[kind].length > 0);
       if (kinds.length === 0) return false;
 
       const payloads: Array<{ kind: MediaKind; items: MediaItem[] }> = [];
@@ -1756,32 +2830,40 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
           : { x: window.innerWidth / 2, y: window.innerHeight / 2 });
       const base = screenToFlowPosition(screenPoint);
-      const size = defaultSizeOf('upload');
-      const desired = payloads.map((_, index) => ({
-        x: base.x - size.w / 2 + (index % 3) * 300,
-        y: base.y - size.h / 2 + Math.floor(index / 3) * 300,
-        w: size.w,
-        h: size.h,
-      }));
+      const desired = payloads.map((payload, index) => {
+        const nodeType = payload.kind === 'model3d' ? 'model-3d-upload' : 'upload';
+        const size = defaultSizeOf(nodeType);
+        return {
+          x: base.x - size.w / 2 + (index % 3) * 300,
+          y: base.y - size.h / 2 + Math.floor(index / 3) * 300,
+          w: size.w,
+          h: size.h,
+        };
+      });
       const offset = placeBatchNodes(desired, nodesRef.current, {
         source: 'placement:canvas-media-upload',
       });
       const stamp = Date.now();
       const newNodes = payloads.map((payload, index) => ({
         id: `upload-canvas-${payload.kind}-${stamp}-${index}-${Math.random().toString(36).slice(2, 6)}`,
-        type: 'upload',
+        type: payload.kind === 'model3d' ? 'model-3d-upload' : 'upload',
         position: {
           x: desired[index].x + offset.dx,
           y: desired[index].y + offset.dy,
         },
         selected: true,
-        data: createUploadDataFromItems(payload.kind, payload.items),
+        data: {
+          ...createUploadDataFromItems(payload.kind, payload.items),
+          ...(payload.kind === 'model3d' ? { lockedUploadType: 'model3d' } : {}),
+        },
       })) as Node[];
 
+      const assignedNewNodes = assignActiveNodeSerials(newNodes, nodesRef.current);
       setNodes((prev) => [
         ...prev.map((n) => ({ ...n, selected: false })),
-        ...assignActiveNodeSerials(newNodes, prev),
+        ...assignedNewNodes,
       ]);
+      registerPlacementShelfNodes(assignedNewNodes, '粘贴');
       if (skipped > 0) {
         console.warn(`画布导入素材时跳过 ${skipped} 个不支持的文件`);
       }
@@ -1790,16 +2872,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       }
       return true;
     },
-    [screenToFlowPosition, assignActiveNodeSerials]
+    [screenToFlowPosition, assignActiveNodeSerials, registerPlacementShelfNodes]
   );
 
   const replaceUploadNodeFromFiles = useCallback(
     async (nodeId: string, rawFiles: File[]) => {
-      const target = nodesRef.current.find((node) => node.id === nodeId && node.type === 'upload');
+      const target = nodesRef.current.find((node) => node.id === nodeId && (node.type === 'upload' || node.type === 'model-3d-upload'));
       if (!target) return false;
 
       const seenFiles = new Set<string>();
-      const buckets: Record<MediaKind, File[]> = { image: [], video: [], audio: [] };
+      const buckets: Record<MediaKind, File[]> = { image: [], video: [], audio: [], model3d: [] };
       let firstKind: MediaKind | null = null;
       let skipped = 0;
       rawFiles.forEach((file) => {
@@ -1815,11 +2897,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         buckets[kind].push(file);
       });
 
-      const kind = chooseUploadReplacementKind((target.data as any)?.uploadType, buckets, firstKind);
+      const existingKind = target.type === 'model-3d-upload' ? 'model3d' : (target.data as any)?.uploadType;
+      const kind = chooseUploadReplacementKind(existingKind, buckets, firstKind);
       if (!kind) return false;
       const accepted = buckets[kind];
       if (accepted.length === 0) return false;
-      const supportedCount = buckets.image.length + buckets.video.length + buckets.audio.length;
+      const supportedCount = buckets.image.length + buckets.video.length + buckets.audio.length + buckets.model3d.length;
       const skippedDifferentKind = Math.max(0, supportedCount - accepted.length);
 
       const items: MediaItem[] = [];
@@ -1853,9 +2936,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         })
       );
       const notices: string[] = [];
-      if (skippedDifferentKind > 0 || skipped > 0) notices.push(`跳过 ${skippedDifferentKind + skipped} 个非${kind === 'image' ? '图像' : kind === 'video' ? '视频' : '音频'}素材`);
+      const kindLabel = kind === 'image' ? '图像' : kind === 'video' ? '视频' : kind === 'audio' ? '音频' : '3D模型';
+      if (skippedDifferentKind > 0 || skipped > 0) notices.push(`跳过 ${skippedDifferentKind + skipped} 个非${kindLabel}素材`);
       if (failures.length > 0) notices.push(...failures.slice(0, 4));
-      if (notices.length > 0) alert(`已覆盖上传素材节点，但有部分素材未使用:\n${notices.join('\n')}`);
+      if (notices.length > 0) {
+        alert(`已覆盖上传素材节点，但有部分素材未使用:\n${notices.join('\n')}`);
+      }
       return true;
     },
     []
@@ -1939,11 +3025,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
     for (const node of nodesRef.current) {
       if (!ids.includes(node.id) || node.type === 'groupBox') continue;
-      for (const kind of ['image', 'video', 'audio'] as MediaKind[]) {
+      for (const kind of ['image', 'video', 'audio', 'model3d'] as MediaKind[]) {
         getMediaItemsFromData(node.data, kind).forEach(push);
       }
       const buckets = collectMaterialSetBucketsFromData(node.data);
-      for (const kind of ['image', 'video', 'audio'] as MediaKind[]) {
+      for (const kind of ['image', 'video', 'audio'] as Array<Exclude<MediaKind, 'model3d'>>) {
         buckets[kind].forEach((item) => {
           if (!item.url) return;
           push({
@@ -2118,6 +3204,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           }
           setEdges([...edgesRef.current.map((edge) => ({ ...edge, selected: false })), ...instance.edges]);
           setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...instance.nodes]);
+          registerPlacementShelfNodes(instance.nodes, '发送');
           setSendModal(null);
           logBus.success(`已发送 ${summarizeSendNodeFragment(fragment)} 到当前画布`, '发送节点');
           return;
@@ -2196,6 +3283,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         }
         setEdges(cleaned.edges);
         setNodes([...cleaned.nodes.map((node) => ({ ...node, selected: false })), ...assignedNewNodes]);
+        registerPlacementShelfNodes(assignedNewNodes, '发送');
         setSendModal(null);
         logBus.success(
           `已发送 ${summarizeSendableMaterials(currentSend.materials)} 到当前画布${cleaned.removed ? `，已替换旧批次 ${cleaned.removed} 个节点` : ''}`,
@@ -2247,7 +3335,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         '发送素材',
       );
     },
-    [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, resolveSendMode, sendModal, setActive],
+    [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, registerPlacementShelfNodes, resolveSendMode, sendModal, setActive],
   );
 
   const saveWorkflowFragmentToResource = useCallback(
@@ -2356,6 +3444,34 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     if (failed > 0) logBus.warn(`${failed} 项发送失败，可检查 Eagle 是否支持该素材类型`, 'Eagle');
   }, [sendModal]);
 
+  const handleSendMaterialsToFigma = useCallback(async () => {
+    if (!sendModal || sendModal.materials.length === 0) throw new Error('没有可发送到 Figma 的素材');
+    const result = await api.sendToFigma({
+      materials: sendModal.materials.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        url: item.url,
+        text: item.text,
+        name: item.name,
+      })),
+      tags: ['T8', '贞贞画布'],
+    });
+    if (!result.success) {
+      const message = result.error || '发送到 Figma 失败：画布会自动启动本机 bridge，请确认 Figma 插件窗口已打开';
+      logBus.warn(message, 'Figma');
+      throw new Error(message);
+    }
+    const bridgeResult = (result.data as any)?.result;
+    const bridgeData = bridgeResult?.data || bridgeResult || {};
+    const bridgeJobId = bridgeData.jobId || bridgeResult?.jobId || '';
+    const bridgeQueued = !!(bridgeData.queued || bridgeResult?.queued);
+    const message = bridgeQueued
+      ? `已发送 ${result.data.sent || sendModal.materials.length} 项到 Figma Bridge 队列，保持 Figma 插件窗口打开会自动导入${bridgeJobId ? `（任务 ${bridgeJobId}）` : ''}`
+      : `已发送 ${result.data.sent || sendModal.materials.length} 项到 Figma`;
+    logBus.success(message, 'Figma');
+    return message;
+  }, [sendModal]);
+
   const handleCanvasPointerMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     lastCanvasPointerRef.current = { x: e.clientX, y: e.clientY };
   }, []);
@@ -2395,6 +3511,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       incomingEdges: JSON.parse(JSON.stringify(incomingEdges)),
       outgoingEdges: JSON.parse(JSON.stringify(outgoingEdges)),
     };
+    internalClipboardCopiedAtRef.current = Date.now();
     setClipboardCount(sel.length);
   }, [nodes, edges]);
 
@@ -2756,6 +3873,50 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     [nodes, assignActiveNodeSerials]
   );
 
+  const getGroupMemberIds = useCallback((groupId: string, sourceNodes: Node[] = nodesRef.current): string[] => {
+    const groupNode = sourceNodes.find((node) => node.id === groupId && node.type === 'groupBox');
+    if (!groupNode) return [];
+    const memberIds = new Set<string>(
+      Array.isArray((groupNode.data as any)?.memberIds)
+        ? (groupNode.data as any).memberIds.filter((value: unknown): value is string => typeof value === 'string' && !!value)
+        : [],
+    );
+    const groupRect = rectOf(groupNode);
+    for (const node of sourceNodes) {
+      if (node.id === groupId || node.type === 'groupBox' || node.id === BULK_PHANTOM_ID) continue;
+      const rect = rectOf(node);
+      const center = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+      if (
+        center.x >= groupRect.x &&
+        center.x <= groupRect.x + groupRect.w &&
+        center.y >= groupRect.y &&
+        center.y <= groupRect.y + groupRect.h
+      ) {
+        memberIds.add(node.id);
+      }
+    }
+    return Array.from(memberIds);
+  }, []);
+
+  const handleDeleteGroupsWithContents = useCallback((groupIds: string[]) => {
+    const uniqueGroupIds = Array.from(new Set(groupIds.filter(Boolean)));
+    if (uniqueGroupIds.length === 0) return;
+    setNodes((prev) => {
+      const removeIds = new Set<string>(uniqueGroupIds);
+      uniqueGroupIds.forEach((groupId) => {
+        getGroupMemberIds(groupId, prev).forEach((memberId) => removeIds.add(memberId));
+      });
+      const idsToRemove = Array.from(removeIds);
+      if (idsToRemove.length === 0) return prev;
+      markManualNodeDeletion(idsToRemove, prev);
+      setEdges((eds) =>
+        eds.filter((edge) => !removeIds.has(edge.source) && !removeIds.has(edge.target))
+      );
+      logBus.success(`已删除 ${uniqueGroupIds.length} 个组及 ${Math.max(0, idsToRemove.length - uniqueGroupIds.length)} 个组内节点`, '节点组');
+      return prev.filter((node) => !removeIds.has(node.id));
+    });
+  }, [getGroupMemberIds, markManualNodeDeletion]);
+
   // 监听 GroupBox 的执行请求 / 删除请求
   const executeReq = useGroupBusStore((s) => s.executeReq);
   const deleteReq = useGroupBusStore((s) => s.deleteReq);
@@ -2798,6 +3959,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       grid: SNAP_GRID,
       gridGap: 48,
       alignGap: 32,
+      edges: edgesRef.current,
     });
     if (!result.changed) {
       logBus.info('选区已经足够整齐，未移动节点', '对齐');
@@ -3050,7 +4212,33 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   }, []);
 
   // ===== 右键菜单 =====
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const clearSelectionContextSubmenuCloseTimer = useCallback(() => {
+    if (selectionContextSubmenuCloseTimerRef.current) {
+      window.clearTimeout(selectionContextSubmenuCloseTimerRef.current);
+      selectionContextSubmenuCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const openSelectionContextSubmenu = useCallback((submenu: 'align') => {
+    clearSelectionContextSubmenuCloseTimer();
+    setSelectionContextSubmenu(submenu);
+  }, [clearSelectionContextSubmenuCloseTimer]);
+
+  const scheduleSelectionContextSubmenuClose = useCallback(() => {
+    clearSelectionContextSubmenuCloseTimer();
+    selectionContextSubmenuCloseTimerRef.current = window.setTimeout(() => {
+      selectionContextSubmenuCloseTimerRef.current = null;
+      setSelectionContextSubmenu(null);
+    }, 120);
+  }, [clearSelectionContextSubmenuCloseTimer]);
+
+  useEffect(() => () => clearSelectionContextSubmenuCloseTimer(), [clearSelectionContextSubmenuCloseTimer]);
+
+  const closeContextMenu = useCallback(() => {
+    clearSelectionContextSubmenuCloseTimer();
+    setSelectionContextSubmenu(null);
+    setContextMenu(null);
+  }, [clearSelectionContextSubmenuCloseTimer]);
   const closePaneMenu = useCallback(() => setPaneMenu(null), []);
 
   const openNodeContextMenuAt = useCallback(
@@ -3065,6 +4253,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         ids = [nodeId];
       }
       setPaneMenu(null);
+      setSelectionContextSubmenu(null);
       setContextMenu({ x: clientX, y: clientY, ids });
     },
     []
@@ -3076,6 +4265,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       e.preventDefault();
       const ids = sels.map((n) => n.id);
       if (ids.length === 0) return;
+      setSelectionContextSubmenu(null);
       setContextMenu({ x: e.clientX, y: e.clientY, ids });
     },
     []
@@ -3112,17 +4302,24 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   // 空白处右键: 弹出快速添加节点菜单(同时关闭选区菜单)
   const onPaneContextMenu = useCallback(
     (e: React.MouseEvent | MouseEvent) => {
+      if (isRadialMenuContextMenuSuppressed()) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       e.preventDefault();
+      setSelectionContextSubmenu(null);
       setContextMenu(null);
       const x = (e as MouseEvent).clientX;
       const y = (e as MouseEvent).clientY;
       setPaneMenu({ x, y });
     },
-    []
+    [isRadialMenuContextMenuSuppressed]
   );
 
   // 记录最新选中的节点 id 列表(以便 onSelectionEnd 读取)
   const lastSelectedIdsRef = useRef<string[]>([]);
+  const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const onSelectionChange = useCallback(
     ({ nodes: ns }: { nodes: Node[]; edges: Edge[] }) => {
       lastSelectedIdsRef.current = ns.map((n) => n.id);
@@ -3130,15 +4327,49 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     []
   );
 
+  const onSelectionStart = useCallback((e: React.MouseEvent) => {
+    selectionStartRef.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
+  const auditSelectionByDragRect = useCallback((e: React.MouseEvent): string[] | null => {
+    const start = selectionStartRef.current;
+    if (!start) return null;
+    const end = { x: e.clientX, y: e.clientY };
+    const screenDx = Math.abs(end.x - start.x);
+    const screenDy = Math.abs(end.y - start.y);
+    if (screenDx < 6 && screenDy < 6) return null;
+    const a = screenToFlowPosition(start);
+    const b = screenToFlowPosition(end);
+    const rect = {
+      x: Math.min(a.x, b.x),
+      y: Math.min(a.y, b.y),
+      w: Math.abs(a.x - b.x),
+      h: Math.abs(a.y - b.y),
+    };
+    if (rect.w < 2 && rect.h < 2) return null;
+    return nodesRef.current
+      .filter((node) => node.id !== BULK_PHANTOM_ID)
+      .filter((node) => rectsIntersect(rectOf(node), rect, 0))
+      .map((node) => node.id);
+  }, [screenToFlowPosition]);
+
   // 框选结束: 若选中 ≥ 2 个节点则自动弹出菜单
   const onSelectionEnd = useCallback((e: React.MouseEvent) => {
-    const ids = lastSelectedIdsRef.current;
+    const auditedIds = auditSelectionByDragRect(e);
+    selectionStartRef.current = null;
+    const ids = auditedIds || lastSelectedIdsRef.current;
     if (!ids || ids.length < 2) return;
+    if (auditedIds) {
+      const auditedSet = new Set(auditedIds);
+      lastSelectedIdsRef.current = auditedIds;
+      setNodes((prev) => prev.map((node) => ({ ...node, selected: auditedSet.has(node.id) })));
+    }
     const x = (e as any)?.clientX ?? 0;
     const y = (e as any)?.clientY ?? 0;
     if (!x && !y) return;
+    setSelectionContextSubmenu(null);
     setContextMenu({ x, y, ids });
-  }, []);
+  }, [auditSelectionByDragRect]);
 
   // 暴露 addNode 给父组件
   useEffect(() => {
@@ -3158,6 +4389,287 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       if (onInsertWorkflowRef) onInsertWorkflowRef.current = null;
     };
   }, [onInsertWorkflowRef, insertWorkflowFragment]);
+
+  useEffect(() => {
+    const findSourceFromElement = (target: EventTarget | null) => (
+      target instanceof Element ? target.closest('[data-drag-source]') as HTMLElement | null : null
+    );
+    const findDragOutSourceAtPoint = (target: EventTarget | null, point?: DragOutPoint | null) => {
+      const direct = findSourceFromElement(target);
+      if (direct) return direct;
+      const x = Number(point?.clientX ?? point?.x);
+      const y = Number(point?.clientY ?? point?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      const stack = document.elementsFromPoint(x, y);
+      for (const el of stack) {
+        if (!(el instanceof HTMLElement)) continue;
+        if (el.hasAttribute('data-drag-source')) return el;
+        const closest = el.closest('[data-drag-source]') as HTMLElement | null;
+        if (closest) return closest;
+      }
+      return null;
+    };
+    type DragOutPoint = { clientX?: number; clientY?: number; x?: number; y?: number };
+    type DragOutCandidate = {
+      source: HTMLElement;
+      kind: string;
+      url: string;
+      filename: string;
+      startX: number;
+      startY: number;
+      started: boolean;
+      sawChord: boolean;
+    };
+    let candidate: DragOutCandidate | null = null;
+    let suppressContextMenuUntil = 0;
+    let dragOutRequestSeq = 0;
+    let lastFeedbackPoint = {
+      x: typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 0,
+      y: typeof window !== 'undefined' ? Math.round(window.innerHeight / 2) : 0,
+    };
+    const pendingRequestIds = new Set<string>();
+
+    const clearFeedbackTimer = () => {
+      if (fileDragOutFeedbackTimerRef.current) {
+        window.clearTimeout(fileDragOutFeedbackTimerRef.current);
+        fileDragOutFeedbackTimerRef.current = null;
+      }
+    };
+    const showDragOutFeedback = (
+      point: DragOutPoint | null | undefined,
+      tone: FileDragOutFeedback['tone'],
+      title: string,
+      detail: string,
+      duration = 2600,
+    ) => {
+      const x = Number(point?.clientX ?? point?.x ?? lastFeedbackPoint.x);
+      const y = Number(point?.clientY ?? point?.y ?? lastFeedbackPoint.y);
+      lastFeedbackPoint = {
+        x: Number.isFinite(x) ? x : lastFeedbackPoint.x,
+        y: Number.isFinite(y) ? y : lastFeedbackPoint.y,
+      };
+      setFileDragOutFeedback({
+        ...lastFeedbackPoint,
+        tone,
+        title,
+        detail,
+      });
+      clearFeedbackTimer();
+      fileDragOutFeedbackTimerRef.current = window.setTimeout(() => {
+        setFileDragOutFeedback(null);
+        fileDragOutFeedbackTimerRef.current = null;
+      }, duration);
+    };
+
+    const stopPointer = (event: PointerEvent | DragEvent | MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      (event as any).stopImmediatePropagation?.();
+    };
+    const materialInfoFromSource = (source: HTMLElement | null) => {
+      if (!source) return null;
+      const kind = source.getAttribute('data-drag-kind') || '';
+      const url = source.getAttribute('data-drag-url') || '';
+      if (!['image', 'video', 'audio'].includes(kind) || !url) return null;
+      const filename = source.getAttribute('data-resource-title') || fileNameFromUrl(url) || `${kind}-${Date.now()}`;
+      return { kind, url, filename };
+    };
+    const armSource = (source: HTMLElement) => {
+      source.setAttribute('draggable', 'true');
+      source.classList.add('nodrag', 'nopan');
+    };
+    const clearCandidate = () => {
+      candidate = null;
+      setFileDragOutActive(false);
+      document.body.classList.remove('t8-file-drag-out-active');
+    };
+    const setChordSeen = (event?: DragOutPoint | null) => {
+      if (!candidate) return;
+      const firstChord = !candidate.sawChord;
+      candidate.sawChord = true;
+      suppressContextMenuUntil = Date.now() + 900;
+      setFileDragOutActive(true);
+      document.body.classList.add('t8-file-drag-out-active');
+      if (firstChord) {
+        showDragOutFeedback(
+          event,
+          'info',
+          '检测到左键+右键',
+          '继续拖动，会尝试把素材拖到系统文件夹。',
+          1400,
+        );
+      }
+    };
+    const startNativeDragOut = (event: PointerEvent | DragEvent) => {
+      if (!candidate || candidate.started) return false;
+      setChordSeen(event);
+      if (!window.t8pc?.dragFileOut) {
+        candidate.started = true;
+        showDragOutFeedback(
+          event,
+          'warning',
+          '普通浏览器限制',
+          '当前没有 Electron 原生拖出桥接，左键+右键无法主动发起系统文件拖出；请用桌面版或 npm run electron:dev 测试。',
+          4200,
+        );
+        return false;
+      }
+      if (!canUseNativeDragOut(candidate.url)) {
+        candidate.started = true;
+        showDragOutFeedback(
+          event,
+          'warning',
+          '不是本地素材',
+          '只支持本机 input/output/thumbnails 里的图片、视频和音频直接拖到文件夹。',
+          3600,
+        );
+        return false;
+      }
+      stopPointer(event);
+      candidate.started = true;
+      const requestId = `drag-out-${Date.now()}-${++dragOutRequestSeq}`;
+      pendingRequestIds.add(requestId);
+      window.t8pc.dragFileOut({
+        url: candidate.url,
+        filename: candidate.filename,
+        kind: candidate.kind,
+        requestId,
+      });
+      showDragOutFeedback(
+        event,
+        'info',
+        '正在交给系统拖出',
+        '拖到系统文件夹后松开鼠标；如果失败会在这里显示原因。',
+        1800,
+      );
+      return true;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const source = findDragOutSourceAtPoint(event.target, event);
+      const info = materialInfoFromSource(source);
+      if (!source || !info) return;
+      if (event.ctrlKey || event.metaKey) return;
+      if (event.button !== 0 && event.button !== 2) return;
+      armSource(source);
+      candidate = {
+        source,
+        ...info,
+        startX: event.clientX,
+        startY: event.clientY,
+        started: false,
+        sawChord: false,
+      };
+      if (isLeftRightMouseChord(event.buttons)) {
+        setChordSeen(event);
+        stopPointer(event);
+      }
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!candidate) return;
+      if (event.buttons === 0) {
+        clearCandidate();
+        return;
+      }
+      if (!isLeftRightMouseChord(event.buttons)) {
+        return;
+      }
+      setChordSeen(event);
+      stopPointer(event);
+      const moved = Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY);
+      if (moved >= FILE_DRAG_OUT_MOVE_TOLERANCE) {
+        startNativeDragOut(event);
+      }
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (!candidate) return;
+      if (candidate.sawChord) {
+        stopPointer(event);
+      }
+      clearCandidate();
+    };
+    const onPointerCancel = (event: PointerEvent) => {
+      if (candidate?.sawChord) {
+        stopPointer(event);
+      }
+      clearCandidate();
+    };
+    const onDragStart = (event: DragEvent) => {
+      const source = findDragOutSourceAtPoint(event.target, event);
+      if (!source || !event.dataTransfer) return;
+      const info = materialInfoFromSource(source);
+      if (!info) return;
+      if (event.ctrlKey || event.metaKey) return;
+      const chord = isLeftRightMouseChord((event as any).buttons) || (candidate?.source === source && candidate.sawChord);
+      if (!chord) {
+        event.preventDefault();
+        return;
+      }
+      if (!candidate || candidate.source !== source) {
+        armSource(source);
+        candidate = {
+          source,
+          ...info,
+          startX: event.clientX,
+          startY: event.clientY,
+          started: false,
+          sawChord: true,
+        };
+        setFileDragOutActive(true);
+      }
+      if (startNativeDragOut(event)) return;
+      const absoluteUrl = absoluteMaterialUrl(info.url);
+      const mime = mimeForExternalDrag(info.kind, info.url);
+      try {
+        event.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.setData('DownloadURL', `${mime}:${info.filename}:${absoluteUrl}`);
+        event.dataTransfer.setData('text/uri-list', absoluteUrl);
+        event.dataTransfer.setData('text/plain', absoluteUrl);
+      } catch {
+        // Some browser shells restrict custom drag formats.
+      }
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      const source = findDragOutSourceAtPoint(event.target, event);
+      if (!source) return;
+      if (candidate?.sawChord || Date.now() < suppressContextMenuUntil) {
+        stopPointer(event);
+      }
+    };
+    const offDragOutStatus = window.t8pc?.onDragFileOutStatus?.((status) => {
+      if (!status) return;
+      if (status.requestId) {
+        if (!pendingRequestIds.has(status.requestId)) return;
+        pendingRequestIds.delete(status.requestId);
+      }
+      showDragOutFeedback(
+        lastFeedbackPoint,
+        status.success ? 'success' : 'error',
+        status.success ? '系统拖出已启动' : '系统拖出失败',
+        status.message || (status.success ? '拖到文件夹后松开鼠标。' : '请检查素材文件是否还存在。'),
+        status.success ? 1800 : 4200,
+      );
+    });
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+    window.addEventListener('pointercancel', onPointerCancel, true);
+    window.addEventListener('dragstart', onDragStart, true);
+    window.addEventListener('contextmenu', onContextMenu, true);
+    window.addEventListener('blur', clearCandidate);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('pointermove', onPointerMove, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+      window.removeEventListener('pointercancel', onPointerCancel, true);
+      window.removeEventListener('dragstart', onDragStart, true);
+      window.removeEventListener('contextmenu', onContextMenu, true);
+      window.removeEventListener('blur', clearCandidate);
+      offDragOutStatus?.();
+      clearFeedbackTimer();
+      document.body.classList.remove('t8-file-drag-out-active');
+      clearCandidate();
+    };
+  }, []);
 
   // xyflow 事件
   const onNodesChange = useCallback(
@@ -4120,6 +5632,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     // v1.2.10.5-hotfix: 同一次 effect 内多个源节点补建的 OutputNode 之间互不可见 (nodes 快照不包含本轮刚 push 的节点),
     // 会导致多源场景下新 OutputNode 之间重叠。累积到 pendingPlacedNodes, 每次避让合并进 existing。
     const pendingPlacedNodes: Node[] = [];
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+
+    // Clean up bad chains created by older builds where a 3D preview was treated
+    // as a fresh model source and auto-spawned another preview forever.
+    for (const edge of edges) {
+      if (!edge.id.startsWith('e-auto-')) continue;
+      const source = nodeById.get(edge.source);
+      const target = nodeById.get(edge.target);
+      if (
+        source?.type === 'model-3d-preview' &&
+        target?.type === 'model-3d-preview' &&
+        target.id.startsWith('model-3d-preview-auto-')
+      ) {
+        toRemoveNodeIds.add(target.id);
+      }
+    }
 
     for (const n of nodes) {
       const t = n.type as string;
@@ -4133,6 +5661,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       // v1.2.10.5-hotfix2: 跟過源节点尚未被 DOM 测量时跳过，下一轮 nodes 更新（带上 measured）会重新触发 effect。
       // 避免用不准确的字典尺寸计算 baseX 导致 desired position 落在源节点可视范围内。
       if (!(n as any).measured?.width) continue;
+      // model-3d-preview keeps modelUrl/modelUrls in its own data for download/switching.
+      // Only ignore those model fields; its snapshot image still needs normal auto output.
+      const shouldCollectModelOutputs = t !== 'model-3d-preview';
       // v1.2.8.2: 循环器仅在完成后才让 autoOutput 处理, 避免运行中注入 items[i] 时被误认为
       // “已生产产物” 并创建个空的 OutputNode。在 status='success' 时 d.imageUrls/videoUrls/audioUrls
       // 数组才是最终聚合产物, 交给 autoOutput 判并拆为 N 个 OutputNode (每行 3 个网格)。
@@ -4178,7 +5709,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
             id: newId,
             type: 'output',
             position: { x: baseX + _offFP.dx, y: baseY + i * 360 + _offFP.dy },
-            data: {}, // 不带 pickKind/pickIndex, 让 useUpstreamMaterials 按 sourceHandle 过滤
+            data: outputMaterialPersistenceEnabled
+              ? buildPersistentOutputSnapshotData({ kind: 'image', url: h === 'first' ? first : last })
+              : {}, // 不带 pickKind/pickIndex, 让 useUpstreamMaterials 按 sourceHandle 过滤
             selected: false,
           } as Node;
           toAddNodes.push(_newNode);
@@ -4233,7 +5766,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
             id: newId,
             type: 'output',
             position: { x: baseX + _offSU.dx, y: baseY + i * 360 + _offSU.dy },
-            data: {}, // 不带 pickKind/pickIndex。由 useUpstreamMaterials/OutputNode collected 按 sourceHandle 滤
+            data: outputMaterialPersistenceEnabled
+              ? buildPersistentOutputSnapshotData({ kind: 'audio', url: h === 'audio-0' ? a0 : a1 })
+              : {}, // 不带 pickKind/pickIndex。由 useUpstreamMaterials/OutputNode collected 按 sourceHandle 滤
             selected: false,
           } as Node;
           toAddNodes.push(_newNode);
@@ -4251,9 +5786,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
       // 提取输出项 (去重 + 过滤 + 同类型内序号)
       const seen = new Set<string>();
+      const seenTexts = new Set<string>();
+      const texts: string[] = [];
       const imgs: string[] = [];
       const vids: string[] = [];
       const auds: string[] = [];
+      const mods: string[] = [];
+      const pushTxt = (value: any) => {
+        if (typeof value !== 'string') return;
+        const text = value.trim();
+        if (!text || seenTexts.has(text)) return;
+        seenTexts.add(text);
+        texts.push(text);
+      };
       const pushImg = (u: any) => {
         if (typeof u !== 'string' || !u || seen.has(u)) return;
         seen.add(u);
@@ -4269,21 +5814,41 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         seen.add(u);
         auds.push(u);
       };
+      const pushMod = (u: any) => {
+        if (typeof u !== 'string' || !u || seen.has(u)) return;
+        seen.add(u);
+        mods.push(u);
+      };
+      pushTxt(d.outputText);
+      pushTxt(d.reply);
+      if (Array.isArray(d.textSegments)) d.textSegments.forEach(pushTxt);
+      if (Array.isArray(d.segments)) d.segments.forEach(pushTxt);
+      if (Array.isArray(d.texts)) d.texts.forEach(pushTxt);
       pushImg(d.imageUrl);
       if (Array.isArray(d.imageUrls)) d.imageUrls.forEach(pushImg);
-      // d.urls 是通用产物数组（RH 使用），可能同时含图/视频/音频。
-      // 按扩展名分流，避免 mp4 url 被当 image 加入 imgs 后下游 OutputNode 误用 pickKind='image' 过滤。
+      // d.urls 是通用产物数组（RH/FAL 使用），可能同时含图/视频/音频/3D 模型。
+      // 按扩展名分流，避免 mp4/glb url 被当 image 加入 imgs 后下游 OutputNode 误用 pickKind='image' 过滤。
       if (Array.isArray(d.urls)) {
+        const isModExt = (u: string) => /\.(glb|gltf|obj|fbx|stl|usdz|zip)(\?.*)?$/i.test(u);
         const isVidExt = (u: string) => /\.(mp4|webm|mov|m4v|mkv)(\?.*)?$/i.test(u);
         const isAudExt = (u: string) => /\.(mp3|wav|ogg|m4a|flac|aac)(\?.*)?$/i.test(u);
         d.urls.forEach((u: any) => {
           if (typeof u !== 'string' || !u) return;
-          if (isVidExt(u)) pushVid(u);
+          if (isModExt(u)) {
+            if (shouldCollectModelOutputs) pushMod(u);
+          }
+          else if (isVidExt(u)) pushVid(u);
           else if (isAudExt(u)) pushAud(u);
           else pushImg(u);
         });
       }
       if (Array.isArray(d.generatedImages)) d.generatedImages.forEach(pushImg);
+      if (shouldCollectModelOutputs) {
+        pushMod(d.modelUrl);
+        pushMod(d.directModelUrl);
+        if (Array.isArray(d.modelUrls)) d.modelUrls.forEach(pushMod);
+        if (Array.isArray(d.directModelUrls)) d.directModelUrls.forEach(pushMod);
+      }
       pushVid(d.videoUrl);
       // v1.2.8.2: 支持 videoUrls 数组 (LoopNode 聚合多个视频产物)
       if (Array.isArray(d.videoUrls)) d.videoUrls.forEach(pushVid);
@@ -4294,16 +5859,97 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       // v1.2.8.2: 支持 audioUrls 数组 (LoopNode 聚合多个音频产物)
       if (Array.isArray(d.audioUrls)) d.audioUrls.forEach(pushAud);
       // 合成 items: 靠 kindIndex 让下游 OutputNode 能准确拾取对应索引的那一项
-      const items: Array<{ kind: 'image' | 'video' | 'audio'; url: string; kindIndex: number }> = [
+      const items: Array<{ kind: 'text' | 'image' | 'video' | 'audio'; url: string; kindIndex: number }> = [
+        ...texts.map((url, i) => ({ kind: 'text' as const, url, kindIndex: i })),
         ...imgs.map((url, i) => ({ kind: 'image' as const, url, kindIndex: i })),
         ...vids.map((url, i) => ({ kind: 'video' as const, url, kindIndex: i })),
         ...auds.map((url, i) => ({ kind: 'audio' as const, url, kindIndex: i })),
       ];
-      if (items.length === 0) continue;
+      const modelItems = mods.map((url, i) => ({ kind: 'model3d' as const, url, kindIndex: i }));
+      if (items.length === 0 && modelItems.length === 0) continue;
 
-      const sig = items.map((x) => `${x.kind}:${x.url}`).join('|');
+      const sig = [...items, ...modelItems].map((x) => `${x.kind}:${x.url}`).join('|');
       const lastSig = autoOutputProcessedRef.current.get(n.id);
       if (lastSig === sig) continue;
+
+      if (modelItems.length > 0) {
+        const modelUrlSet = new Set(modelItems.map((item) => item.url));
+        const downstreamModelPreviews = edges
+          .filter((e) => e.source === n.id)
+          .map((e) => {
+            const t = nodes.find((x) => x.id === e.target);
+            if (!t || t.type !== 'model-3d-preview') return null;
+            const td: any = t.data || {};
+            const url = String(td.directModelUrl || td.modelUrl || '').trim();
+            const totalIncoming = edges.filter((x) => x.target === t.id).length;
+            const hasOutgoing = edges.some((x) => x.source === t.id);
+            const auto = t.id.startsWith('model-3d-preview-auto-') && e.id.startsWith('e-auto-');
+            const removable = auto && totalIncoming === 1 && !hasOutgoing && td.userMoved !== true;
+            return { id: t.id, url, auto, removable };
+          })
+          .filter(Boolean) as Array<{ id: string; url: string; auto: boolean; removable: boolean }>;
+        const hasManualModelPreview = downstreamModelPreviews.some((item) => !item.auto);
+        for (const preview of downstreamModelPreviews) {
+          if (preview.removable && preview.url && !modelUrlSet.has(preview.url)) {
+            toRemoveNodeIds.add(preview.id);
+            for (const edge of edges) {
+              if (edge.source === preview.id || edge.target === preview.id) toRemoveEdgeIds.add(edge.id);
+            }
+          }
+        }
+        if (!hasManualModelPreview) {
+          const occupiedModelUrls = new Set(downstreamModelPreviews.map((item) => item.url).filter(Boolean));
+          const remainingModels = modelItems.filter((item) => !occupiedModelUrls.has(item.url));
+          if (remainingModels.length > 0) {
+            const _srcRectModel = rectOf(n);
+            const _szModel = defaultSizeOf('model-3d-preview');
+            const baseXModel = (n.position?.x ?? 0) + _srcRectModel.w + 80;
+            const baseYModel = (n.position?.y ?? 0) + _srcRectModel.h / 2 - _szModel.h / 2;
+            const desiredModel: PlacementRect[] = remainingModels.map((_, i) => ({
+              x: baseXModel + (i % 2) * (_szModel.w + 40),
+              y: baseYModel + Math.floor(i / 2) * (_szModel.h + 40),
+              w: _szModel.w,
+              h: _szModel.h,
+            }));
+            const offModel = placeBatchNodes(desiredModel, [...nodes, ...pendingPlacedNodes], { source: 'placement:auto-model3d-output', gap: 0 });
+            remainingModels.forEach((item, i) => {
+              const newId = `model-3d-preview-auto-${n.id}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+              const newNode: Node = {
+                id: newId,
+                type: 'model-3d-preview',
+                position: {
+                  x: desiredModel[i].x + offModel.dx,
+                  y: desiredModel[i].y + offModel.dy,
+                },
+                data: {
+                  modelUrl: item.url,
+                  modelUrls: [item.url],
+                  directModelUrl: item.url,
+                  directModelUrls: [item.url],
+                  pickKind: item.kind,
+                  pickIndex: item.kindIndex,
+                  status: 'idle',
+                  error: '',
+                },
+                selected: false,
+              } as Node;
+              toAddNodes.push(newNode);
+              pendingPlacedNodes.push(newNode);
+              toAddEdges.push({
+                id: `e-auto-${newId}`,
+                source: n.id,
+                target: newId,
+                type: 'deletable',
+              } as Edge);
+            });
+          }
+        }
+      }
+
+      if (items.length === 0) {
+        newSigPatches.push([n.id, sig]);
+        continue;
+      }
 
       // 收集当前下游 OutputNode（手动 + 自动）
       // 意图：N 个产物 → N 个独立 OutputNode。只要某个 OutputNode 仅从本节点连入且未带 pickKind，
@@ -4345,6 +5991,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           typeof o.pickIndex === 'number' &&
           !validItemKeys.has(`${o.pickKind}:${o.pickIndex}`)
         ) {
+          if (shouldPreserveAutoOutputMaterialNode(nodeById.get(o.id), outputMaterialPersistenceEnabled)) {
+            return true;
+          }
           toRemoveNodeIds.add(o.id);
           for (const edge of edges) {
             if (edge.source === o.id || edge.target === o.id) toRemoveEdgeIds.add(edge.id);
@@ -4434,7 +6083,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           },
           // pickKind/pickIndex: 下游 OutputNode 只拾上游对应 kind 的第 kindIndex 项,
           // 避免多图场景下所有 OutputNode 都重复显示全部输出
-          data: { pickKind: item.kind, pickIndex: item.kindIndex },
+          data: outputMaterialPersistenceEnabled
+            ? { pickKind: item.kind, pickIndex: item.kindIndex, ...buildPersistentOutputSnapshotData(item) }
+            : { pickKind: item.kind, pickIndex: item.kindIndex },
           selected: false,
         } as Node;
         toAddNodes.push(_newNodeGen);
@@ -4450,6 +6101,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       }
     }
 
+    if (toRemoveNodeIds.size > 0) {
+      for (const edge of edges) {
+        if (toRemoveNodeIds.has(edge.source) || toRemoveNodeIds.has(edge.target)) {
+          toRemoveEdgeIds.add(edge.id);
+        }
+      }
+    }
+
     // 先写 ref 避免下次 useEffect 重进入重复创建
     for (const [id, sig] of newSigPatches) autoOutputProcessedRef.current.set(id, sig);
     if (toRemoveNodeIds.size > 0 || toAddNodes.length > 0) {
@@ -4457,9 +6116,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         console.warn('[autoOutput] 创建', toAddNodes.length, '个节点, pending累积:', pendingPlacedNodes.length,
         '\n  positions:', toAddNodes.map(n => `${n.id.slice(0,20)}.. (${Math.round(n.position.x)},${Math.round(n.position.y)})`));
       }
+      const baseNodes = nodes.filter((node) => !toRemoveNodeIds.has(node.id));
+      const assignedToAdd = assignActiveNodeSerials(toAddNodes, baseNodes);
+      if (assignedToAdd.length > 0) registerPlacementShelfNodes(assignedToAdd, '生成');
       setNodes((prev) => [
         ...prev.filter((node) => !toRemoveNodeIds.has(node.id)),
-        ...assignActiveNodeSerials(toAddNodes, prev.filter((node) => !toRemoveNodeIds.has(node.id))),
+        ...assignedToAdd,
       ]);
     }
     if (toRemoveEdgeIds.size > 0 || toAddEdges.length > 0) {
@@ -4468,7 +6130,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         ...toAddEdges,
       ]);
     }
-  }, [nodes, edges, loaded, assignActiveNodeSerials]);
+  }, [nodes, edges, loaded, assignActiveNodeSerials, registerPlacementShelfNodes, outputMaterialPersistenceEnabled]);
 
   // ===== 自动外挂 OutputNode 的网格重排 =====
   // 创建时使用了固定占位坐标 (350x360), 但节点实际宽高取决于
@@ -4574,6 +6236,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       if (document.querySelector('.img-edit-overlay')) return;
       const files = collectCanvasMediaFiles(e.clipboardData);
       if (files.length === 0) return;
+      const mediaSignature = files
+        .map(canvasMediaFileKey)
+        .join('||');
+      const now = Date.now();
+      const last = lastExternalMediaPasteRef.current;
+      const shouldReleaseConsumedExternalMedia =
+        Boolean(
+          last?.mediaSignature === mediaSignature &&
+          clipboardRef.current?.nodes?.length &&
+          internalClipboardCopiedAtRef.current > last.at
+        );
+      if (shouldReleaseConsumedExternalMedia) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const pointerTarget = lastCanvasPointerRef.current
         ? document.elementFromPoint(lastCanvasPointerRef.current.x, lastCanvasPointerRef.current.y)
         : null;
@@ -4584,16 +6262,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         window.clearTimeout(internalPasteTimerRef.current);
         internalPasteTimerRef.current = null;
       }
-      const signature = files
-        .map(canvasMediaFileKey)
-        .join('||');
-      const actionSignature = `${uploadTargetNodeId || 'new-upload-node'}::${signature}`;
-      const now = Date.now();
-      const last = lastExternalMediaPasteRef.current;
+      const actionSignature = `${uploadTargetNodeId || 'new-upload-node'}::${mediaSignature}`;
       e.preventDefault();
       e.stopPropagation();
       if (last?.signature === actionSignature && now - last.at < EXTERNAL_MEDIA_PASTE_DEDUPE_MS) return;
-      lastExternalMediaPasteRef.current = { signature: actionSignature, at: now };
+      lastExternalMediaPasteRef.current = { signature: actionSignature, mediaSignature, at: now };
       if (uploadTargetNodeId) {
         void replaceUploadNodeFromFiles(uploadTargetNodeId, files);
         return;
@@ -4624,6 +6297,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     setCenter(rect.x + rect.w / 2, rect.y + rect.h / 2, { zoom, duration: 450 });
     pulseNearestNode(nearest.id);
   }, [activeId, getViewport, loaded, loadedCanvasId, nodes, screenToFlowPosition, setCenter]);
+
+  const focusCanvasCenter = useCallback(() => {
+    if (!loaded || loadedCanvasId !== activeId) return;
+    const center = centerOfNavigableNodes(nodesRef.current);
+    const { zoom } = getViewport();
+    setCenter(center.x, center.y, { zoom, duration: 420 });
+  }, [activeId, getViewport, loaded, loadedCanvasId, setCenter]);
 
   const focusNodeBySerialId = useCallback(() => {
     if (!loaded || loadedCanvasId !== activeId) return;
@@ -4678,12 +6358,18 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         handlePaste(true);
       } else if (matchesAnyShortcut(shortcuts['canvas.paste'], e)) {
         if (!clipboardRef.current?.nodes?.length) return;
-        e.preventDefault();
+        // Let the real paste event fire first. Some browsers suppress clipboard
+        // files when Ctrl+V keydown is prevented, so screenshots/files must win
+        // over the in-memory node clipboard.
         if (internalPasteTimerRef.current) window.clearTimeout(internalPasteTimerRef.current);
         internalPasteTimerRef.current = window.setTimeout(() => {
           internalPasteTimerRef.current = null;
           const lastExternalPaste = lastExternalMediaPasteRef.current;
-          if (lastExternalPaste && Date.now() - lastExternalPaste.at < EXTERNAL_MEDIA_PASTE_DEDUPE_MS) return;
+          if (
+            lastExternalPaste &&
+            Date.now() - lastExternalPaste.at < EXTERNAL_MEDIA_PASTE_DEDUPE_MS &&
+            internalClipboardCopiedAtRef.current <= lastExternalPaste.at
+          ) return;
           handlePaste(false);
         }, INTERNAL_NODE_PASTE_DELAY_MS);
       } else if (matchesAnyShortcut(shortcuts['canvas.duplicate'], e)) {
@@ -4696,6 +6382,27 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           .filter((n) => n.selected && n.type !== 'groupBox')
           .map((n) => n.id);
         if (selIds.length >= 1) handleCreateGroup(selIds);
+      } else if (matchesAnyShortcut(shortcuts['canvas.center-view'], e)) {
+        if (selectedCount > 0) return;
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (
+          isCanvasOverviewShortcutBlocked(e.target) ||
+          isCanvasOverviewShortcutBlocked(activeEl) ||
+          document.querySelector(
+            [
+              '[data-canvas-floating-ui="image-compare-modal"]',
+              '[data-canvas-floating-ui="portrait-master-editor"]',
+              '[data-canvas-floating-ui="send-materials-modal"]',
+              '[data-canvas-floating-ui="picker-menu"]',
+              '[data-canvas-floating-ui="node-menu"]',
+              '[data-canvas-floating-ui="pane-menu"]',
+            ].join(','),
+          )
+        ) {
+          return;
+        }
+        e.preventDefault();
+        focusCanvasCenter();
       } else if (matchesAnyShortcut(shortcuts['canvas.overview'], e) || matchesAnyShortcut(shortcuts['canvas.nearest-node'], e)) {
         const isNearestShortcut = matchesAnyShortcut(shortcuts['canvas.nearest-node'], e);
         if (isNearestShortcut && selectedCount > 0) return;
@@ -4742,7 +6449,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         internalPasteTimerRef.current = null;
       }
     };
-  }, [histUndo, histRedo, handleCopy, handlePaste, handleDuplicate, handleDeleteSelected, handleCreateGroup, nodes, selectedCount, fitView, focusNearestNodeToViewport, shortcuts]);
+  }, [histUndo, histRedo, handleCopy, handlePaste, handleDuplicate, handleDeleteSelected, handleCreateGroup, nodes, selectedCount, fitView, focusCanvasCenter, focusNearestNodeToViewport, shortcuts]);
 
   // 全局滚轮拦截 —— 自动给所有节点内的 input / textarea / select / contenteditable
   // 挂上 wheel.stopPropagation()，让用户在文本框内可用鼠标滚轮滚动文字而不触发画布缩放。
@@ -4783,9 +6490,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
-  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall;
+  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall || isTetris;
   const heavyEdgeMotion = isDecorativeEdgeVisual && edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
-  const edgeMotionReduced = isDecorativeEdgeVisual && (heavyEdgeMotion || viewportMoving || nodeDragging);
+  const edgeMotionReduced = isDecorativeEdgeVisual && (viewportMoving || nodeDragging);
+  const edgeMotionMode = isDecorativeEdgeVisual ? (edgeMotionReduced ? 'reduced' : 'scoped') : undefined;
   const heavyCanvasSurface = nodes.length >= 96 || edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
   const guideColor = themeTokens.edgeSelected;
   const edgeStroke = themeTokens.edge;
@@ -4820,13 +6528,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       root.removeAttribute('data-t8-edge-load');
       return;
     }
-    root.setAttribute('data-t8-edge-motion', edgeMotionReduced ? 'reduced' : 'full');
+    root.setAttribute('data-t8-edge-motion', edgeMotionMode || 'scoped');
     root.setAttribute('data-t8-edge-load', heavyEdgeMotion ? 'heavy' : 'normal');
     return () => {
       root.removeAttribute('data-t8-edge-motion');
       root.removeAttribute('data-t8-edge-load');
     };
-  }, [edgeMotionReduced, heavyEdgeMotion, isDecorativeEdgeVisual]);
+  }, [edgeMotionMode, heavyEdgeMotion, isDecorativeEdgeVisual]);
 
   if (!activeId) {
     return (
@@ -4843,11 +6551,153 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     );
   }
 
+  const floatingControlRail = (
+    <>
+      <div className="t8-control-rail nodrag nopan" data-canvas-floating-ui="control-rail">
+        <div className="t8-control-stack">
+          <button
+            type="button"
+            className={`t8-control-rail-help t8-control-rail-creative-desk t8-mini-icon-button${creativeDeskEditing ? ' is-active' : ''}`}
+            data-canvas-floating-ui="creative-desk-toggle"
+            aria-label="创作台背景"
+            title="创作台背景"
+            aria-expanded={creativeDeskEditing}
+            onClick={(event) => {
+              event.stopPropagation();
+              setCreativeDeskEditing((value) => {
+                const next = !value;
+                if (next) {
+                  setRadialSettingsOpen(false);
+                  setModelHelpOpen(false);
+                }
+                return next;
+              });
+            }}
+          >
+            <LucideIcons.Images size={16} />
+          </button>
+          <button
+            type="button"
+            className={`t8-control-rail-help t8-control-rail-radial t8-mini-icon-button${radialSettingsOpen ? ' is-active' : ''}`}
+            data-canvas-floating-ui="radial-settings-toggle"
+            aria-label="中键圆盘设置"
+            title="中键圆盘设置"
+            aria-expanded={radialSettingsOpen}
+            onClick={(event) => {
+              event.stopPropagation();
+              setRadialSettingsOpen((value) => {
+                const next = !value;
+                if (next) {
+                  setModelHelpOpen(false);
+                  setCreativeDeskEditing(false);
+                }
+                return next;
+              });
+            }}
+          >
+            <LucideIcons.Settings2 size={16} />
+          </button>
+          <button
+            type="button"
+            className={`t8-control-rail-help t8-mini-icon-button${modelHelpOpen ? ' is-active' : ''}`}
+            data-canvas-floating-ui="model-help-toggle"
+            aria-label="模型注意事项"
+            title="模型注意事项"
+            aria-expanded={modelHelpOpen}
+            onClick={(event) => {
+              event.stopPropagation();
+              setModelHelpOpen((value) => {
+                const next = !value;
+                if (next) {
+                  setRadialSettingsOpen(false);
+                  setCreativeDeskEditing(false);
+                }
+                return next;
+              });
+            }}
+          >
+            <LucideIcons.CircleHelp size={16} />
+          </button>
+          <ThemeMusicToggle template={currentTemplate} />
+          <Controls
+            style={{
+              background: isOp
+                ? themeTokens.panelBg
+                : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
+              border: isOp
+                ? `3px solid ${themeTokens.textMain}`
+                : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
+              borderRadius: isOp ? '16px 16px 8px 8px' : 8,
+              boxShadow: isOp ? `4px 4px 0 ${themeTokens.textMain}` : undefined,
+            }}
+          />
+        </div>
+        <PlacementShelf
+          items={placementShelfItems}
+          open={placementShelfOpen}
+          isDark={isDark}
+          isPixel={isPixel}
+          onToggle={() => setPlacementShelfOpen((prev) => !prev)}
+          onMoveNode={movePlacementShelfNode}
+          onRemove={(id) => setPlacementShelfItems((prev) => prev.filter((item) => item.id !== id))}
+        />
+      </div>
+      <RadialMenuSettingsModal open={radialSettingsOpen} onClose={() => setRadialSettingsOpen(false)} />
+      {modelHelpOpen && (
+        <div
+          className="t8-model-help-panel nodrag nopan"
+          data-canvas-floating-ui="model-help-panel"
+          role="dialog"
+          aria-modal="false"
+          aria-label="模型注意事项"
+        >
+          <div className="t8-model-help-panel__header">
+            <div>
+              <div className="t8-model-help-panel__eyebrow">MODEL NOTES</div>
+              <h2>模型注意事项</h2>
+            </div>
+            <button
+              type="button"
+              className="t8-model-help-panel__close t8-mini-icon-button"
+              aria-label="关闭说明"
+              title="关闭说明"
+              onClick={(event) => {
+                event.stopPropagation();
+                setModelHelpOpen(false);
+              }}
+            >
+              <LucideIcons.X size={16} />
+            </button>
+          </div>
+          <div className="t8-model-help-panel__body">
+            <div className="t8-model-help-panel__text">
+              {MODEL_USAGE_HELP_SECTIONS.map((section) => (
+                <section className="t8-model-help-panel__section" key={section.title}>
+                  <h3>{section.title}：</h3>
+                  {section.paragraphs?.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                  {section.items ? (
+                    <ul>
+                      {section.items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div
       className={`t8-canvas-shell flex-1 relative${connectionPanModeActive ? ' connection-pan-mode-active' : ''}${edgeMotionReduced ? ' t8-edge-motion-reduced' : ''}${viewportMoving ? ' t8-viewport-moving' : ''}${nodeDragging ? ' t8-node-dragging' : ''}`}
       data-theme-visual={visualStyle}
-      data-edge-motion={edgeMotionReduced ? 'reduced' : isDecorativeEdgeVisual ? 'full' : undefined}
+      data-edge-motion={edgeMotionMode}
       data-edge-load={heavyEdgeMotion ? 'heavy' : undefined}
       style={{ background: bgColor }}
       onContextMenuCapture={onCanvasContextMenuCapture}
@@ -4874,9 +6724,27 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         batchDone={batchDone}
         snapEnabled={snapEnabled}
         onToggleSnap={() => setSnapEnabled((v) => !v)}
+        outputMaterialPersistenceEnabled={outputMaterialPersistenceEnabled}
+        onToggleOutputMaterialPersistence={toggleOutputMaterialPersistence}
         onAlignSelection={handleAlignSelection}
         onOpenGuomanModels={onOpenGuomanModels}
-      />
+      >
+        <TetrisPanel
+          visualStyle={visualStyle}
+          viewportMoving={viewportMoving}
+          nodeDragging={nodeDragging}
+        />
+        <DragonBallRadar
+          visualStyle={visualStyle}
+          viewportMoving={viewportMoving}
+          nodeDragging={nodeDragging}
+        />
+        <SaintSeiyaSanctuary
+          visualStyle={visualStyle}
+          viewportMoving={viewportMoving}
+          nodeDragging={nodeDragging}
+        />
+      </CanvasToolbar>
       <TerminalPanel />
       {connectionPanModeActive && (
         <div className="t8-connection-pan-hud" data-canvas-floating-ui="connection-pan-hud">
@@ -4884,6 +6752,41 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           <span className="t8-connection-pan-hud__title">连线导航模式</span>
           <span className="t8-connection-pan-hud__hint">拖动画布后点击目标接口连接，再按 {shortcutText('connection.pan-mode')} 取消</span>
         </div>
+      )}
+      {fileDragOutFeedback && (
+        <div
+          data-canvas-floating-ui="file-drag-out-feedback"
+          className={`t8-file-drag-out-feedback is-${fileDragOutFeedback.tone}`}
+          style={{
+            left: Math.min(
+              Math.max(fileDragOutFeedback.x + 18, 12),
+              Math.max(12, (typeof window !== 'undefined' ? window.innerWidth : 420) - 360),
+            ),
+            top: Math.min(
+              Math.max(fileDragOutFeedback.y + 18, 12),
+              Math.max(12, (typeof window !== 'undefined' ? window.innerHeight : 240) - 128),
+            ),
+          }}
+        >
+          <span className="t8-file-drag-out-feedback__keys" aria-hidden="true">
+            <span>左</span>
+            <span>右</span>
+          </span>
+          <span className="t8-file-drag-out-feedback__copy">
+            <span className="t8-file-drag-out-feedback__title">{fileDragOutFeedback.title}</span>
+            <span className="t8-file-drag-out-feedback__detail">{fileDragOutFeedback.detail}</span>
+          </span>
+        </div>
+      )}
+      {radialMenu && (
+        <RadialNodeMenu
+          center={radialMenu.center}
+          anchor={radialMenu.anchor}
+          cursor={radialMenu.cursor}
+          slots={radialSlots}
+          nodesByType={radialNodesByType}
+          activeIndex={radialMenu.activeIndex}
+        />
       )}
       <input
         ref={fileInputRef}
@@ -4914,10 +6817,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         onDragOver={onCanvasFileDragOver}
         onDrop={onCanvasFileDrop}
         onSelectionChange={onSelectionChange}
+        onSelectionStart={onSelectionStart}
         onSelectionEnd={onSelectionEnd}
         selectionKeyCode={memoSelectionKeyCode}
         multiSelectionKeyCode={memoMultiSelectionKeyCode}
         selectionMode={SelectionMode.Partial}
+        panOnDrag={memoPanOnDrag}
         snapToGrid={snapEnabled}
         snapGrid={SNAP_GRID}
         elevateNodesOnSelect={false}
@@ -4930,6 +6835,23 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           gap={20}
           size={isPixel ? 1.6 : 1.2}
           color={dotColor}
+        />
+        <CreativeDeskLayer
+          creativeDesk={creativeDesk}
+          editing={creativeDeskEditing}
+          activeItemId={creativeDeskActiveItemId}
+          resources={creativeDeskResources}
+          resourceLoading={creativeDeskResourceLoading}
+          message={creativeDeskMessage}
+          isPixel={isPixel}
+          isDark={isDark}
+          visualStyle={visualStyle}
+          onChange={setCreativeDesk}
+          onEditingChange={setCreativeDeskEditing}
+          onActiveItemChange={setCreativeDeskActiveItemId}
+          onUploadFiles={handleCreativeDeskUploadFiles}
+          onAddResource={handleCreativeDeskResourceTouch}
+          onRefreshResources={loadCreativeDeskResources}
         />
         {/* 对齐辅助线:在世界坐标系中随视口变换 */}
         {(guides.vertical.length > 0 || guides.horizontal.length > 0) && (
@@ -4974,66 +6896,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
               ))}
             </svg>
           </ViewportPortal>
-        )}
-        <div className="t8-control-rail nodrag nopan" data-canvas-floating-ui="control-rail">
-          <button
-            type="button"
-            className={`t8-control-rail-help t8-mini-icon-button${modelHelpOpen ? ' is-active' : ''}`}
-            data-canvas-floating-ui="model-help-toggle"
-            aria-label="模型注意事项"
-            title="模型注意事项"
-            aria-expanded={modelHelpOpen}
-            onClick={(event) => {
-              event.stopPropagation();
-              setModelHelpOpen((value) => !value);
-            }}
-          >
-            <LucideIcons.CircleHelp size={16} />
-          </button>
-          <ThemeMusicToggle template={currentTemplate} />
-          <Controls
-            style={{
-              background: isOp
-                ? themeTokens.panelBg
-                : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
-              border: isOp
-                ? `3px solid ${themeTokens.textMain}`
-                : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-              borderRadius: isOp ? '16px 16px 8px 8px' : 8,
-              boxShadow: isOp ? `4px 4px 0 ${themeTokens.textMain}` : undefined,
-            }}
-          />
-        </div>
-        {modelHelpOpen && (
-          <div
-            className="t8-model-help-panel nodrag nopan"
-            data-canvas-floating-ui="model-help-panel"
-            role="dialog"
-            aria-modal="false"
-            aria-label="模型注意事项"
-          >
-            <div className="t8-model-help-panel__header">
-              <div>
-                <div className="t8-model-help-panel__eyebrow">MODEL NOTES</div>
-                <h2>模型注意事项</h2>
-              </div>
-              <button
-                type="button"
-                className="t8-model-help-panel__close t8-mini-icon-button"
-                aria-label="关闭说明"
-                title="关闭说明"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setModelHelpOpen(false);
-                }}
-              >
-                <LucideIcons.X size={16} />
-              </button>
-            </div>
-            <div className="t8-model-help-panel__body">
-              <div className="t8-model-help-panel__text">{MODEL_USAGE_HELP_TEXT}</div>
-            </div>
-          </div>
         )}
         <MiniMap
           pannable
@@ -5104,6 +6966,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         {/* 选中可执行节点时的浮动操作栏 (执行 / 中止 / 关闭) */}
         <NodeActionBar />
       </ReactFlow>
+      {floatingControlRail}
 
       {/* 跨节点素材拖拽浮层 (Ctrl + 鼠标左键 从素材缩略图拖出) */}
       <MaterialDragOverlay />
@@ -5238,6 +7101,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         onSendToCanvas={handleSendMaterialsToCanvas}
         onSaveToResource={handleSaveSendMaterialsToResource}
         onSendToEagle={handleSendMaterialsToEagle}
+        onSendToFigma={handleSendMaterialsToFigma}
       />
 
       {/* 右键菜单(框选 右键 或 节点右键) */}
@@ -5245,6 +7109,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         const ids = contextMenu.ids;
         const selNodes = nodes.filter((n) => ids.includes(n.id));
         const exeCount = selNodes.filter((n) => n.type && EXECUTABLE_NODE_TYPES.has(n.type)).length;
+        const selectedGroupIds = selNodes.filter((n) => n.type === 'groupBox').map((n) => n.id);
+        const groupCascadeMemberCount = selectedGroupIds.reduce(
+          (sum, groupId) => sum + getGroupMemberIds(groupId, nodes).length,
+          0,
+        );
         const mergeCandidate = getMaterialSetMergeCandidate(ids);
         const materialSetNode = ids.length === 1 ? nodes.find((n) => n.id === ids[0] && n.type === 'material-set') : null;
         const materialSetKind = isMaterialSetKind((materialSetNode?.data as any)?.materialSetKind)
@@ -5267,6 +7136,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
               : `${sendNodeCount}节点`;
         const menuItemCls = 't8-context-menu__item';
         const alignMiniBtnCls = 't8-context-menu__item justify-center text-[11px] !px-2 !py-1.5';
+        const menuWidth = 200;
+        const alignSubmenuWidth = 238;
+        const menuLeft = Math.max(8, Math.min(contextMenu.x, window.innerWidth - menuWidth - 20));
+        const menuTop = Math.max(8, Math.min(contextMenu.y, window.innerHeight - 220));
+        const alignSubmenuOpensLeft = menuLeft + menuWidth + alignSubmenuWidth > window.innerWidth - 8;
+        const alignSubmenuLeft = alignSubmenuOpensLeft
+          ? Math.max(8, menuLeft - alignSubmenuWidth + 2)
+          : Math.max(8, Math.min(window.innerWidth - alignSubmenuWidth - 8, menuLeft + menuWidth - 2));
+        const alignSubmenuTop = Math.max(8, Math.min(menuTop + 36, window.innerHeight - 230));
         const alignButton = (
           action: NodeAlignAction,
           label: string,
@@ -5306,9 +7184,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
               data-canvas-floating-ui="node-menu"
               className="fixed z-40 overflow-hidden t8-context-menu t8-context-menu--selection"
               style={{
-                left: Math.min(contextMenu.x, window.innerWidth - 220),
-                top: Math.min(contextMenu.y, window.innerHeight - 220),
-                width: 200,
+                left: menuLeft,
+                top: menuTop,
+                width: menuWidth,
               }}
             >
               <div
@@ -5319,25 +7197,23 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
                   可执行 {exeCount}
                 </span>
               </div>
-              <div className="px-2 py-2">
-                <div className="mb-1 flex items-center gap-1 text-[10px] font-bold opacity-65">
-                  <LucideIcons.LayoutGrid size={11} />
-                  <span>对齐 / 整理</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {alignButton('align-left', '左', LucideIcons.AlignStartVertical)}
-                  {alignButton('align-center-x', '水平中', LucideIcons.AlignCenterVertical)}
-                  {alignButton('align-right', '右', LucideIcons.AlignEndVertical)}
-                  {alignButton('align-top', '上', LucideIcons.AlignStartHorizontal)}
-                  {alignButton('align-center-y', '垂直中', LucideIcons.AlignCenterHorizontal)}
-                  {alignButton('align-bottom', '下', LucideIcons.AlignEndHorizontal)}
-                </div>
-                <div className="mt-1 grid grid-cols-2 gap-1">
-                  {alignButton('distribute-x', '水平等距', LucideIcons.AlignHorizontalSpaceBetween, 3)}
-                  {alignButton('distribute-y', '垂直等距', LucideIcons.AlignVerticalSpaceBetween, 3)}
-                  {alignButton('snap-grid', '吸附网格', LucideIcons.Magnet, 1)}
-                  {alignButton('arrange-grid', '整理网格', LucideIcons.Grid3x3, 2)}
-                </div>
+              <div
+                onMouseEnter={() => openSelectionContextSubmenu('align')}
+                onMouseLeave={scheduleSelectionContextSubmenuClose}
+              >
+                <button
+                  type="button"
+                  className={menuItemCls}
+                  aria-haspopup="menu"
+                  aria-expanded={selectionContextSubmenu === 'align'}
+                  aria-label="打开对齐和整理方式"
+                  onFocus={() => openSelectionContextSubmenu('align')}
+                  onClick={() => openSelectionContextSubmenu('align')}
+                >
+                  <LucideIcons.LayoutGrid size={13} />
+                  <span className="flex-1">对齐 / 整理</span>
+                  <LucideIcons.ChevronRight size={13} className={alignSubmenuOpensLeft ? 'rotate-180' : ''} />
+                </button>
               </div>
               <button
                 className={menuItemCls}
@@ -5446,6 +7322,21 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
                 <Download size={13} />
                 <span>批量下载 ({downloadableCount})</span>
               </button>
+              {selectedGroupIds.length > 0 && (
+                <button
+                  className={`${menuItemCls} t8-context-menu__item--danger`}
+                  title="删除组框以及组内节点，并清理相关连线"
+                  onClick={() => {
+                    closeContextMenu();
+                    handleDeleteGroupsWithContents(selectedGroupIds);
+                  }}
+                >
+                  <Trash2 size={13} />
+                  <span>
+                    删除组和内容 ({selectedGroupIds.length}/{groupCascadeMemberCount})
+                  </span>
+                </button>
+              )}
               <button
                 className={menuItemCls}
                 onClick={() => {
@@ -5477,6 +7368,47 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
                 <span>删除 ({shortcutText('canvas.delete')})</span>
               </button>
             </div>
+            {selectionContextSubmenu === 'align' && (
+              <div
+                data-canvas-floating-ui="selection-align-submenu"
+                className="fixed z-50 transition-opacity duration-100"
+                style={{
+                  left: alignSubmenuLeft,
+                  top: alignSubmenuTop,
+                  width: alignSubmenuWidth,
+                }}
+                role="menu"
+                aria-label="对齐和整理方式"
+                onMouseEnter={() => openSelectionContextSubmenu('align')}
+                onMouseLeave={scheduleSelectionContextSubmenuClose}
+              >
+                <div className="t8-context-menu p-2">
+                  <div className="mb-1 flex items-center gap-1 px-1 text-[10px] font-bold opacity-65">
+                    <LucideIcons.LayoutGrid size={11} />
+                    <span>对齐方式</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {alignButton('align-left', '左', LucideIcons.AlignStartVertical)}
+                    {alignButton('align-center-x', '水平中', LucideIcons.AlignCenterVertical)}
+                    {alignButton('align-right', '右', LucideIcons.AlignEndVertical)}
+                    {alignButton('align-top', '上', LucideIcons.AlignStartHorizontal)}
+                    {alignButton('align-center-y', '垂直中', LucideIcons.AlignCenterHorizontal)}
+                    {alignButton('align-bottom', '下', LucideIcons.AlignEndHorizontal)}
+                  </div>
+                  <div className="my-2 h-px border-t" style={{ borderColor: 'var(--t8-border, rgba(148, 163, 184, 0.28))' }} />
+                  <div className="mb-1 flex items-center gap-1 px-1 text-[10px] font-bold opacity-65">
+                    <LucideIcons.Grid3x3 size={11} />
+                    <span>整理方式</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {alignButton('distribute-x', '水平等距', LucideIcons.AlignHorizontalSpaceBetween, 3)}
+                    {alignButton('distribute-y', '垂直等距', LucideIcons.AlignVerticalSpaceBetween, 3)}
+                    {alignButton('snap-grid', '吸附网格', LucideIcons.Magnet, 1)}
+                    {alignButton('arrange-grid', '整理网格', LucideIcons.Grid3x3, 2)}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         );
       })()}

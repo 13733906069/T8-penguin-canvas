@@ -2,6 +2,8 @@ import { memo, useMemo, useRef, useState, type ChangeEvent, type DragEvent } fro
 import { Handle, Position, useReactFlow, type Node, type Edge, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
+  Box,
+  Download,
   Edit3,
   FileImage,
   FileVideo,
@@ -22,10 +24,13 @@ import ResizableCorners from './ResizableCorners';
 import CollectionSplitButton from '../CollectionSplitButton';
 import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
+import MediaMetadataBadge from '../MediaMetadataBadge';
+import RhImageCapabilityButton from '../RhImageCapabilityButton';
 import SmartImage from '../SmartImage';
 import { decodeDuckFiles, type DuckDecodeFileItem } from '../../services/api';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
 import {
+  createEmptyUploadMediaData,
   createOutputDataFromItems,
   createUploadDataFromItem,
   createUploadDataFromItems,
@@ -63,8 +68,8 @@ const KIND_META: Record<
     accept: string;
     icon: typeof FileImage;
     color: string;
-    dataField: 'imageUrl' | 'videoUrl' | 'audioUrl';
-    port: 'image' | 'video' | 'audio';
+    dataField: 'imageUrl' | 'videoUrl' | 'audioUrl' | 'modelUrl';
+    port: 'image' | 'video' | 'audio' | 'model3d';
   }
 > = {
   image: {
@@ -91,19 +96,36 @@ const KIND_META: Record<
     dataField: 'audioUrl',
     port: 'audio',
   },
+  model3d: {
+    label: '3D模型',
+    accept: '.glb,.gltf,.obj,.fbx,.stl,.usdz,.zip,model/gltf-binary,model/gltf+json,model/vnd.usdz+zip,application/octet-stream,application/zip',
+    icon: Box,
+    color: PORT_COLOR.model3d,
+    dataField: 'modelUrl',
+    port: 'model3d',
+  },
 };
+
+const MODEL_3D_EXT_RE = /\.(glb|gltf|obj|fbx|stl|usdz|zip)$/i;
 
 /** 通过文件 MIME 推断上传类型(支持拖拽时自动选定类型) */
 function inferKindFromFile(file: File): UploadKind | null {
+  const name = file.name || '';
+  if (MODEL_3D_EXT_RE.test(name)) return 'model3d';
   const m = file.type;
   if (!m) return null;
+  if (m.startsWith('model/')) return 'model3d';
   if (m.startsWith('image/')) return 'image';
   if (m.startsWith('video/')) return 'video';
   if (m.startsWith('audio/')) return 'audio';
   return null;
 }
 
-const UploadNode = ({ id, data, selected }: NodeProps) => {
+function autoOutputNodeTypeForMedia(kind: MediaKind): 'output' | 'model-3d-preview' {
+  return kind === 'model3d' ? 'model-3d-preview' : 'output';
+}
+
+const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const { theme, style, templateId, customTemplates } = useThemeStore();
   const isDark = theme === 'dark';
@@ -130,15 +152,27 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
 
   const d = data as any;
-  const uploadType: UploadKind | null = d?.uploadType ?? null;
+  const rhDuckStoredMode =
+    d?.rhDuckHiddenUpload === false
+      ? false
+      : Boolean(d?.rhDuckHiddenUpload || d?.rhDuckMode || d?.rhDuckUploadMode);
+  const rhDuckStoreMode = isRhDuckUploadEnabled(rhDuckUploadIds, id);
+  const rhDuckPersistentMode = Boolean(isRhVisual && type === 'upload' && (rhDuckStoredMode || rhDuckStoreMode));
+  const lockedUploadType: UploadKind | null =
+    type === 'model-3d-upload' || d?.lockedUploadType === 'model3d'
+      ? 'model3d'
+      : rhDuckPersistentMode
+        ? 'image'
+        : null;
+  const uploadType: UploadKind | null =
+    lockedUploadType === 'image' ? 'image' : d?.uploadType ?? lockedUploadType;
   const meta = uploadType ? KIND_META[uploadType] : null;
   const mediaItems = uploadType ? getMediaItemsFromData(d, uploadType) : [];
   const url: string | undefined = mediaItems[0]?.url;
   const rhDuckMode = Boolean(
     isRhVisual &&
       uploadType === 'image' &&
-      mediaItems.length > 0 &&
-      isRhDuckUploadEnabled(rhDuckUploadIds, id),
+      (rhDuckStoredMode || rhDuckStoreMode),
   );
   const yyhPortraitUploadMode = Boolean(isYyhVisual && d?.yyhPortraitHidden);
 
@@ -204,10 +238,12 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
 
     const groupsToCreate = outputGroups.filter(({ kind, items }) => {
       if (items.length === 0) return false;
+      const targetType = autoOutputNodeTypeForMedia(kind);
       return !edges.some((e) => {
         if (e.source !== id) return false;
         const t = nodes.find((n) => n.id === e.target);
-        if (!t || t.type !== 'output') return false;
+        if (!t || t.type !== targetType) return false;
+        if (kind === 'model3d') return true;
         const td = (t.data as any) || {};
         return sameMediaUrls(getMediaItemsFromData(td, kind), items);
       });
@@ -219,24 +255,29 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
     const baseX = (me?.position?.x ?? 0) + myW + 80;
     const baseY = me?.position?.y ?? 0;
     const ts = Date.now();
-    const _sz = defaultSizeOf('output');
+    const firstNodeType = autoOutputNodeTypeForMedia(groupsToCreate[0]?.kind || 'image');
+    const _sz = defaultSizeOf(firstNodeType);
     const _singlePos = groupsToCreate.length === 1
-      ? placeSingleNode(baseX, baseY, 'output', nodes, { source: `placement:upload-auto:${id}` })
+      ? placeSingleNode(baseX, baseY, firstNodeType, nodes, { source: `placement:upload-auto:${id}` })
       : null;
-    const _desired: PlacementRect[] = groupsToCreate.map((_, i) => ({
+    const _desired: PlacementRect[] = groupsToCreate.map(({ kind }, i) => {
+      const sz = defaultSizeOf(autoOutputNodeTypeForMedia(kind));
+      return ({
       x: _singlePos?.x ?? baseX,
       y: _singlePos?.y ?? baseY + i * Math.max(280, _sz.h + 40),
-      w: _sz.w,
-      h: _sz.h,
-    }));
+      w: sz.w,
+      h: sz.h,
+    });
+    });
     const _off = groupsToCreate.length === 1
       ? { dx: 0, dy: 0 }
       : placeBatchNodes(_desired, nodes, { source: `placement:upload-auto:${id}` });
     const newNodes: Node[] = groupsToCreate.map(({ kind, items }, i) => {
-      const newId = `output-auto-up-${id}-${ts}-${kind}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+      const targetType = autoOutputNodeTypeForMedia(kind);
+      const newId = `${targetType}-auto-up-${id}-${ts}-${kind}-${i}-${Math.random().toString(36).slice(2, 6)}`;
       return {
         id: newId,
-        type: 'output',
+        type: targetType,
         position: {
           x: _desired[i].x + _off.dx,
           y: _desired[i].y + _off.dy,
@@ -260,7 +301,7 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
     rf.addNodes(newNodes);
     rf.setEdges((eds) => [...eds, ...newEdges]);
     if (outputFromRhDuckDecode) {
-      trackAchievementEvent({ type: 'hidden_mode.used', theme: 'rh', kind: 'rh-duck', nodeType: 'upload' });
+      trackAchievementEvent({ type: 'hidden_mode.used', theme: 'rh', kind: 'rh-duck', mode: 'used', nodeType: 'upload' });
     }
   };
 
@@ -279,21 +320,12 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
 
   /** 重置:清空所有字段,回到默认拖拽上传状态 */
   const handleReset = () => {
-    clearRhDuckUpload(id);
+    if (!rhDuckMode) clearRhDuckUpload(id);
     update({
-      uploadType: null,
-      imageUrl: undefined,
-      imageUrls: undefined,
-      videoUrl: undefined,
-      videoUrls: undefined,
-      audioUrl: undefined,
-      audioUrls: undefined,
-      fileName: '',
-      fileNames: [],
-      fileSize: 0,
-      fileSizes: [],
-      mime: '',
-      mimes: [],
+      ...createEmptyUploadMediaData(),
+      uploadType: rhDuckMode ? 'image' : lockedUploadType,
+      lockedUploadType: lockedUploadType === 'model3d' ? 'model3d' : undefined,
+      ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
     });
     setError(null);
   };
@@ -330,7 +362,10 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
         uploaded.push(await uploadSingleFile(file, kind));
       }
       const base = uploadType === kind ? mediaItems : [];
-      update(createUploadDataFromItems(kind, [...base, ...uploaded]));
+      update({
+        ...createUploadDataFromItems(kind, [...base, ...uploaded]),
+        ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
+      });
       if (skipped > 0) {
         setError(`已上传 ${uploaded.length} 个${KIND_META[kind].label}，跳过 ${skipped} 个非同类型文件`);
       }
@@ -344,9 +379,9 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
   const prepareFiles = (rawFiles: File[]) => {
     const files = rawFiles.filter(Boolean);
     if (files.length === 0) return;
-    const inferred = uploadType ?? files.map(inferKindFromFile).find(Boolean) ?? null;
+    const inferred = lockedUploadType ?? uploadType ?? files.map(inferKindFromFile).find(Boolean) ?? null;
     if (!inferred) {
-      setError('无法识别文件类型,请选择图像/视频/音频');
+      setError('无法识别文件类型,请选择图像/视频/音频/3D模型');
       return;
     }
     const accepted = files.filter((file) => inferKindFromFile(file) === inferred);
@@ -379,12 +414,16 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
   // === 双击 / 上方「Edit」 → 启动图像编辑弹窗（仅 image 类型生效） ===
   // 逻辑对齐 OutputNode：编辑产物以独立 OutputNode 外挂到右侧，
   // 不修改当前上传节点本身的 imageUrl。
-  const canEditImage = !!url && uploadType === 'image';
+  const imageSourceUrls = useMemo(
+    () => mediaItems.filter((item) => item.kind === 'image' && item.url).map((item) => item.url),
+    [mediaItems],
+  );
+  const canEditImage = imageSourceUrls.length > 0 && uploadType === 'image';
   const openEdit = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (canEditImage && url) setEditingUrl(url);
+    if (canEditImage) setEditingUrl(imageSourceUrls[0]);
   };
-  const handleProduce = (urls: string[], _meta: ImageEditProduceMeta) => {
+  const handleProduce = (urls: string[], _meta?: ImageEditProduceMeta) => {
     if (!urls || urls.length === 0) return;
     const me = rf.getNode(id);
     const myW = (me as any)?.measured?.width || (me as any)?.width || 260;
@@ -444,12 +483,15 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
     const _off = placeBatchNodes(_desired, rf.getNodes(), { source: `placement:split-upload:${id}` });
     const newNodes: Node[] = mediaItems.map((item, i) => ({
       id: `upload-split-${id}-${ts}-${i}-${Math.random().toString(36).slice(2, 6)}`,
-      type: 'upload',
+      type: item.kind === 'model3d' ? 'model-3d-upload' : 'upload',
       position: {
         x: baseX + (i % COLS) * COL_W + _off.dx,
         y: baseY + Math.floor(i / COLS) * ROW_H + _off.dy,
       },
-      data: createUploadDataFromItem(item),
+      data: {
+        ...createUploadDataFromItem(item),
+        ...(item.kind === 'model3d' ? { lockedUploadType: 'model3d' } : {}),
+      },
       selected: false,
     } as Node));
     rf.addNodes(newNodes);
@@ -458,7 +500,7 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
   // ==================== 渲染 ====================
   const handleColor = meta?.color || PORT_COLOR.any;
   const effectiveHandleColor = rhDuckMode ? '#ff345f' : yyhPortraitUploadMode ? '#ff4fd8' : handleColor;
-  const headerLabel = meta ? `上传${meta.label}` : '上传素材';
+  const headerLabel = lockedUploadType === 'model3d' ? '3D素材上传' : meta ? `上传${meta.label}` : '上传素材';
   const totalSize = mediaItems.reduce((sum, item) => sum + (item.size || 0), 0);
 
   return (
@@ -485,41 +527,59 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
         accent={effectiveHandleColor}
         onResize={(_e, p) => setSize({ w: p.width, h: p.height })}
       />
-      {/* 选中时浮动「Edit」按钮 — 仅图像类型可用，与双击预览图等价 */}
+      {/* 选中时浮动图像操作按钮 — Edit 保持本地编辑, 抠图走 RH 工具箱能力层 */}
       {selected && canEditImage && (
-        <button
-          type="button"
+        <div
           className="nodrag nopan"
-          onClick={openEdit}
           onMouseDown={(e) => e.stopPropagation()}
-          title="编辑图像（裁剪 / 宫格切分），等同双击预览图"
           style={{
             position: 'absolute',
             top: -34,
             left: 0,
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'center',
-            gap: 4,
-            padding: '4px 10px',
-            height: 26,
-            background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
-            color: effectiveHandleColor,
-            border: `1px solid ${effectiveHandleColor}66`,
-            borderRadius: isPixel ? 0 : 6,
-            boxShadow: isPixel
-              ? `2px 2px 0 ${effectiveHandleColor}`
-              : isDark
-                ? '0 6px 24px rgba(0,0,0,0.4)'
-                : '0 6px 24px rgba(0,0,0,0.12)',
-            cursor: 'pointer',
-            fontSize: 12,
-            fontWeight: 600,
+            gap: 6,
             zIndex: 30,
           }}
         >
-          <Edit3 size={12} />
-          <span>Edit</span>
-        </button>
+          <button
+            type="button"
+            className="nodrag nopan"
+            onClick={openEdit}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="编辑图像（裁剪 / 宫格切分），等同双击预览图"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              height: 26,
+              background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
+              color: effectiveHandleColor,
+              border: `1px solid ${effectiveHandleColor}66`,
+              borderRadius: isPixel ? 0 : 6,
+              boxShadow: isPixel
+                ? `2px 2px 0 ${effectiveHandleColor}`
+                : isDark
+                  ? '0 6px 24px rgba(0,0,0,0.4)'
+                  : '0 6px 24px rgba(0,0,0,0.12)',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            <Edit3 size={12} />
+            <span>Edit</span>
+          </button>
+          <RhImageCapabilityButton
+            sourceUrls={imageSourceUrls}
+            accent={effectiveHandleColor}
+            isDark={isDark}
+            isPixel={isPixel}
+            onComplete={(result) => handleProduce(result.imageUrls)}
+            onError={setError}
+          />
+        </div>
       )}
       {/* 仅有 source handle(上传节点不接收输入) */}
       <Handle
@@ -570,7 +630,7 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
         <input
           ref={fileInputRef}
           type="file"
-          accept={meta ? meta.accept : 'image/*,video/*,audio/*'}
+          accept={meta ? meta.accept : 'image/*,video/*,audio/*,.glb,.gltf,.obj,.fbx,.stl,.usdz,.zip'}
           multiple
           className="hidden"
           onChange={handleFileChange}
@@ -604,7 +664,11 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
                 isDark ? 'text-white/30' : 'text-zinc-400'
               }`}
             >
-              自动识别 图像 / 视频 / 音频 · 支持同类型批量
+              {lockedUploadType === 'model3d'
+                ? '支持 glb / gltf / obj / fbx / stl / usdz / zip'
+                : rhDuckMode
+                  ? 'RED 模式已锁定图像 · 清空素材后仍保持'
+                : '自动识别 图像 / 视频 / 音频 / 3D模型 · 支持同类型批量'}
             </span>
           </div>
         )}
@@ -657,6 +721,7 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
                     </div>
                     <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
                       <span className="truncate flex-1" title={item.name}>{item.name || `图像 ${i + 1}`}</span>
+                      <MediaMetadataBadge kind="image" url={item.url} />
                       {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
                     </div>
                   </div>
@@ -685,6 +750,7 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
                     />
                     <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
                       <span className="truncate flex-1" title={item.name}>{item.name || `视频 ${i + 1}`}</span>
+                      <MediaMetadataBadge kind="video" url={item.url} />
                       {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
                     </div>
                   </div>
@@ -711,7 +777,50 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
                     />
                     <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
                       <span className="truncate flex-1" title={item.name}>{item.name || `音频 ${i + 1}`}</span>
+                      <MediaMetadataBadge kind="audio" url={item.url} />
                       {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {uploadType === 'model3d' && (
+              <div className="space-y-1.5">
+                {mediaItems.map((item, i) => (
+                  <div
+                    key={`${item.url}-${i}`}
+                    className={`rounded border px-2 py-2 ${
+                      isDark ? 'border-white/10 bg-white/[0.04]' : 'border-black/10 bg-black/[0.03]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded"
+                        style={{ color: PORT_COLOR.model3d, background: `${PORT_COLOR.model3d}22`, boxShadow: `inset 0 0 0 1px ${PORT_COLOR.model3d}66` }}
+                      >
+                        <Box size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className={`truncate text-[11px] font-semibold ${isDark ? 'text-white/80' : 'text-zinc-800'}`} title={item.name || item.url}>
+                          {item.name || `3D模型 ${i + 1}`}
+                        </div>
+                        <div className={`truncate text-[10px] ${isDark ? 'text-white/40' : 'text-zinc-500'}`} title={item.url}>
+                          {item.url}
+                        </div>
+                      </div>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download
+                        className={`nodrag nopan inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] ${
+                          isDark ? 'hover:bg-white/10 text-white/65' : 'hover:bg-black/10 text-zinc-600'
+                        }`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <Download size={10} /> 下载
+                      </a>
                     </div>
                   </div>
                 ))}

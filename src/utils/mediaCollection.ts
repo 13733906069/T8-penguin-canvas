@@ -1,4 +1,4 @@
-export type MediaKind = 'image' | 'video' | 'audio';
+export type MediaKind = 'image' | 'video' | 'audio' | 'model3d';
 
 export interface MediaItem {
   kind: MediaKind;
@@ -10,10 +10,10 @@ export interface MediaItem {
 
 export const MEDIA_KIND_META: Record<MediaKind, {
   label: string;
-  singleField: 'imageUrl' | 'videoUrl' | 'audioUrl';
-  arrayField: 'imageUrls' | 'videoUrls' | 'audioUrls';
-  directSingleField: 'directImageUrl' | 'directVideoUrl' | 'directAudioUrl';
-  directArrayField: 'directImageUrls' | 'directVideoUrls' | 'directAudioUrls';
+  singleField: 'imageUrl' | 'videoUrl' | 'audioUrl' | 'modelUrl';
+  arrayField: 'imageUrls' | 'videoUrls' | 'audioUrls' | 'modelUrls';
+  directSingleField: 'directImageUrl' | 'directVideoUrl' | 'directAudioUrl' | 'directModelUrl';
+  directArrayField: 'directImageUrls' | 'directVideoUrls' | 'directAudioUrls' | 'directModelUrls';
 }> = {
   image: {
     label: '图像',
@@ -35,6 +35,13 @@ export const MEDIA_KIND_META: Record<MediaKind, {
     arrayField: 'audioUrls',
     directSingleField: 'directAudioUrl',
     directArrayField: 'directAudioUrls',
+  },
+  model3d: {
+    label: '3D模型',
+    singleField: 'modelUrl',
+    arrayField: 'modelUrls',
+    directSingleField: 'directModelUrl',
+    directArrayField: 'directModelUrls',
   },
 };
 

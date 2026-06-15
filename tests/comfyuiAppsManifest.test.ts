@@ -5,6 +5,8 @@ import fs from 'node:fs';
 const comfyApps = fs.readFileSync('src/utils/comfyuiApps.ts', 'utf8');
 const store = fs.readFileSync('src/components/nodes/ComfyUIStoreNode.tsx', 'utf8');
 const maker = fs.readFileSync('src/components/nodes/ComfyUIAppMakerNode.tsx', 'utf8');
+const apiSettings = fs.readFileSync('src/components/ApiSettings.tsx', 'utf8');
+const workflow = fs.readFileSync('src/utils/comfyuiWorkflow.ts', 'utf8');
 
 test('ComfyUI manifest utilities expose user library CRUD and backup flows', () => {
   assert.match(comfyApps, /export function saveComfyAppCategory/);
@@ -38,4 +40,27 @@ test('ComfyUI app builder applies auto-mapping exclude rules before exposing par
   assert.match(comfyApps, /excludeRules\?: string\[\]/);
   assert.match(comfyApps, /filterComfyFieldsByExcludeRules\(options\.workflowJson, analysis\.fields, options\.excludeRules\)/);
   assert.match(maker, /excludeRules,/);
+});
+
+test('ComfyUI exclude rules expose import and export in settings and maker', () => {
+  assert.match(workflow, /COMFY_FIELD_EXCLUDE_RULES_SCHEMA/);
+  assert.match(workflow, /createComfyFieldExcludeRulesBackup/);
+  assert.match(workflow, /parseComfyFieldExcludeRulesBackup/);
+  assert.match(workflow, /autoMappingExcludeRules/);
+  assert.match(apiSettings, /exportComfyExcludeRules/);
+  assert.match(apiSettings, /handleComfyExcludeRulesFile/);
+  assert.match(apiSettings, /导出规则/);
+  assert.match(apiSettings, /导入规则/);
+  assert.match(maker, /exportExcludeRules/);
+  assert.match(maker, /importExcludeRulesFile/);
+  assert.match(maker, /导出规则/);
+  assert.match(maker, /导入规则/);
+});
+
+test('ComfyUI app builder exposes custom workflow fields from the expanded analyzer', () => {
+  assert.match(comfyApps, /control_net_name/);
+  assert.match(comfyApps, /frame_rate/);
+  assert.match(comfyApps, /num_frames/);
+  assert.match(comfyApps, /SAFE_CUSTOM_SOURCE_RE/);
+  assert.match(comfyApps, /MEDIA_SOURCE_RE\.test\(source\)\) return false/);
 });

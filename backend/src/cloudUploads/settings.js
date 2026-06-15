@@ -49,11 +49,10 @@ const DEFAULT_CLOUD_UPLOAD_TARGETS = [
     isDefault: false,
     prefix: 'T8PenguinCanvas/{kind}/{yyyy-mm}',
     baiduNetdisk: {
-      folder: '/apps/T8PenguinCanvas',
-      accessToken: '',
-      refreshToken: '',
-      appKey: '',
-      appSecret: '',
+      webdavUrl: '',
+      username: '',
+      password: '',
+      folder: '/T8PenguinCanvas',
     },
   },
   {
@@ -64,10 +63,10 @@ const DEFAULT_CLOUD_UPLOAD_TARGETS = [
     isDefault: false,
     prefix: 'T8PenguinCanvas/{kind}/{yyyy-mm}',
     quarkNetdisk: {
+      webdavUrl: '',
+      username: '',
+      password: '',
       folder: '/T8PenguinCanvas',
-      mode: 'external-command',
-      commandPath: '',
-      cookie: '',
     },
   },
 ];
@@ -113,7 +112,7 @@ function normalizeBoolean(value, fallback = false) {
 }
 
 function isMaskedSecret(value) {
-  return typeof value === 'string' && /^\*{2,}/.test(value.trim());
+  return typeof value === 'string' && /^[*•●·﹡＊]{2,}/.test(value.trim());
 }
 
 function cleanSecret(value, previous = '') {
@@ -140,7 +139,27 @@ function cleanRegion(value, fallback = '') {
 
 function cleanEndpoint(value) {
   const text = String(value || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  return text.replace(/[^a-zA-Z0-9._:-]/g, '').slice(0, 180);
+  const cleaned = text.replace(/[^a-zA-Z0-9._:-]/g, '').slice(0, 180);
+  if (!cleaned) return '';
+  if (/^oss-[a-z0-9-]+$/i.test(cleaned)) return `${cleaned}.aliyuncs.com`;
+  if (/^(cn|ap|us|eu|me)-[a-z0-9-]+$/i.test(cleaned)) return `oss-${cleaned}.aliyuncs.com`;
+  return cleaned;
+}
+
+function cleanWebdavUrl(value, fallback = '') {
+  const text = String(value || '').trim().replace(/\/+$/, '');
+  if (!text) return fallback || '';
+  try {
+    const parsed = new URL(text);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return fallback || '';
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/, '').slice(0, 500);
+  } catch {
+    return fallback || '';
+  }
 }
 
 function cleanPrefix(value, fallback = '') {
@@ -199,24 +218,20 @@ function normalizeAliyunConfig(raw, previous = {}) {
 function normalizeBaiduConfig(raw, previous = {}) {
   const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   return {
-    folder: cleanFolder(value.folder || previous.folder, '/apps/T8PenguinCanvas'),
-    accessToken: cleanSecret(value.accessToken || value.access_token, previous.accessToken),
-    refreshToken: cleanSecret(value.refreshToken || value.refresh_token, previous.refreshToken),
-    appKey: cleanSecret(value.appKey || value.app_key, previous.appKey),
-    appSecret: cleanSecret(value.appSecret || value.app_secret, previous.appSecret),
+    webdavUrl: cleanWebdavUrl(value.webdavUrl || value.webdav_url || value.endpoint || value.baseUrl, previous.webdavUrl),
+    username: cleanText(value.username || value.user || previous.username, 180),
+    password: cleanSecret(value.password || value.token || value.accessToken || value.access_token, previous.password),
+    folder: cleanFolder(value.folder || value.rootPath || previous.folder, '/T8PenguinCanvas'),
   };
 }
 
 function normalizeQuarkConfig(raw, previous = {}) {
   const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  const mode = ['external-command', 'cookie'].includes(String(value.mode || '').trim())
-    ? String(value.mode).trim()
-    : (previous.mode || 'external-command');
   return {
+    webdavUrl: cleanWebdavUrl(value.webdavUrl || value.webdav_url || value.endpoint || value.baseUrl, previous.webdavUrl),
+    username: cleanText(value.username || value.user || previous.username, 180),
+    password: cleanSecret(value.password || value.token || value.cookie, previous.password),
     folder: cleanFolder(value.folder || previous.folder, '/T8PenguinCanvas'),
-    mode,
-    commandPath: cleanText(value.commandPath || value.command || previous.commandPath, 260),
-    cookie: cleanSecret(value.cookie || previous.cookie),
   };
 }
 
@@ -248,9 +263,6 @@ function normalizeTarget(raw, previous = null, template = null) {
   }
   if (provider === 'quark-netdisk') {
     target.quarkNetdisk = normalizeQuarkConfig(raw.quarkNetdisk || raw.quark_netdisk || raw, prev.quarkNetdisk || template?.quarkNetdisk);
-  }
-  if (provider !== 'tencent-cos' && provider !== 'aliyun-oss') {
-    delete target.publicBaseUrl;
   }
   return target;
 }
@@ -314,21 +326,15 @@ function maskCloudUploadTargets(targets) {
     if (target.baiduNetdisk) {
       masked.baiduNetdisk = {
         ...target.baiduNetdisk,
-        hasAccessToken: !!target.baiduNetdisk.accessToken,
-        hasRefreshToken: !!target.baiduNetdisk.refreshToken,
-        hasAppKey: !!target.baiduNetdisk.appKey,
-        hasAppSecret: !!target.baiduNetdisk.appSecret,
-        accessToken: maskSecret(target.baiduNetdisk.accessToken),
-        refreshToken: maskSecret(target.baiduNetdisk.refreshToken),
-        appKey: maskSecret(target.baiduNetdisk.appKey),
-        appSecret: maskSecret(target.baiduNetdisk.appSecret),
+        hasPassword: !!target.baiduNetdisk.password,
+        password: maskSecret(target.baiduNetdisk.password),
       };
     }
     if (target.quarkNetdisk) {
       masked.quarkNetdisk = {
         ...target.quarkNetdisk,
-        hasCookie: !!target.quarkNetdisk.cookie,
-        cookie: maskSecret(target.quarkNetdisk.cookie),
+        hasPassword: !!target.quarkNetdisk.password,
+        password: maskSecret(target.quarkNetdisk.password),
       };
     }
     return masked;
@@ -343,10 +349,10 @@ function targetHasCredentials(target) {
     return !!(target.aliyunOss?.bucket && target.aliyunOss?.endpoint && target.aliyunOss?.accessKeyId && target.aliyunOss?.accessKeySecret);
   }
   if (target.provider === 'baidu-netdisk') {
-    return !!(target.baiduNetdisk?.accessToken || target.baiduNetdisk?.refreshToken);
+    return !!target.baiduNetdisk?.webdavUrl;
   }
   if (target.provider === 'quark-netdisk') {
-    return !!(target.quarkNetdisk?.commandPath || target.quarkNetdisk?.cookie);
+    return !!target.quarkNetdisk?.webdavUrl;
   }
   return false;
 }
@@ -358,7 +364,7 @@ function summarizeCloudUploadTargets(targets) {
     totalCount: normalized.length,
     enabledCount: normalized.filter((target) => target.enabled).length,
     configuredCount: normalized.filter(targetHasCredentials).length,
-    supportedUploadCount: normalized.filter((target) => ['tencent-cos', 'aliyun-oss'].includes(target.provider)).length,
+    supportedUploadCount: normalized.filter((target) => CLOUD_UPLOAD_PROVIDERS.has(target.provider)).length,
     defaultTargetId: defaultTarget?.id || '',
     defaultLabel: defaultTarget?.label || '',
   };

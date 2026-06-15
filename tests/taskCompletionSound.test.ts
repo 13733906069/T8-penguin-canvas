@@ -4,6 +4,7 @@ import {
   COMPLETION_SOUND_THROTTLE_MS,
   isCompletionSoundEligibleNodeType,
   nextCompletionSoundGateState,
+  resolveTaskCompletionSoundPlaybackUrl,
   resolveCompletionSoundNodeType,
   shouldNotifyCompletionSoundForNodeType,
   shouldPlayCompletionSound,
@@ -50,4 +51,17 @@ test('task completion sound can resolve an eligible fallback node type for direc
   assert.equal(resolveCompletionSoundNodeType('video', 'image'), 'video');
   assert.equal(resolveCompletionSoundNodeType('runninghub', 'llm'), 'llm');
   assert.equal(resolveCompletionSoundNodeType(undefined, 'upload'), undefined);
+});
+
+test('task completion sound prefers a configured custom audio URL and falls back to default tone otherwise', () => {
+  assert.equal(
+    resolveTaskCompletionSoundPlaybackUrl({
+      mode: 'custom',
+      url: '/api/settings/task-completion-sound/file?v=123',
+    }),
+    '/api/settings/task-completion-sound/file?v=123',
+  );
+  assert.equal(resolveTaskCompletionSoundPlaybackUrl({ mode: 'custom', url: '' }), '');
+  assert.equal(resolveTaskCompletionSoundPlaybackUrl({ mode: 'default' }), '');
+  assert.equal(resolveTaskCompletionSoundPlaybackUrl(undefined), '');
 });

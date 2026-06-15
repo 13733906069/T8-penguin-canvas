@@ -1,6 +1,6 @@
 import type { Material } from './useUpstreamMaterials';
 
-export type MediaMentionKind = 'image' | 'video' | 'audio';
+export type MediaMentionKind = 'image' | 'video' | 'audio' | 'text';
 
 export interface MediaMention {
   id: string;
@@ -17,18 +17,31 @@ const TOKEN_PREFIX: Record<MediaMentionKind, string> = {
   image: 'image',
   video: 'video',
   audio: 'audio',
+  text: 'text',
 };
 
+function tokenMatchesMentionKind(mention: Pick<MediaMention, 'kind' | 'token'>): boolean {
+  if (mention.kind === 'image' && /^@img\d+\b/.test(mention.token)) return true;
+  if (mention.kind === 'video' && /^@vid\d+\b/.test(mention.token)) return true;
+  if (mention.kind === 'audio' && /^@aud\d+\b/.test(mention.token)) return true;
+  if (mention.kind === 'text' && /^@txt\d+\b/.test(mention.token)) return true;
+  return new RegExp(`^@${TOKEN_PREFIX[mention.kind]}\\d+\\b`).test(mention.token);
+}
+
 export function isMentionableMaterial(material: Material): material is Material & { kind: MediaMentionKind } {
-  return material.kind === 'image' || material.kind === 'video' || material.kind === 'audio';
+  return material.kind === 'image' || material.kind === 'video' || material.kind === 'audio' || material.kind === 'text';
 }
 
 export function materialMentionKey(material: Pick<Material, 'kind' | 'url'>): string {
+  const customKey = String((material as any).mentionKey || '').trim();
+  if (customKey) return customKey;
   return `${material.kind}:${material.url}`;
 }
 
 export function tokenForMaterial(material: Material, materials: Material[]): string {
   if (!isMentionableMaterial(material)) return '@material';
+  const customToken = String((material as any).mentionToken || '').trim();
+  if (customToken) return customToken;
   let index = 0;
   for (const candidate of materials) {
     if (!isMentionableMaterial(candidate) || candidate.kind !== material.kind) continue;
@@ -120,13 +133,14 @@ export function resolveMediaMentions(text: string, mentions: MediaMention[], mat
 
   let next = text;
   const validMentions = mentions
-    .filter((mention) => text.slice(mention.start, mention.end) === mention.token)
+    .filter((mention) => tokenMatchesMentionKind(mention) && text.slice(mention.start, mention.end) === mention.token)
     .sort((a, b) => b.start - a.start);
   for (const mention of validMentions) {
     const material = byKey.get(mention.materialKey);
     if (!material) continue;
     const currentToken = tokenForMaterial(material, materials);
-    next = `${next.slice(0, mention.start)}${currentToken}${next.slice(mention.end)}`;
+    const replacement = mention.kind === 'text' ? material.url : currentToken;
+    next = `${next.slice(0, mention.start)}${replacement}${next.slice(mention.end)}`;
   }
   return next;
 }

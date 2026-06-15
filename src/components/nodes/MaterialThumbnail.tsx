@@ -1,4 +1,4 @@
-import { memo, type DragEvent, type MouseEvent, type PointerEvent } from 'react';
+import { memo, type MouseEvent, type PointerEvent } from 'react';
 import {
   Video as VideoIcon,
   Music,
@@ -77,17 +77,16 @@ const MaterialThumbnail = ({
   const stopFlowMouse = (event: MouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
   };
-  const preventNativeImageDrag = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-  };
   const noNativeDragStyle = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
-    WebkitUserDrag: 'none',
   } as unknown as React.CSSProperties;
   const title = material.rhNodeId
     ? `${material.label || material.url}\nRH#${material.rhNodeId}`
     : (material.label || material.url);
+  const externalFileName = material.kind !== 'text'
+    ? (material.url.split(/[?#]/)[0].split('/').pop() || material.label)
+    : undefined;
 
   const wrapStyle: React.CSSProperties = {
     opacity: isSorting ? 0.58 : 1,
@@ -126,9 +125,15 @@ const MaterialThumbnail = ({
       className="nodrag nopan"
       data-material-preview-section={sortScope || undefined}
       data-material-preview-thumb-id={sortScope ? material.id : undefined}
+      data-drag-source={material.kind !== 'text' ? true : undefined}
+      data-drag-kind={material.kind !== 'text' ? material.kind : undefined}
+      data-drag-url={material.kind !== 'text' ? material.url : undefined}
+      data-drag-preview={material.kind !== 'text' ? material.url : undefined}
+      data-drag-node-id={material.sourceNodeId}
+      data-resource-title={externalFileName}
+      draggable={material.kind !== 'text' && draggable}
       onPointerDownCapture={stopFlowPointer}
       onMouseDown={stopFlowMouse}
-      onDragStart={preventNativeImageDrag}
       title={title}
     >
       {/* 内容主体 */}

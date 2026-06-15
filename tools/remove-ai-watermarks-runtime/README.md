@@ -22,17 +22,27 @@ environments.
 Recommended manifest:
 
 `runtime-manifest.json` with upstream commit/version, Python version, torch build,
-CUDA build, and installed extras (`gpu`, `detect`, `trustmark`, `lama`, `restore`).
+CUDA build, and installed extras (`gpu`, `detect`, `trustmark`, `lama`, optional
+`esrgan`).
 
 Current bridge target:
 
 - Upstream: `wiltodelta/remove-ai-watermarks`
-- Version: `0.8.9` or newer for the current full UI
-- Required CLI behavior: invisible removal supports `--auto`,
-  `--pipeline controlnet`, `--min-resolution`, `--controlnet-scale`,
-  `--adaptive-polish`, `--unsharp`, and optional GFPGAN `--restore-faces`.
+- Version: `0.11.0` or newer for the current full UI
+- Required CLI behavior: visible registry includes Gemini / Doubao / Jimeng /
+  Samsung marks; invisible removal defaults to `--pipeline controlnet` and
+  supports `--pipeline sdxl`, `--model`, `--guidance-scale`, `--upscaler`,
+  `--min-resolution`, `--controlnet-scale`, `--adaptive-polish` /
+  `--no-adaptive-polish`, and `--unsharp`; `all` mode runs visible + invisible
+  + metadata and fails loudly when GPU deps are missing.
+- Metadata mode is expected to handle image/video/audio containers, including
+  HEIC, HEIF, JXL, Matroska audio, OGA, and Opus where the upstream package and
+  local codecs support them.
+- The current upstream no longer ships a face-restore extra. Do not prepare
+  GFPGAN/restore runtime pieces for new packages.
   T8 still keeps a version-aware compatibility path for old 0.8.7 runtimes
-  (`ctrlregen` / `--protect-text` / `--protect-faces`), but release packages
-  should be rebuilt on 0.8.9+ so the UI matches the bundled CLI.
+  (`ctrlregen` / `--protect-text` / `--protect-faces`) and old 0.8.9 runtimes
+  (`--auto` / `--restore-faces`), but release packages should be rebuilt on
+  0.11.0+ so the UI matches the bundled CLI.
 - Rebuild this sidecar whenever upstream changes CLI options, mark registry,
   optional extras, or model cache layout.

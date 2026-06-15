@@ -11,7 +11,9 @@ export type ThemeVisualStyle =
   | 'yyh'
   | 'slamdunk'
   | 'soccer-hero'
-  | 'dragon-ball';
+  | 'dragon-ball'
+  | 'saint-seiya'
+  | 'tetris';
 export type ThemeIntensity = 'subtle' | 'medium' | 'strong';
 export type ThemeMusicPreset =
   | 'tech-pulse'
@@ -23,7 +25,11 @@ export type ThemeMusicPreset =
   | 'spirit-gun'
   | 'buzzer-beater'
   | 'golden-goal'
-  | 'ki-burst';
+  | 'ki-burst'
+  | 'shenron-aura'
+  | 'pegasus-cosmos'
+  | 'hades-eclipse'
+  | 'block-drop';
 export type ThemeMusicSource = 'synth' | 'url' | 'upload';
 
 export interface ThemeTokens {
@@ -72,9 +78,9 @@ export interface ThemeModeDefinition {
 export interface ThemeVisuals {
   style: ThemeVisualStyle;
   intensity?: ThemeIntensity;
-  iconPack?: 'default' | 'op' | 'naruto' | 'eva' | 'yyh' | 'slamdunk' | 'soccer' | 'dragon-ball';
-  canvasPattern?: 'none' | 'dots' | 'map' | 'circuit' | 'confetti' | 'hub' | 'chakra' | 'eva-grid' | 'spirit-map' | 'court' | 'pitch' | 'dragon-radar';
-  nodeFrame?: 'plain' | 'glass' | 'sticker' | 'wanted' | 'hub-card' | 'shinobi-scroll' | 'eva-panel' | 'spirit-case' | 'scoreboard-card' | 'match-card' | 'capsule-card';
+  iconPack?: 'default' | 'op' | 'naruto' | 'eva' | 'yyh' | 'slamdunk' | 'soccer' | 'dragon-ball' | 'saint-seiya' | 'tetromino-well';
+  canvasPattern?: 'none' | 'dots' | 'map' | 'circuit' | 'confetti' | 'hub' | 'chakra' | 'eva-grid' | 'spirit-map' | 'court' | 'pitch' | 'dragon-radar' | 'sanctuary-zodiac' | 'tetris-stack';
+  nodeFrame?: 'plain' | 'glass' | 'sticker' | 'wanted' | 'hub-card' | 'shinobi-scroll' | 'eva-panel' | 'spirit-case' | 'scoreboard-card' | 'match-card' | 'capsule-card' | 'cloth-box-card' | 'arcade-cabinet-card';
   headerMark?: string;
 }
 

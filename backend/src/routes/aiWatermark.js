@@ -21,6 +21,25 @@ function normalizeSource(reqBody) {
   ).trim();
 }
 
+function requestAbortContext(req, res) {
+  const controller = new AbortController();
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  const onClose = () => {
+    if (!res.writableEnded) abort();
+  };
+  req.on('aborted', abort);
+  res.on('close', onClose);
+  return {
+    signal: controller.signal,
+    cleanup() {
+      req.off('aborted', abort);
+      res.off('close', onClose);
+    },
+  };
+}
+
 router.get('/status', async (_req, res) => {
   try {
     const data = await detectCapabilities();
@@ -32,7 +51,7 @@ router.get('/status', async (_req, res) => {
         installed: false,
         version: '',
         resolver: '',
-        markKeys: ['gemini', 'doubao', 'jimeng'],
+        markKeys: ['gemini', 'doubao', 'jimeng', 'samsung'],
         optionalFeatures: {
           invisible: false,
           lama: false,
@@ -42,6 +61,9 @@ router.get('/status', async (_req, res) => {
           auto: false,
           controlnet: false,
           adaptivePolish: false,
+          esrgan: false,
+          model: false,
+          guidanceScale: false,
         },
         setupHints: [
           '推荐: pipx install remove-ai-watermarks',
@@ -55,6 +77,7 @@ router.get('/status', async (_req, res) => {
 });
 
 router.post('/process', async (req, res) => {
+  const abortContext = requestAbortContext(req, res);
   try {
     const source = normalizeSource(req.body);
     if (!source) {
@@ -66,7 +89,9 @@ router.post('/process', async (req, res) => {
       mediaKind: req.body?.kind || media.kind,
       mode: req.body?.mode || 'smart',
       options: req.body?.options || {},
+      signal: abortContext.signal,
     });
+    if (abortContext.signal.aborted || res.writableEnded) return;
     res.json({
       success: true,
       data: {
@@ -79,7 +104,15 @@ router.post('/process', async (req, res) => {
       },
     });
   } catch (e) {
+    if (abortContext.signal.aborted || e?.name === 'AbortError' || e?.code === 'AI_WATERMARK_ABORTED') {
+      if (!res.headersSent && !res.writableEnded) {
+        res.status(499).json({ success: false, error: e?.message || '已停止去 AI 水印任务' });
+      }
+      return;
+    }
     res.status(500).json({ success: false, error: e?.message || String(e) });
+  } finally {
+    abortContext.cleanup();
   }
 });
 

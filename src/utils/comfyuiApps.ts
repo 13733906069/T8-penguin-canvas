@@ -1,10 +1,12 @@
 import type { AdvancedProviderConfig } from '../types/canvas';
 import {
   analyzeComfyWorkflow,
+  comfyFieldInputValue,
+  comfyFieldOptionsForWorkflow,
   compactComfyFields,
   filterComfyFieldsByExcludeRules,
   type ComfyFieldMapping,
-} from './comfyuiWorkflow';
+} from './comfyuiWorkflow.ts';
 
 export type ComfyAppMediaKind = 'text' | 'image' | 'video' | 'audio';
 export type ComfyAppParamKind = 'text' | 'textarea' | 'number' | 'boolean' | 'select';
@@ -22,6 +24,9 @@ export interface ComfyAppUserParam {
   label: string;
   kind: ComfyAppParamKind;
   source: string;
+  nodeId?: string;
+  fieldName?: string;
+  nodeTitle?: string;
   defaultValue?: string | number | boolean;
   placeholder?: string;
   required?: boolean;
@@ -99,8 +104,45 @@ const EXPOSED_SOURCES = new Set([
   'clip_name',
   'vae_name',
   'lora_name',
+  'unet_name',
+  'control_net_name',
+  'clip_vision_name',
+  'style_model_name',
+  'upscale_model',
   'strength_model',
   'strength_clip',
+  'start_at_step',
+  'end_at_step',
+  'guidance',
+  'shift',
+  'fps',
+  'frame_rate',
+  'num_frames',
+  'duration',
+  'strength',
+  'weight',
+  'control_after_generate',
+  'add_noise',
+]);
+const SAFE_CUSTOM_SOURCE_RE = /^[a-z][a-z0-9_:. -]{0,79}$/i;
+const BLOCKED_CUSTOM_SOURCES = new Set([
+  'fixed',
+  'model',
+  'clip',
+  'vae',
+  'latent',
+  'latent_image',
+  'samples',
+  'images',
+  'conditioning',
+  'control_net',
+]);
+const SHARED_DUPLICATE_SOURCES = new Set([
+  ...TEXT_SOURCES,
+  'width',
+  'height',
+  'batch_size',
+  'seed',
 ]);
 
 export const COMFY_APP_SOURCE_LABELS: Record<string, string> = {
@@ -110,8 +152,15 @@ export const COMFY_APP_SOURCE_LABELS: Record<string, string> = {
   image1: '图片输入 1',
   image2: '图片输入 2',
   image3: '图片输入 3',
+  image4: '图片输入 4',
+  image5: '图片输入 5',
+  image6: '图片输入 6',
   video1: '视频输入 1',
+  video2: '视频输入 2',
+  video3: '视频输入 3',
   audio1: '音频输入 1',
+  audio2: '音频输入 2',
+  audio3: '音频输入 3',
   width: '宽度',
   height: '高度',
   batch_size: '批量数',
@@ -126,8 +175,25 @@ export const COMFY_APP_SOURCE_LABELS: Record<string, string> = {
   clip_name: 'CLIP',
   vae_name: 'VAE',
   lora_name: 'LoRA',
+  unet_name: 'UNet',
+  control_net_name: 'ControlNet',
+  clip_vision_name: 'CLIP Vision',
+  style_model_name: 'Style Model',
+  upscale_model: '放大模型',
   strength_model: 'LoRA 模型强度',
   strength_clip: 'LoRA CLIP 强度',
+  start_at_step: '起始步数',
+  end_at_step: '结束步数',
+  guidance: 'Guidance',
+  shift: 'Shift',
+  fps: 'FPS',
+  frame_rate: '帧率',
+  num_frames: '帧数',
+  duration: '时长',
+  strength: '强度',
+  weight: '权重',
+  control_after_generate: 'Seed 生成策略',
+  add_noise: '添加噪声',
 };
 
 function cleanId(value: unknown, fallback: string): string {
@@ -179,16 +245,20 @@ export function normalizeComfyAppManifest(value: Partial<ComfyAppManifest> | nul
     const id = cleanId(item.id || item.title, `comfy-app-${index + 1}`);
     const categoryId = categoryIds.has(cleanId(item.categoryId, '')) ? cleanId(item.categoryId, '') : categories[0].id;
     const fields = compactComfyFields(item.fields);
-    const userParams = Array.isArray(item.userParams) ? item.userParams.map((param: any, paramIndex: number): ComfyAppUserParam | null => {
+    const rawUserParams = Array.isArray(item.userParams) ? item.userParams.map((param: any, paramIndex: number): ComfyAppUserParam | null => {
       const key = cleanId(param?.key || param?.source, `param-${paramIndex + 1}`);
       const source = cleanText(param?.source || key, key, 80);
       if (!source) return null;
       const kind = ['textarea', 'number', 'boolean', 'select'].includes(param?.kind) ? param.kind : 'text';
+      const fieldName = cleanText(param?.fieldName, '', 80);
       return {
         key,
-        label: cleanText(param?.label, COMFY_APP_SOURCE_LABELS[source] || source, 80),
+        label: cleanText(param?.label, COMFY_APP_SOURCE_LABELS[source] || COMFY_APP_SOURCE_LABELS[fieldName] || source, 80),
         kind,
         source,
+        nodeId: cleanText(param?.nodeId, '', 40),
+        fieldName,
+        nodeTitle: cleanText(param?.nodeTitle, '', 120),
         defaultValue: param?.defaultValue,
         placeholder: cleanText(param?.placeholder, '', 160),
         required: param?.required === true,
@@ -199,6 +269,7 @@ export function normalizeComfyAppManifest(value: Partial<ComfyAppManifest> | nul
         rows: Number.isFinite(param?.rows) ? Math.max(2, Math.min(12, Number(param.rows))) : undefined,
       };
     }).filter(Boolean) as ComfyAppUserParam[] : [];
+    const stabilized = stabilizeComfyAppRuntimeParams(fields, rawUserParams);
     const outputs = Array.isArray(item.outputs) && item.outputs.length ? item.outputs : [{ key: 'image', label: '输出图', kind: 'image' }];
     return {
       id,
@@ -206,8 +277,8 @@ export function normalizeComfyAppManifest(value: Partial<ComfyAppManifest> | nul
       categoryId,
       description: cleanText(item.description, '', 300),
       workflowJson: item.workflowJson,
-      fields,
-      userParams,
+      fields: stabilized.fields,
+      userParams: stabilized.userParams,
       outputs: outputs.map((output: any, outputIndex: number) => ({
         key: cleanId(output?.key, `output-${outputIndex + 1}`),
         label: cleanText(output?.label, `输出${outputIndex + 1}`, 80),
@@ -238,12 +309,16 @@ export function normalizeComfyAppManifest(value: Partial<ComfyAppManifest> | nul
 
 export function fieldDefaultValue(workflowJson: Record<string, any> | undefined, field: ComfyFieldMapping): any {
   if (!workflowJson || !field) return undefined;
-  return workflowJson?.[field.nodeId]?.inputs?.[field.fieldName];
+  return comfyFieldInputValue(workflowJson, field);
 }
 
-function paramKindFor(source: string, value: any): ComfyAppParamKind {
+function paramKindFor(source: string, value: any, options?: Array<string | number>): ComfyAppParamKind {
+  if (options?.length) return 'select';
   if (TEXT_SOURCES.has(source)) return 'textarea';
-  if (typeof value === 'number' || ['width', 'height', 'batch_size', 'seed', 'steps', 'cfg', 'denoise', 'strength_model', 'strength_clip'].includes(source)) return 'number';
+  if (
+    typeof value === 'number'
+    || ['width', 'height', 'batch_size', 'seed', 'steps', 'cfg', 'denoise', 'strength_model', 'strength_clip', 'start_at_step', 'end_at_step', 'guidance', 'shift', 'fps', 'frame_rate', 'num_frames', 'duration', 'strength', 'weight'].includes(source)
+  ) return 'number';
   if (typeof value === 'boolean') return 'boolean';
   return 'text';
 }
@@ -257,7 +332,126 @@ function paramKeyFor(field: ComfyFieldMapping): string {
 function shouldExposeParam(field: ComfyFieldMapping): boolean {
   const source = String(field.source || '').trim();
   if (!source || source === 'fixed' || MEDIA_SOURCE_RE.test(source)) return false;
-  return EXPOSED_SOURCES.has(source);
+  if (EXPOSED_SOURCES.has(source)) return true;
+  return SAFE_CUSTOM_SOURCE_RE.test(source) && !BLOCKED_CUSTOM_SOURCES.has(source.toLowerCase());
+}
+
+function shouldScopeDuplicateSource(source: string): boolean {
+  return !!source
+    && source !== 'fixed'
+    && !MEDIA_SOURCE_RE.test(source)
+    && !SHARED_DUPLICATE_SOURCES.has(source);
+}
+
+function fieldSourceKey(source: string, nodeId?: string, fieldName?: string): string {
+  return `${source}::${nodeId || ''}::${fieldName || ''}`;
+}
+
+function uniqueCleanId(base: string, fallback: string, used: Set<string>): string {
+  const cleanBase = cleanId(base, fallback);
+  let candidate = cleanBase;
+  let index = 2;
+  while (used.has(candidate)) {
+    candidate = cleanId(`${cleanBase}-${index}`, fallback);
+    index += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function labelSourceFor(field: ComfyFieldMapping, fallbackSource: string): string {
+  const fieldName = String(field.fieldName || '').trim();
+  return COMFY_APP_SOURCE_LABELS[fallbackSource] || COMFY_APP_SOURCE_LABELS[fieldName] || fallbackSource || fieldName;
+}
+
+function scopeDuplicateComfyFieldSources(fields: ComfyFieldMapping[]): {
+  fields: ComfyFieldMapping[];
+  sourceLabels: Map<string, string>;
+} {
+  const counts = new Map<string, number>();
+  for (const field of fields) {
+    const source = String(field.source || '').trim();
+    if (!shouldExposeParam(field) || !shouldScopeDuplicateSource(source)) continue;
+    counts.set(source, (counts.get(source) || 0) + 1);
+  }
+
+  const usedSources = new Set(fields.map((field) => String(field.source || '').trim()).filter(Boolean));
+  const sourceLabels = new Map<string, string>();
+  const nextFields = fields.map((field) => {
+    const source = String(field.source || '').trim();
+    if ((counts.get(source) || 0) <= 1) return field;
+    const scopedSource = uniqueCleanId(`${source}-${field.nodeId}-${field.fieldName}`, `${field.nodeId}-${field.fieldName}`, usedSources);
+    sourceLabels.set(scopedSource, labelSourceFor(field, source));
+    return { ...field, source: scopedSource };
+  });
+
+  return { fields: nextFields, sourceLabels };
+}
+
+function ensureUniqueComfyParamKeys(params: ComfyAppUserParam[]): ComfyAppUserParam[] {
+  const used = new Set<string>();
+  return params.map((param, index) => {
+    const fallback = `${param.nodeId || 'param'}-${param.fieldName || index + 1}`;
+    const key = uniqueCleanId(param.key || param.source, fallback, used);
+    return key === param.key ? param : { ...param, key };
+  });
+}
+
+function stabilizeComfyAppRuntimeParams(
+  fields: ComfyFieldMapping[],
+  userParams: ComfyAppUserParam[],
+): { fields: ComfyFieldMapping[]; userParams: ComfyAppUserParam[] } {
+  const counts = new Map<string, number>();
+  for (const param of userParams) {
+    const source = String(param.source || '').trim();
+    if (!shouldScopeDuplicateSource(source)) continue;
+    counts.set(source, (counts.get(source) || 0) + 1);
+  }
+  if (![...counts.values()].some((count) => count > 1)) {
+    return { fields, userParams: ensureUniqueComfyParamKeys(userParams) };
+  }
+
+  const usedSources = new Set(fields.map((field) => String(field.source || '').trim()).filter(Boolean));
+  const scopedByField = new Map<string, string>();
+  const fieldByScopedSource = new Map<string, ComfyFieldMapping>();
+  const scopedFieldsBySource = new Map<string, ComfyFieldMapping[]>();
+  const nextFields = fields.map((field) => {
+    const source = String(field.source || '').trim();
+    if ((counts.get(source) || 0) <= 1) return field;
+    const scopedSource = uniqueCleanId(`${source}-${field.nodeId}-${field.fieldName}`, `${field.nodeId}-${field.fieldName}`, usedSources);
+    scopedByField.set(fieldSourceKey(source, field.nodeId, field.fieldName), scopedSource);
+    const nextField = { ...field, source: scopedSource };
+    fieldByScopedSource.set(scopedSource, nextField);
+    const bucket = scopedFieldsBySource.get(source) || [];
+    bucket.push(nextField);
+    scopedFieldsBySource.set(source, bucket);
+    return nextField;
+  });
+
+  const fallbackIndexBySource = new Map<string, number>();
+  const nextParams = userParams.map((param) => {
+    const source = String(param.source || '').trim();
+    if ((counts.get(source) || 0) <= 1) return param;
+    let scopedSource = scopedByField.get(fieldSourceKey(source, param.nodeId, param.fieldName));
+    if (!scopedSource) {
+      const candidates = scopedFieldsBySource.get(source) || [];
+      const index = fallbackIndexBySource.get(source) || 0;
+      scopedSource = candidates[index]?.source || candidates[candidates.length - 1]?.source;
+      fallbackIndexBySource.set(source, index + 1);
+    }
+    if (!scopedSource) return param;
+    const scopedField = fieldByScopedSource.get(scopedSource);
+    return {
+      ...param,
+      source: scopedSource,
+      key: scopedSource,
+      nodeId: param.nodeId || scopedField?.nodeId,
+      fieldName: param.fieldName || scopedField?.fieldName,
+      nodeTitle: param.nodeTitle || (scopedField as any)?.nodeTitle,
+    };
+  });
+
+  return { fields: nextFields, userParams: ensureUniqueComfyParamKeys(nextParams) };
 }
 
 export function buildComfyAppFromWorkflow(options: {
@@ -270,24 +464,33 @@ export function buildComfyAppFromWorkflow(options: {
 }): ComfyAppDefinition {
   const title = cleanText(options.title, 'ComfyUI 工作流', 100);
   const analysis = analyzeComfyWorkflow(options.workflowJson);
-  const fields = compactComfyFields(filterComfyFieldsByExcludeRules(options.workflowJson, analysis.fields, options.excludeRules));
+  const baseFields = compactComfyFields(filterComfyFieldsByExcludeRules(options.workflowJson, analysis.fields, options.excludeRules));
+  const scoped = scopeDuplicateComfyFieldSources(baseFields);
+  const fields = scoped.fields;
   const userParams = fields
     .filter(shouldExposeParam)
     .map((field) => {
       const source = String(field.source || field.fieldName || '').trim();
+      const behaviorSource = COMFY_APP_SOURCE_LABELS[source] ? source : String(field.fieldName || source).trim();
+      const displayLabel = scoped.sourceLabels.get(source) || labelSourceFor(field, source);
       const value = fieldDefaultValue(options.workflowJson, field);
-      const kind = paramKindFor(source, value);
+      const fieldOptions = comfyFieldOptionsForWorkflow(options.workflowJson, field);
+      const kind = paramKindFor(behaviorSource, value, fieldOptions);
       return {
         key: paramKeyFor(field),
-        label: COMFY_APP_SOURCE_LABELS[source] || source,
+        label: field.nodeId ? `${displayLabel} #${field.nodeId}` : displayLabel,
         kind,
         source,
+        nodeId: field.nodeId,
+        fieldName: field.fieldName,
+        nodeTitle: (field as any).nodeTitle,
         defaultValue: value,
-        required: source === 'prompt',
-        min: ['width', 'height'].includes(source) ? 64 : source === 'batch_size' ? 1 : undefined,
-        max: ['width', 'height'].includes(source) ? 8192 : source === 'batch_size' ? 16 : undefined,
-        step: ['width', 'height'].includes(source) ? 8 : source === 'cfg' || source === 'denoise' ? 0.1 : 1,
-        rows: TEXT_SOURCES.has(source) ? (source === 'negative' ? 4 : 5) : undefined,
+        required: behaviorSource === 'prompt',
+        min: ['width', 'height'].includes(behaviorSource) ? 64 : behaviorSource === 'batch_size' ? 1 : undefined,
+        max: ['width', 'height'].includes(behaviorSource) ? 8192 : behaviorSource === 'batch_size' ? 16 : undefined,
+        step: ['width', 'height'].includes(behaviorSource) ? 8 : ['cfg', 'denoise', 'guidance', 'shift', 'strength', 'weight'].includes(behaviorSource) || behaviorSource.startsWith('strength_') ? 0.1 : 1,
+        options: fieldOptions.length ? fieldOptions : undefined,
+        rows: TEXT_SOURCES.has(behaviorSource) ? (behaviorSource === 'negative' ? 4 : 5) : undefined,
       } as ComfyAppUserParam;
     });
 

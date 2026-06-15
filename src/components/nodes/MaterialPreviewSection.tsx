@@ -153,7 +153,6 @@ const MaterialPreviewSection = ({
   const beginSortDrag = (event: PointerEvent<HTMLDivElement>, itemId: string) => {
     if (allItems.length <= 1) return;
     if ((event.target as HTMLElement | null)?.closest('button')) return;
-    event.preventDefault();
     event.stopPropagation();
     cleanupSortWindowListeners();
     sortStartRef.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };

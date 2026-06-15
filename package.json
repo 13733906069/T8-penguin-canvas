@@ -1,7 +1,7 @@
 {
   "name": "t8-penguin-canvas",
   "private": false,
-  "version": "2.0.6",
+  "version": "2.2.4",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "T8-penguin-canvas — AI 节点画布工作流工具（Web + Electron 桌面端）",
@@ -29,6 +29,7 @@
     "dev": "concurrently \"cd backend && npm start\" \"vite\"",
     "dev:vite": "vite",
     "dev:backend": "cd backend && npm start",
+    "figma:bridge": "node tools/figma-bridge/server.cjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -42,6 +43,8 @@
     "dist:release": "node scripts/dist-release.cjs",
     "release:github": "node scripts/release-github.cjs",
     "release:verify": "node scripts/verify-github-release.cjs",
+    "rh-toolbox:check": "node scripts/check-rh-toolbox-release.cjs",
+    "public:check": "node scripts/check-public-clean.cjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -67,6 +70,7 @@
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
     "concurrently": "^9.0.0",
@@ -135,6 +139,13 @@
         ]
       },
       {
+        "from": "resources/achievement-media",
+        "to": "resources/achievement-media",
+        "filter": [
+          "*.t8media"
+        ]
+      },
+      {
         "from": "tools/runtime-archives",
         "to": "tools/runtime-archives",
         "filter": [
@@ -155,6 +166,13 @@
       {
         "from": "tools/parsehub-bridge",
         "to": "tools/parsehub-bridge",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "tools/figma-bridge",
+        "to": "tools/figma-bridge",
         "filter": [
           "**/*"
         ]

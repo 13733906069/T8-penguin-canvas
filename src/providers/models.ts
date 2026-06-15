@@ -44,6 +44,15 @@ const BANANA_PRO_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3
 // gpt-image-2-web Grok Image Tab 的比例集合,默认参考图传入方式为 Base64
 const GROK_IMAGE_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'];
 
+export const GPT_IMAGE_2_ZHENZHEN_SIZE_VARIANTS: Record<string, '2K' | '4K'> = {
+  'gpt-image-2-2K': '2K',
+  'gpt-image-2-4K': '4K',
+};
+
+export function gptImage2ZhenzhenVariantSize(apiModel: string | undefined | null): '2K' | '4K' | null {
+  return GPT_IMAGE_2_ZHENZHEN_SIZE_VARIANTS[String(apiModel || '').trim()] || null;
+}
+
 export const IMAGE_MODELS: ImageModelDef[] = [
   {
     id: 'gpt-image-2',
@@ -56,6 +65,8 @@ export const IMAGE_MODELS: ImageModelDef[] = [
     apiModelOptions: [
       { value: 'gpt-image-2-all', label: 'gpt-image-2-all' },
       { value: 'gpt-image-2', label: 'gpt-image-2' },
+      { value: 'gpt-image-2-2K', label: 'gpt-image-2-2K' },
+      { value: 'gpt-image-2-4K', label: 'gpt-image-2-4K' },
       { value: 'gpt-image-2-fal', label: 'gpt-image-2-fal' },
     ],
     aspectRatios: GPT_RATIOS,
@@ -68,14 +79,14 @@ export const IMAGE_MODELS: ImageModelDef[] = [
   },
   {
     id: 'nano-banana-2',
-    apiModel: 'nano-banana-2',
+    apiModel: 'gemini-3.1-flash-image-preview',
     label: 'Nano Banana 2',
     tabLabel: '香蕉2',
     provider: 'zhenzhen',
     paramKind: 'banana-ratio',
     capabilities: ['t2i', 'i2i'],
     apiModelOptions: [
-      { value: 'nano-banana-2', label: 'nano-banana-2 (Flash)' },
+      { value: 'gemini-3.1-flash-image-preview', label: 'nano-banana-2 (Flash)' },
       { value: 'nano-banana-2-fal', label: 'nano-banana-2-fal' },
     ],
     aspectRatios: BANANA_FLASH_RATIOS,
@@ -359,6 +370,30 @@ export const SORA2_FAL_DURATIONS = [4, 8, 12, 16, 20];
 /** Sora2 FAL 分辨率(主项目 srf_resolution) */
 export const SORA2_FAL_RESOLUTIONS = ['720p', 'auto'];
 
+export const GROK_VIDEO_1_5_NEW_MODELS = [
+  'grok-1.5-video-6s',
+  'grok-1.5-video-10s',
+  'grok-1.5-video-15s',
+] as const;
+
+export type GrokVideo15NewModel = typeof GROK_VIDEO_1_5_NEW_MODELS[number];
+
+export const GROK_VIDEO_1_5_NEW_SIZES = [
+  { value: '1280x720', label: '横屏 1280x720' },
+  { value: '720x1280', label: '竖屏 720x1280' },
+] as const;
+
+export function isGrokVideo15NewModel(model: string): model is GrokVideo15NewModel {
+  return (GROK_VIDEO_1_5_NEW_MODELS as readonly string[]).includes(String(model || '').trim());
+}
+
+export function grokVideo15NewSizeFromRatio(ratioOrSize: string): '1280x720' | '720x1280' {
+  const value = String(ratioOrSize || '').trim();
+  if (value === '720x1280') return '720x1280';
+  if (value === '9:16') return '720x1280';
+  return '1280x720';
+}
+
 export interface VideoModelDef {
   id: string;                // 节点默认 model 字段(也是上游真实 model)
   label: string;             // 主选项显示名
@@ -380,8 +415,9 @@ export interface VideoModelDef {
   maxRefImages: number;
 }
 
-// veo3.1 完整 13 个子模型(主项目 index.html line 1350)
+// Veo 系列子模型。第一项是切到 Veo 分类时的默认具体模型。
 const VEO_MODELS = [
+  { value: 'veo-omni-10s', label: 'veo-omni-10s' },
   { value: 'veo3', label: 'veo3' },
   { value: 'veo3-fast', label: 'veo3-fast' },
   { value: 'veo3-pro', label: 'veo3-pro' },
@@ -407,8 +443,11 @@ export const VIDEO_MODELS: VideoModelDef[] = [
     provider: 'zhenzhen',
     description: 'xAI Grok Video (最多 7 张参考图)',
     apiModelOptions: [
+      { value: 'grok-video-3', label: 'grok-video-3（新版1.5）' },
+      { value: 'grok-1.5-video-6s', label: 'grok-1.5-video-6s（Zhenzhen New）' },
+      { value: 'grok-1.5-video-10s', label: 'grok-1.5-video-10s（Zhenzhen New）' },
+      { value: 'grok-1.5-video-15s', label: 'grok-1.5-video-15s（Zhenzhen New）' },
       { value: 'grok-imagine-video-1.5', label: 'Grok Video 1.5 (FAL)' },
-      { value: 'grok-video-3', label: 'grok-video-3' },
       { value: 'grok-video-fal', label: 'grok-video-fal (FAL)' },
     ],
     // 主项目 gk_ratio(line 1410): 2:3 / 3:2 / 16:9 / 9:16 / 1:1
@@ -425,14 +464,15 @@ export const VIDEO_MODELS: VideoModelDef[] = [
   },
   {
     id: 'veo3.1',
-    label: 'Veo 3.1',
+    label: 'Veo',
     kind: 'veo',
     provider: 'zhenzhen',
-    description: 'Google Veo 3.1 系列 (最多 3 张参考图)',
+    description: 'Google Veo 系列 (默认 veo-omni-10s)',
     apiModelOptions: VEO_MODELS,
     // 主项目 veo_ratio 只有 16:9 / 9:16(line 1352)
     ratios: ['16:9', '9:16'],
     defaultRatio: '16:9',
+    defaultDuration: 10,
     supportImages: true,
     maxRefImages: 3,
   },
@@ -441,16 +481,17 @@ export const VIDEO_MODELS: VideoModelDef[] = [
     label: 'Sora2',
     kind: 'sora',
     provider: 'zhenzhen',
-    description: 'Sora2 FAL 文生/图生视频 (默认 Base64 参考图)',
+    description: 'Sora2 支持 FAL 与 Zhenzhen API 双渠道；旧 sora-2 保持 FAL',
     apiModelOptions: [
       { value: 'sora-2', label: 'sora-2 (FAL)' },
+      { value: 'sora-2-zhenzhen', label: 'sora-2 (Zhenzhen API)' },
     ],
-    ratios: ['16:9', '9:16', 'auto'],
+    ratios: ['16:9', '9:16'],
     defaultRatio: '16:9',
-    durations: [4, 8, 12, 16, 20],
-    defaultDuration: 4,
-    resolutions: ['720p', 'auto'],
-    defaultResolution: '720p',
+    durations: [15],
+    defaultDuration: 15,
+    resolutions: [],
+    defaultResolution: '',
     supportImages: true,
     maxRefImages: 1,
   },
@@ -500,7 +541,7 @@ export const DEFAULT_SUNO_VERSION = 'v5.5';
 
 // ========== LLM/Vision ==========
 // 完全对齐 gpt-image-2-web Chat Tab(index.html L1600 chat_model select)
-// 默认: gemini-3.1-flash-lite-preview
+// 默认: gemini-3.5-flash
 // 特殊模型: gpt-image-2-all — 图文双向(非流式,可返回 image_url)
 export interface LlmModelDef {
   id: string;
@@ -525,7 +566,7 @@ export const LLM_MODELS: LlmModelDef[] = [
   { id: 'gpt-image-2-all', label: 'GPT Image 2 All (图文)', provider: 'llm-direct', vision: true, imageOutput: true, nonStreaming: true, description: '可自动调用图像生成' },
 ];
 
-export const DEFAULT_LLM_MODEL = 'gemini-3.1-flash-lite-preview';
+export const DEFAULT_LLM_MODEL = 'gemini-3.5-flash';
 
 /** 是否为出图模型(需走非流式 + 检测 generate_image 指令) */
 export function isImageOutputLlm(modelId: string): boolean {

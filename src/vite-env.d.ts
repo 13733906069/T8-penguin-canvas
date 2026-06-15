@@ -1,5 +1,15 @@
 /// <reference types="vite/client" />
 
+declare module 'virtual:t8-local-extensions' {
+  import type { FC } from 'react';
+  import type { LocalNodeAddonSlotProps, LocalSettingsAddonSlotProps, LocalTopbarSlotProps } from './extensions/localExtensionTypes';
+
+  export const LocalTopbarSlot: FC<LocalTopbarSlotProps>;
+  export const LocalNodeAddonSlot: FC<LocalNodeAddonSlotProps>;
+  export const LocalSettingsAddonSlot: FC<LocalSettingsAddonSlotProps>;
+  export const LocalModalSlot: FC;
+}
+
 type T8UpdaterStatusCode =
   | 'idle'
   | 'disabled'
@@ -35,6 +45,13 @@ interface T8UpdaterResult {
   message?: string;
   info?: unknown;
   status?: T8UpdaterStatus;
+}
+
+interface T8DragFileOutStatus {
+  requestId?: string;
+  success: boolean;
+  message?: string;
+  file?: string;
 }
 
 interface T8ParseAuthCookie {
@@ -80,6 +97,9 @@ interface Window {
       updater?: T8UpdaterStatus;
     }>;
     openExternal: (url: string) => Promise<{ success: boolean; message?: string }>;
+    openPath: (targetPath: string) => Promise<{ success: boolean; message?: string; path?: string }>;
+    dragFileOut?: (payload: { url?: string; path?: string; filename?: string; kind?: string; requestId?: string }) => void;
+    onDragFileOutStatus?: (callback: (status: T8DragFileOutStatus) => void) => () => void;
     parseAuth?: {
       login: (profileId: string) => Promise<T8ParseAuthResult>;
       getCookie: (profileId: string) => Promise<T8ParseAuthResult>;

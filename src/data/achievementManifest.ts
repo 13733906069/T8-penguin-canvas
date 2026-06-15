@@ -10,7 +10,9 @@ export type AchievementThemeStyle =
   | 'yyh'
   | 'slamdunk'
   | 'soccer-hero'
-  | 'dragon-ball';
+  | 'dragon-ball'
+  | 'saint-seiya'
+  | 'tetris';
 
 export type AchievementRarity = 'bronze' | 'silver' | 'gold' | 'master' | 'hidden';
 
@@ -70,6 +72,7 @@ export interface AchievementFilmReward {
   title: string;
   unlockAchievementId: string;
   lockedText: string;
+  unlockedText?: string;
   unavailableText: string;
 }
 

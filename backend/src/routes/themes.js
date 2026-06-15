@@ -6,12 +6,12 @@ const config = require('../config');
 const router = express.Router();
 const SCHEMA = 't8-theme-template';
 const VERSION = 2;
-const VISUAL_STYLES = new Set(['plain', 'tech', 'pixel', 'op', 'rh', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer-hero', 'dragon-ball']);
+const VISUAL_STYLES = new Set(['plain', 'tech', 'pixel', 'op', 'rh', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer-hero', 'dragon-ball', 'saint-seiya']);
 const INTENSITIES = new Set(['subtle', 'medium', 'strong']);
-const ICON_PACKS = new Set(['default', 'op', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer', 'dragon-ball']);
-const CANVAS_PATTERNS = new Set(['none', 'dots', 'map', 'circuit', 'confetti', 'hub', 'chakra', 'eva-grid', 'spirit-map', 'court', 'pitch', 'dragon-radar']);
-const NODE_FRAMES = new Set(['plain', 'glass', 'sticker', 'wanted', 'hub-card', 'shinobi-scroll', 'eva-panel', 'spirit-case', 'scoreboard-card', 'match-card', 'capsule-card']);
-const MUSIC_PRESETS = new Set(['tech-pulse', 'pixel-pop', 'grand-line-adventure', 'rh-pulse', 'shinobi-flame', 'eva-sync', 'spirit-gun', 'buzzer-beater', 'golden-goal', 'ki-burst']);
+const ICON_PACKS = new Set(['default', 'op', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer', 'dragon-ball', 'saint-seiya']);
+const CANVAS_PATTERNS = new Set(['none', 'dots', 'map', 'circuit', 'confetti', 'hub', 'chakra', 'eva-grid', 'spirit-map', 'court', 'pitch', 'dragon-radar', 'sanctuary-zodiac']);
+const NODE_FRAMES = new Set(['plain', 'glass', 'sticker', 'wanted', 'hub-card', 'shinobi-scroll', 'eva-panel', 'spirit-case', 'scoreboard-card', 'match-card', 'capsule-card', 'cloth-box-card']);
+const MUSIC_PRESETS = new Set(['tech-pulse', 'pixel-pop', 'grand-line-adventure', 'rh-pulse', 'shinobi-flame', 'eva-sync', 'spirit-gun', 'buzzer-beater', 'golden-goal', 'ki-burst', 'shenron-aura', 'pegasus-cosmos', 'hades-eclipse']);
 const MUSIC_SOURCES = new Set(['synth', 'url', 'upload']);
 
 function loadSettings() {
@@ -75,6 +75,8 @@ function normalizeVisuals(raw, legacyStyle) {
           ? 'soccer'
         : style === 'dragon-ball'
           ? 'dragon-ball'
+        : style === 'saint-seiya'
+          ? 'saint-seiya'
           : 'default',
     canvasPattern: CANVAS_PATTERNS.has(source.canvasPattern)
       ? source.canvasPattern
@@ -94,6 +96,8 @@ function normalizeVisuals(raw, legacyStyle) {
           ? 'pitch'
         : style === 'dragon-ball'
           ? 'dragon-radar'
+        : style === 'saint-seiya'
+          ? 'sanctuary-zodiac'
         : style === 'tech'
           ? 'circuit'
           : 'dots',
@@ -115,6 +119,8 @@ function normalizeVisuals(raw, legacyStyle) {
           ? 'match-card'
         : style === 'dragon-ball'
           ? 'capsule-card'
+        : style === 'saint-seiya'
+          ? 'cloth-box-card'
         : style === 'tech'
           ? 'glass'
           : 'sticker',
@@ -202,6 +208,18 @@ function defaultMusicFor(legacyStyle, visuals) {
       volume: 0.16,
       bpm: 156,
       copyrightNote: '七龙珠主题默认音乐由前端内置模板提供；后端导入规范化缺少可用 URL 时仅使用 ki-burst 合成兜底，可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'saint-seiya') {
+    return {
+      title: 'Pegasus Cosmos Loop',
+      preset: 'pegasus-cosmos',
+      source: 'synth',
+      hiddenTitle: 'Hades Eclipse',
+      hiddenVolume: 0.18,
+      volume: 0.16,
+      bpm: 148,
+      copyrightNote: '原创圣域小宇宙合成循环；冥界篇使用隐藏合成 preset，可替换为已授权音频 URL。',
     };
   }
   if (legacyStyle === 'tech' || style === 'tech') {

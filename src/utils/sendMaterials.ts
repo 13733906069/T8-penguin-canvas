@@ -22,7 +22,11 @@ export interface SendableMaterial extends MaterialSetItem {
 export type SendableBuckets = Record<MaterialSetKind, SendableMaterial[]>;
 
 const MATERIAL_KINDS: MaterialSetKind[] = ['text', 'image', 'video', 'audio'];
-const MEDIA_KINDS: MediaKind[] = ['image', 'video', 'audio'];
+type SendMediaKind = Exclude<MediaKind, 'model3d'>;
+
+function isSendMediaKind(value: any): value is SendMediaKind {
+  return value === 'image' || value === 'video' || value === 'audio';
+}
 
 function toSendable(item: MaterialSetItem, meta: Partial<SendableMaterial> = {}): SendableMaterial {
   return {
@@ -142,8 +146,8 @@ export function resourceItemToSendMaterials(item: ResourceItem): SendableMateria
       }),
     );
   }
-  const mediaKind: MediaKind | null = item.kind === 'panorama' ? 'image' : (item.kind as MediaKind);
-  if (!mediaKind || !MEDIA_KINDS.includes(mediaKind) || !item.fileUrl) return [];
+  const mediaKind = item.kind === 'panorama' ? 'image' : item.kind;
+  if (!isSendMediaKind(mediaKind) || !item.fileUrl) return [];
   return [
     toSendable(
       {
@@ -164,9 +168,9 @@ export function resourceItemToSendMaterials(item: ResourceItem): SendableMateria
 }
 
 export function sendableToMediaItem(item: SendableMaterial): MediaItem | null {
-  if (!MEDIA_KINDS.includes(item.kind as MediaKind) || !item.url) return null;
+  if (!isSendMediaKind(item.kind) || !item.url) return null;
   return {
-    kind: item.kind as MediaKind,
+    kind: item.kind,
     url: item.url,
     name: item.name || fileNameFromUrl(item.url),
     size: item.size,

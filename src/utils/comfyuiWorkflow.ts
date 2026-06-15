@@ -1,5 +1,6 @@
 export type ComfyFieldSource =
   | 'prompt'
+  | 'positive'
   | 'negative'
   | 'image1'
   | 'image2'
@@ -22,13 +23,15 @@ export type ComfyFieldSource =
   | 'lora_name'
   | 'strength_model'
   | 'strength_clip'
-  | 'fixed';
+  | 'fixed'
+  | string;
 
 export interface ComfyFieldMapping {
   nodeId: string;
   fieldName: string;
   source?: string;
   value?: any;
+  options?: Array<string | number>;
 }
 
 export interface ComfyDetectedField extends ComfyFieldMapping {
@@ -58,6 +61,15 @@ export interface CanonicalizeComfyFieldsOptions {
 }
 
 export type ComfyFieldExcludeRule = string;
+export const COMFY_FIELD_EXCLUDE_RULES_SCHEMA = 't8-comfyui-field-exclude-rules';
+
+export interface ComfyFieldExcludeRulesBackup {
+  schema: typeof COMFY_FIELD_EXCLUDE_RULES_SCHEMA;
+  version: 1;
+  exportedAt: string;
+  source?: string;
+  rules: ComfyFieldExcludeRule[];
+}
 
 export const COMFY_FIELD_SOURCE_OPTIONS: Array<{ value: ComfyFieldSource; label: string; hint?: string }> = [
   { value: 'prompt', label: '正向 Prompt' },
@@ -65,8 +77,15 @@ export const COMFY_FIELD_SOURCE_OPTIONS: Array<{ value: ComfyFieldSource; label:
   { value: 'image1', label: '上游图片 1' },
   { value: 'image2', label: '上游图片 2' },
   { value: 'image3', label: '上游图片 3' },
+  { value: 'image4', label: '上游图片 4' },
+  { value: 'image5', label: '上游图片 5' },
+  { value: 'image6', label: '上游图片 6' },
   { value: 'video1', label: '上游视频 1' },
+  { value: 'video2', label: '上游视频 2' },
+  { value: 'video3', label: '上游视频 3' },
   { value: 'audio1', label: '上游音频 1' },
+  { value: 'audio2', label: '上游音频 2' },
+  { value: 'audio3', label: '上游音频 3' },
   { value: 'width', label: '宽度' },
   { value: 'height', label: '高度' },
   { value: 'batch_size', label: '批量数' },
@@ -81,8 +100,23 @@ export const COMFY_FIELD_SOURCE_OPTIONS: Array<{ value: ComfyFieldSource; label:
   { value: 'clip_name', label: 'CLIP' },
   { value: 'vae_name', label: 'VAE' },
   { value: 'lora_name', label: 'LoRA' },
+  { value: 'unet_name', label: 'UNet' },
+  { value: 'control_net_name', label: 'ControlNet' },
+  { value: 'clip_vision_name', label: 'CLIP Vision' },
+  { value: 'style_model_name', label: 'Style Model' },
+  { value: 'upscale_model', label: '放大模型' },
   { value: 'strength_model', label: 'LoRA 模型强度' },
   { value: 'strength_clip', label: 'LoRA CLIP 强度' },
+  { value: 'start_at_step', label: '起始步数' },
+  { value: 'end_at_step', label: '结束步数' },
+  { value: 'guidance', label: 'Guidance' },
+  { value: 'shift', label: 'Shift' },
+  { value: 'fps', label: 'FPS' },
+  { value: 'frame_rate', label: '帧率' },
+  { value: 'num_frames', label: '帧数' },
+  { value: 'duration', label: '时长' },
+  { value: 'strength', label: '强度' },
+  { value: 'weight', label: '权重' },
   { value: 'fixed', label: '固定值' },
 ];
 
@@ -165,20 +199,24 @@ function pushField(
   node: any,
   fieldName: string,
   source: ComfyFieldSource,
-) {
+): boolean {
   const key = `${nodeId}::${fieldName}`;
-  if (seen.has(key)) return;
+  if (seen.has(key)) return false;
   seen.add(key);
   const classType = classTypeOf(node);
   const title = nodeTitle(nodeId, node);
-  out.push({
+  const options = fieldOptionsForNode(node, fieldName);
+  const field: ComfyDetectedField = {
     nodeId,
     fieldName,
     source,
     classType,
     nodeTitle: title,
     label: `${title} #${nodeId} · ${fieldName}`,
-  });
+  };
+  if (options.length) field.options = options;
+  out.push(field);
+  return true;
 }
 
 function isNegativePromptNode(node: any, promptTextAlreadySeen: boolean): boolean {
@@ -210,6 +248,263 @@ function hasField(inputs: Record<string, any>, fieldName: string): boolean {
   return Object.prototype.hasOwnProperty.call(inputs, fieldName);
 }
 
+function normalizeInputKey(value: unknown): string {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function isLinkedInput(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length >= 1
+    && value.length <= 3
+    && (typeof value[0] === 'string' || typeof value[0] === 'number')
+    && (value.length === 1 || typeof value[1] === 'number' || typeof value[1] === 'string');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function scalarOption(value: unknown): string | number | null {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text ? text : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return null;
+}
+
+function uniqueOptions(values: Array<string | number>): Array<string | number> {
+  const out: Array<string | number> = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const key = `${typeof value}:${String(value)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out.slice(0, 120);
+}
+
+const KNOWN_COMFY_FIELD_OPTIONS: Record<string, Array<string | number>> = {
+  aspect_ratio: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9', '9:21', 'custom'],
+  ratio: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9', '9:21'],
+  resolution: ['1k', '2k', '4k'],
+  size: ['auto', '1k', '2k', '4k'],
+  quality: ['auto', 'low', 'medium', 'high'],
+  background: ['auto', 'transparent', 'opaque'],
+  output_format: ['png', 'jpg', 'jpeg', 'webp'],
+  moderation: ['auto', 'low'],
+  response_format: ['url', 'b64_json'],
+  control_after_generate: ['fixed', 'increment', 'decrement', 'randomize'],
+  生成后控制: ['fixed', 'increment', 'decrement', 'randomize'],
+};
+
+function unwrapComfyEditableValue(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  for (const key of ['value', 'default', 'selected', 'current']) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) return value[key];
+  }
+  return value;
+}
+
+function isPrimitiveEditableValue(value: unknown): boolean {
+  const unwrapped = unwrapComfyEditableValue(value);
+  return unwrapped === null || ['string', 'number', 'boolean'].includes(typeof unwrapped);
+}
+
+function textAroundNode(node: any): string {
+  return `${node?._meta?.title || ''} ${node?.title || ''} ${node?.class_type || ''}`.toLowerCase();
+}
+
+function valueForNormalizedKey(record: unknown, fieldName: string): unknown {
+  if (!isRecord(record)) return undefined;
+  if (Object.prototype.hasOwnProperty.call(record, fieldName)) return record[fieldName];
+  const normalized = normalizeInputKey(fieldName);
+  for (const [key, value] of Object.entries(record)) {
+    if (normalizeInputKey(key) === normalized) return value;
+  }
+  return undefined;
+}
+
+function collectOptionsFromCandidate(value: unknown, depth = 0): Array<string | number> {
+  if (depth > 5 || value == null) return [];
+  if (Array.isArray(value)) {
+    if (isLinkedInput(value)) return [];
+    const direct = value.map(scalarOption).filter((item): item is string | number => item !== null);
+    if (direct.length === value.length && direct.length > 0) return uniqueOptions(direct);
+    const nested: Array<string | number> = [];
+    for (const item of value) {
+      nested.push(...collectOptionsFromCandidate(item, depth + 1));
+    }
+    return uniqueOptions(nested);
+  }
+  if (isRecord(value)) {
+    const optionKeys = ['options', 'choices', 'values', 'enum', 'list', 'items', 'selectOptions', 'dropdown'];
+    const out: Array<string | number> = [];
+    for (const key of optionKeys) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        out.push(...collectOptionsFromCandidate(value[key], depth + 1));
+      }
+    }
+    return uniqueOptions(out);
+  }
+  return [];
+}
+
+function fieldOptionsForNode(node: any, fieldName: string): Array<string | number> {
+  const inputValue = node?.inputs?.[fieldName];
+  const candidates = [
+    inputValue,
+    valueForNormalizedKey(node?.inputs, `${fieldName}_options`),
+    valueForNormalizedKey(node?.inputs, `${fieldName}_choices`),
+    valueForNormalizedKey(node?.input_types?.required, fieldName),
+    valueForNormalizedKey(node?.input_types?.optional, fieldName),
+    valueForNormalizedKey(node?.inputTypes?.required, fieldName),
+    valueForNormalizedKey(node?.inputTypes?.optional, fieldName),
+    valueForNormalizedKey(node?.widgets, fieldName),
+    valueForNormalizedKey(node?.widget, fieldName),
+    valueForNormalizedKey(node?._meta?.inputs, fieldName),
+    valueForNormalizedKey(node?._meta?.widgets, fieldName),
+    valueForNormalizedKey(node?.properties, fieldName),
+  ];
+  if (Array.isArray(node?.widgets)) {
+    const widget = node.widgets.find((item: any) => normalizeInputKey(item?.name || item?.field || item?.key) === normalizeInputKey(fieldName));
+    if (widget) candidates.push(widget);
+  }
+  for (const candidate of candidates) {
+    const options = collectOptionsFromCandidate(candidate);
+    if (options.length) return options;
+  }
+  return KNOWN_COMFY_FIELD_OPTIONS[normalizeInputKey(fieldName)] || [];
+}
+
+export function comfyFieldOptionsForWorkflow(workflow: unknown, field: ComfyFieldMapping | ComfyDetectedField): Array<string | number> {
+  const existing = collectOptionsFromCandidate((field as any)?.options);
+  if (existing.length) return existing;
+  const nodeId = String(field?.nodeId || '').trim();
+  const fieldName = String(field?.fieldName || '').trim();
+  const entries = entriesOfWorkflow(workflow);
+  const node = entries.find(([id]) => id === nodeId)?.[1];
+  return node && fieldName ? fieldOptionsForNode(node, fieldName) : [];
+}
+
+export function comfyFieldInputValue(workflow: unknown, field: ComfyFieldMapping | ComfyDetectedField): any {
+  const nodeId = String(field?.nodeId || '').trim();
+  const fieldName = String(field?.fieldName || '').trim();
+  const entries = entriesOfWorkflow(workflow);
+  const node = entries.find(([id]) => id === nodeId)?.[1];
+  return unwrapComfyEditableValue(node?.inputs?.[fieldName]);
+}
+
+function isNegativeLikeField(fieldName: string, node: any): boolean {
+  return /(^|_)(negative|neg|uncond|反向|负向|不要|排除)(_|$)/i.test(fieldName)
+    || /negative|neg|反向|负向|不要|排除/i.test(textAroundNode(node));
+}
+
+function isOutputPathLikeField(fieldName: string): boolean {
+  const key = normalizeInputKey(fieldName);
+  return /^(filename|file_name|filename_prefix|prefix|save_path|output_path|output_dir|folder|subfolder)$/.test(key);
+}
+
+function isTextLikeField(fieldName: string, node: any): boolean {
+  if (isOutputPathLikeField(fieldName)) return false;
+  const key = normalizeInputKey(fieldName);
+  if (/^(prompt|positive|positive_prompt|negative|negative_prompt|caption|instruction|description|subject|style|wildcard|conditioning_text)$/.test(key)) return true;
+  const nodeLooksPromptDriven = /prompt|textencode|caption|wildcard|llm|chat|conditioning|encode|positive|negative/i.test(textAroundNode(node));
+  if (/^(text|string|value)$/.test(key)) return nodeLooksPromptDriven;
+  if (/(^|_)(prompt|caption|instruction|description)(_|$)/.test(key)) return true;
+  if (/(^|_)(text|string)(_|$)/.test(key)) return nodeLooksPromptDriven;
+  return nodeLooksPromptDriven && ['text', 'prompt', 'value'].includes(key);
+}
+
+function isImageLikeField(fieldName: string, node: any): boolean {
+  const key = normalizeInputKey(fieldName);
+  if (/^(image|img|mask|control_image|reference_image|ref_image|source_image|input_image|init_image|start_image|end_image|face_image|person_image|pose_image|depth_image|normal_image|lineart_image|image_path|mask_image)$/.test(key)) return true;
+  if (/(^|_)(image|img|mask)(_|$)/.test(key)) return true;
+  return /(loadimage|imageinput|mask|controlnet|ipadapter|openpose|depth|lineart|reference)/i.test(textAroundNode(node)) && ['image', 'img', 'mask', 'path', 'file'].includes(key);
+}
+
+function isVideoLikeField(fieldName: string, node: any): boolean {
+  const key = normalizeInputKey(fieldName);
+  if (/^(video|video_path|input_video|source_video|reference_video|init_video|frames_video)$/.test(key)) return true;
+  if (/(^|_)(video|movie|frames)(_|$)/.test(key)) return true;
+  return /(loadvideo|videoinput|vhs|video|wanvideo|ltxv|svd|animatediff)/i.test(textAroundNode(node)) && ['video', 'path', 'file'].includes(key);
+}
+
+function isAudioLikeField(fieldName: string, node: any): boolean {
+  const key = normalizeInputKey(fieldName);
+  if (/^(audio|audio_path|input_audio|source_audio|reference_audio|voice|sound|music|speech|wav)$/.test(key)) return true;
+  if (/(^|_)(audio|voice|sound|music|speech|wav)(_|$)/.test(key)) return true;
+  return /(loadaudio|audioinput|audio|tts|stt|voice|sound)/i.test(textAroundNode(node)) && ['audio', 'path', 'file', 'voice'].includes(key);
+}
+
+const DIRECT_SOURCE_FIELDS = new Set([
+  'width',
+  'height',
+  'batch_size',
+  'seed',
+  'steps',
+  'cfg',
+  'sampler_name',
+  'scheduler',
+  'denoise',
+  'model_name',
+  'ckpt_name',
+  'clip_name',
+  'vae_name',
+  'lora_name',
+  'unet_name',
+  'control_net_name',
+  'clip_vision_name',
+  'style_model_name',
+  'upscale_model',
+  'strength_model',
+  'strength_clip',
+  'start_at_step',
+  'end_at_step',
+  'guidance',
+  'shift',
+  'fps',
+  'frame_rate',
+  'num_frames',
+  'duration',
+  'strength',
+  'weight',
+  'control_after_generate',
+  'add_noise',
+]);
+
+function directSourceForField(fieldName: string): ComfyFieldSource | '' {
+  const key = normalizeInputKey(fieldName);
+  if (key === 'noise_seed') return 'seed';
+  if (key === 'positive_prompt') return 'prompt';
+  if (key === 'negative_prompt') return 'negative';
+  if (DIRECT_SOURCE_FIELDS.has(key)) return key;
+  if (/(^|_)(model_name|ckpt_name|clip_name|vae_name|lora_name|unet_name|control_net_name|clip_vision_name|style_model_name|upscale_model)(_|$)/.test(key)) return key;
+  return '';
+}
+
+function shouldSkipGenericField(fieldName: string, value: unknown): boolean {
+  if (isLinkedInput(value)) return true;
+  if (!isPrimitiveEditableValue(value)) return true;
+  const key = normalizeInputKey(fieldName);
+  if (isOutputPathLikeField(key)) return true;
+  return /^(model|clip|vae|positive|negative|latent|latent_image|samples|images|conditioning|control_net)$/.test(key);
+}
+
+function isOutputNode(classType: string): boolean {
+  const low = String(classType || '').toLowerCase();
+  return /(save|preview|output|export).*(image|video|audio|text|string)|(image|video|audio|text|string).*(save|preview|output|export)/.test(low);
+}
+
+function isDisplayOnlyNode(node: any): boolean {
+  const text = textAroundNode(node);
+  if (/(show\s*anything|showanything|展示任何|展示|viewer|display|inspect|debug|logger|console|watch|note|result)/i.test(text)) {
+    return !/(prompt|textencode|caption|wildcard|llm|chat|input|loadimage|loadvideo|loadaudio|sampler|generate|generator)/i.test(text);
+  }
+  return false;
+}
+
 export function analyzeComfyWorkflow(workflow: unknown): ComfyWorkflowAnalysis {
   const fields: ComfyDetectedField[] = [];
   const seen = new Set<string>();
@@ -232,6 +527,7 @@ export function analyzeComfyWorkflow(workflow: unknown): ComfyWorkflowAnalysis {
     const lowClass = classType.toLowerCase();
     const inputs = node.inputs || {};
     const inputKeys = Object.keys(inputs);
+    const skipGenericInputs = isDisplayOnlyNode(node) || isOutputNode(classType);
 
     if (lowClass.includes('cliptextencode') && hasField(inputs, 'text')) {
       const role = clipTextRoles.get(nodeId);
@@ -242,17 +538,17 @@ export function analyzeComfyWorkflow(workflow: unknown): ComfyWorkflowAnalysis {
 
     if ((lowClass.includes('loadimage') || lowClass.includes('imageinput')) && hasField(inputs, 'image')) {
       imageInputCount += 1;
-      pushField(fields, seen, nodeId, node, 'image', (`image${Math.min(imageInputCount, 3)}` as ComfyFieldSource));
+      pushField(fields, seen, nodeId, node, 'image', (`image${imageInputCount}` as ComfyFieldSource));
     }
 
     if ((lowClass.includes('loadvideo') || lowClass.includes('videoinput') || lowClass.includes('vhs')) && hasField(inputs, 'video')) {
       videoInputCount += 1;
-      pushField(fields, seen, nodeId, node, 'video', 'video1');
+      pushField(fields, seen, nodeId, node, 'video', (`video${videoInputCount}` as ComfyFieldSource));
     }
 
     if ((lowClass.includes('loadaudio') || lowClass.includes('audioinput')) && hasField(inputs, 'audio')) {
       audioInputCount += 1;
-      pushField(fields, seen, nodeId, node, 'audio', 'audio1');
+      pushField(fields, seen, nodeId, node, 'audio', (`audio${audioInputCount}` as ComfyFieldSource));
     }
 
     if (lowClass.includes('emptylatent') || lowClass.includes('latentimage')) {
@@ -270,11 +566,44 @@ export function analyzeComfyWorkflow(workflow: unknown): ComfyWorkflowAnalysis {
       }
     }
 
-    for (const key of ['model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'strength_model', 'strength_clip'] as const) {
+    for (const key of ['model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'unet_name', 'control_net_name', 'clip_vision_name', 'style_model_name', 'upscale_model', 'strength_model', 'strength_clip'] as const) {
       if (hasField(inputs, key)) pushField(fields, seen, nodeId, node, key, key);
     }
 
-    if (lowClass.includes('saveimage') || lowClass.includes('previewimage') || lowClass.includes('savevideo') || lowClass.includes('saveaudio')) outputCount += 1;
+    for (const key of inputKeys) {
+      if (skipGenericInputs) continue;
+      if (seen.has(`${nodeId}::${key}`) || shouldSkipGenericField(key, inputs[key])) continue;
+      const directSource = directSourceForField(key);
+      if (directSource) {
+        pushField(fields, seen, nodeId, node, key, directSource);
+        continue;
+      }
+      if (isTextLikeField(key, node)) {
+        const source: ComfyFieldSource = isNegativeLikeField(key, node) ? 'negative' : 'prompt';
+        pushField(fields, seen, nodeId, node, key, source);
+        if (source === 'prompt') promptTextSeen = true;
+        continue;
+      }
+      if (isImageLikeField(key, node)) {
+        imageInputCount += 1;
+        pushField(fields, seen, nodeId, node, key, (`image${imageInputCount}` as ComfyFieldSource));
+        continue;
+      }
+      if (isVideoLikeField(key, node)) {
+        videoInputCount += 1;
+        pushField(fields, seen, nodeId, node, key, (`video${videoInputCount}` as ComfyFieldSource));
+        continue;
+      }
+      if (isAudioLikeField(key, node)) {
+        audioInputCount += 1;
+        pushField(fields, seen, nodeId, node, key, (`audio${audioInputCount}` as ComfyFieldSource));
+        continue;
+      }
+
+      pushField(fields, seen, nodeId, node, key, normalizeInputKey(key));
+    }
+
+    if (isOutputNode(classType)) outputCount += 1;
 
     if (!lowClass && inputKeys.length > 0) {
       warnings.push(`#${nodeId} 缺少 class_type，可能不是标准 API Workflow 节点。`);
@@ -362,6 +691,8 @@ export function compactComfyFields(fields: Array<ComfyFieldMapping | ComfyDetect
     const source = rawSource || (hasValue ? 'fixed' : fieldName);
     const next: ComfyFieldMapping = { nodeId, fieldName, source };
     if (source === 'fixed' && hasValue) next.value = field.value;
+    const options = collectOptionsFromCandidate((field as any).options);
+    if (options.length) next.options = options;
     out.push(next);
   }
   return out;
@@ -390,6 +721,65 @@ export function parseComfyFieldExcludeRules(value: unknown): ComfyFieldExcludeRu
     out.push(item.slice(0, 120));
   }
   return out.slice(0, 200);
+}
+
+function extractComfyFieldExcludeRulesPayload(value: unknown): unknown {
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return [];
+    const looksLikeJson = (raw.startsWith('{') && raw.endsWith('}')) || (raw.startsWith('[') && raw.endsWith(']'));
+    if (looksLikeJson) {
+      try {
+        return extractComfyFieldExcludeRulesPayload(JSON.parse(raw));
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  }
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const keys = [
+      'rules',
+      'excludeRules',
+      'fieldExcludeRules',
+      'comfyExcludeRules',
+      'comfyFieldExcludeRules',
+      'autoMappingExcludeRules',
+      'text',
+    ];
+    for (const key of keys) {
+      if (record[key] !== undefined && record[key] !== null) {
+        return extractComfyFieldExcludeRulesPayload(record[key]);
+      }
+    }
+    if (record.payload !== undefined && record.payload !== null) {
+      return extractComfyFieldExcludeRulesPayload(record.payload);
+    }
+    if (record.data !== undefined && record.data !== null) {
+      return extractComfyFieldExcludeRulesPayload(record.data);
+    }
+  }
+  return value;
+}
+
+export function stringifyComfyFieldExcludeRules(value: unknown): string {
+  return parseComfyFieldExcludeRules(value).join('\n');
+}
+
+export function createComfyFieldExcludeRulesBackup(value: unknown, source = 'comfyui'): ComfyFieldExcludeRulesBackup {
+  return {
+    schema: COMFY_FIELD_EXCLUDE_RULES_SCHEMA,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    source,
+    rules: parseComfyFieldExcludeRules(value),
+  };
+}
+
+export function parseComfyFieldExcludeRulesBackup(value: unknown): ComfyFieldExcludeRule[] {
+  return parseComfyFieldExcludeRules(extractComfyFieldExcludeRulesPayload(value));
 }
 
 function normalizeRuleText(value: unknown): string {
@@ -493,6 +883,8 @@ export function canonicalizeComfyFieldsByWorkflow(
   for (const field of sourceFields) {
     const next: ComfyFieldMapping = { ...field };
     const node = nodes.get(next.nodeId);
+    const optionsForField = node ? comfyFieldOptionsForWorkflow(workflow, next) : collectOptionsFromCandidate((next as any).options);
+    if (optionsForField.length) next.options = optionsForField;
     const source = String(next.source || next.fieldName || '').trim();
     const role = clipTextRoles.get(next.nodeId);
     if (node && role && isClipTextField(node, next.fieldName) && isPromptLikeSource(source, next.fieldName)) {

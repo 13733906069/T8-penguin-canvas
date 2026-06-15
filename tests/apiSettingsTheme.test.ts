@@ -74,16 +74,94 @@ test('ApiSettings ComfyUI panel supports workflow JSON upload and auto-mapping e
   assert.match(apiSettingsSource, /排除采样器参数/);
 });
 
+test('ApiSettings Volcengine panel separates Ark API Key from AK/SK credentials', () => {
+  assert.match(apiSettingsSource, /方舟 Ark API Key（生成用，不是 AK\/SK）/);
+  assert.match(apiSettingsSource, /请输入方舟 Ark API Key，不要填 Access Key ID \/ Secret/);
+  assert.match(apiSettingsSource, /3\. 火山 AK\/SK（可选，素材签名）/);
+  assert.match(apiSettingsSource, /Access Key ID（AK，素材签名）/);
+  assert.match(apiSettingsSource, /Secret Access Key（SK，素材签名）/);
+  assert.match(apiSettingsSource, /目前它只作为素材签名类能力的预留凭证/);
+  assert.match(apiSettingsSource, /Seedance2\.0 开通提醒/);
+  assert.match(apiSettingsSource, /doubao-seedance-2-0-260128/);
+  assert.match(apiSettingsSource, /doubao-seedance-2-0-fast-260128/);
+  assert.match(apiSettingsSource, /ModelNotOpen \/ HTTP 404/);
+});
+
+test('ApiSettings classified API keys expose explicit clear actions', () => {
+  assert.match(apiSettingsSource, /const \[clearedFields, setClearedFields\]/);
+  assert.match(apiSettingsSource, /handleClearClassifiedKey/);
+  assert.match(apiSettingsSource, /保存后清空/);
+  assert.match(apiSettingsSource, /\(patch as any\)\[f\] = ''/);
+  assert.match(apiSettingsSource, /清空该分类独立 Key/);
+  assert.match(apiSettingsSource, /aria-label=\{`\$\{spec\.label\}\$\{pendingClear \? '取消清空' : '清空'\}`\}/);
+});
+
+test('ApiSettings cloud upload panels link to vendor consoles and secret key reminders', () => {
+  assert.match(apiSettingsSource, /https:\/\/console\.cloud\.tencent\.com\/cam\/capi/);
+  assert.match(apiSettingsSource, /https:\/\/console\.cloud\.tencent\.com\/lighthouse\/cos\/index\?rid=5/);
+  assert.match(apiSettingsSource, /腾讯云 SecretKey 只会在新建密钥时显示一次/);
+  assert.match(apiSettingsSource, /https:\/\/ram\.console\.aliyun\.com\/manage\/ak/);
+  assert.match(apiSettingsSource, /https:\/\/oss\.console\.aliyun\.com\/bucket/);
+  assert.match(apiSettingsSource, /阿里云 AccessKey Secret 只会在创建时显示一次/);
+});
+
+test('ApiSettings exposes custom task completion sound upload without bypassing theme classes', () => {
+  assert.match(apiSettingsSource, /任务完成提示音/);
+  assert.match(apiSettingsSource, /handleTaskCompletionSoundUpload/);
+  assert.match(apiSettingsSource, /uploadTaskCompletionSound/);
+  assert.match(apiSettingsSource, /resetTaskCompletionSound/);
+  assert.match(apiSettingsSource, /accept="audio\/\*,\.mp3,\.wav,\.ogg,\.m4a,\.aac,\.flac,\.webm"/);
+  assert.match(apiSettingsSource, /试听/);
+  assert.match(apiSettingsSource, /恢复默认/);
+  assert.match(apiSettingsSource, /t8-api-settings-section/);
+  assert.match(apiSettingsSource, /t8-api-settings-secondary-btn/);
+});
+
 test('Dragon Ball theme defaults to bundled mp3 music and packaging validates the asset', () => {
   const postBuild = readFileSync(new URL('../electron/_post_build.cjs', import.meta.url), 'utf8');
   const musicAsset = new URL('../src/assets/theme-music/dragonball-makafushigi-adventure.mp3', import.meta.url);
+  const hiddenMusicAsset = new URL('../src/assets/theme-music/dragonball-shenron-cha-la-head-cha-la.mp3', import.meta.url);
 
   assert.equal(existsSync(musicAsset), true);
+  assert.equal(existsSync(hiddenMusicAsset), true);
   assert.match(defaultTemplatesSource, /dragonBallThemeMusicUrl = new URL\('\.\.\/assets\/theme-music\/dragonball-makafushigi-adventure\.mp3'/);
+  assert.match(defaultTemplatesSource, /dragonBallShenronHiddenMusicUrl = new URL\('\.\.\/assets\/theme-music\/dragonball-shenron-cha-la-head-cha-la\.mp3'/);
   assert.match(defaultTemplatesSource, /id: DRAGON_BALL_TEMPLATE_ID[\s\S]*source: 'url'[\s\S]*url: dragonBallThemeMusicUrl/);
   assert.match(defaultTemplatesSource, /title: '摩诃不思议 Adventure'/);
+  assert.match(defaultTemplatesSource, /hiddenTitle: 'CHA-LA HEAD-CHA-LA'/);
+  assert.match(defaultTemplatesSource, /hiddenUrl: dragonBallShenronHiddenMusicUrl/);
   assert.match(themeTemplateManagerSource, /dragonBallThemeMusicUrl/);
+  assert.match(themeTemplateManagerSource, /dragonBallShenronHiddenMusicUrl/);
   assert.match(themeTemplateManagerSource, /visualStyle === 'dragon-ball'[\s\S]*source: 'url'[\s\S]*url: dragonBallThemeMusicUrl/);
+  assert.match(themeTemplateManagerSource, /visualStyle === 'dragon-ball'[\s\S]*hiddenUrl: dragonBallShenronHiddenMusicUrl/);
   assert.match(postBuild, /checkFrontendAsset\('dragonball-makafushigi-adventure-', '\.mp3'\)/);
+  assert.match(postBuild, /checkFrontendAsset\('dragonball-shenron-cha-la-head-cha-la-', '\.mp3'\)/);
   assert.match(featuresSource, /"dragon-ball-style": "dragonball-makafushigi-adventure\.mp3"/);
+  assert.match(featuresSource, /"dragon-ball-shenron-hidden": "dragonball-shenron-cha-la-head-cha-la\.mp3"/);
+});
+
+test('Saint Seiya theme defaults to bundled sanctuary and Hades mp3 music', () => {
+  const postBuild = readFileSync(new URL('../electron/_post_build.cjs', import.meta.url), 'utf8');
+  const musicAsset = new URL('../src/assets/theme-music/saint-seiya-pegasus-fantasy.mp3', import.meta.url);
+  const hiddenMusicAsset = new URL('../src/assets/theme-music/saint-seiya-hades-last-holy-war.mp3', import.meta.url);
+
+  assert.equal(existsSync(musicAsset), true);
+  assert.equal(existsSync(hiddenMusicAsset), true);
+  assert.match(defaultTemplatesSource, /saintSeiyaThemeMusicUrl = new URL\('\.\.\/assets\/theme-music\/saint-seiya-pegasus-fantasy\.mp3'/);
+  assert.match(defaultTemplatesSource, /saintSeiyaHadesThemeMusicUrl = new URL\('\.\.\/assets\/theme-music\/saint-seiya-hades-last-holy-war\.mp3'/);
+  assert.match(defaultTemplatesSource, /id: SAINT_SEIYA_TEMPLATE_ID[\s\S]*source: 'url'[\s\S]*url: saintSeiyaThemeMusicUrl/);
+  assert.match(defaultTemplatesSource, /hiddenUrl: saintSeiyaHadesThemeMusicUrl/);
+  assert.match(themeTemplateManagerSource, /saintSeiyaThemeMusicUrl/);
+  assert.match(themeTemplateManagerSource, /visualStyle === 'saint-seiya'[\s\S]*source: 'url'[\s\S]*url: saintSeiyaThemeMusicUrl/);
+  assert.match(themeTemplateManagerSource, /visualStyle === 'saint-seiya'[\s\S]*hiddenUrl: saintSeiyaHadesThemeMusicUrl/);
+  assert.match(postBuild, /checkFrontendAsset\('saint-seiya-pegasus-fantasy-', '\.mp3'\)/);
+  assert.match(postBuild, /checkFrontendAsset\('saint-seiya-hades-last-holy-war-', '\.mp3'\)/);
+  assert.match(postBuild, /film-tech-01\.mp4\.t8media/);
+  assert.match(postBuild, /film-rh-01\.mp4\.t8media/);
+  assert.match(postBuild, /film-yyh-01\.mp4\.t8media/);
+  assert.match(postBuild, /film-dragon-ball-01\.mp4\.t8media/);
+  assert.match(postBuild, /film-saint-seiya-01\.mp4\.t8media/);
+  assert.match(postBuild, /film-tetris-01\.mp4\.t8media/);
+  assert.match(featuresSource, /"saint-seiya-style": "saint-seiya-pegasus-fantasy\.mp3"/);
+  assert.match(featuresSource, /"saint-seiya-hades-hidden": "saint-seiya-hades-last-holy-war\.mp3"/);
 });

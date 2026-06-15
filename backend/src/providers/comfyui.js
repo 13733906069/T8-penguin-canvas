@@ -4,24 +4,15 @@ const {
   mimeFromPath,
   resolveMediaRef,
 } = require('./mediaResolver');
+const { isAllowedComfyuiUrl } = require('./comfyuiAccess');
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
-const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 const SUCCESS_STATUSES = new Set(['SUCCESS', 'SUCCEEDED', 'COMPLETED', 'DONE', 'OK']);
 const FAILURE_STATUSES = new Set(['FAILED', 'FAILURE', 'ERROR', 'CANCELED', 'CANCELLED']);
 
 function cleanBaseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '') || 'http://127.0.0.1:8188';
-}
-
-function isLocalUrl(value) {
-  try {
-    const parsed = new URL(value);
-    return ['http:', 'https:'].includes(parsed.protocol) && LOCAL_HOSTS.has(parsed.hostname.toLowerCase());
-  } catch {
-    return false;
-  }
 }
 
 async function fetchWithTimeout(url, options = {}) {
@@ -122,13 +113,13 @@ function classifyComfyUiError(raw, fallback = 'ComfyUI 调用失败。') {
   if (/aborterror|timeout|timed out|超时/.test(low)) {
     return {
       code: 'timeout',
-      error: withDetail('ComfyUI 响应超时。请确认本机 ComfyUI 没有卡在加载模型，或稍后在队列空闲时重试。'),
+      error: withDetail('ComfyUI 响应超时。请确认目标 ComfyUI 没有卡在加载模型，或稍后在队列空闲时重试。'),
     };
   }
   if (/econnrefused|failed to fetch|fetch failed|network|connect|connection refused|不在线|无法连接/.test(low)) {
     return {
       code: 'comfyui_offline',
-      error: withDetail('没有连上本机 ComfyUI。请先启动 ComfyUI，并确认地址是 http://127.0.0.1:8188 或 localhost。'),
+      error: withDetail('没有连上 ComfyUI。请确认 ComfyUI 已启动，并且当前后端环境允许访问该地址。'),
     };
   }
   if (/class_type.*(does not exist|missing|not found)|node type.*not found|custom node|no module named|import failed|cannot import|was not found/.test(low)) {
@@ -140,7 +131,7 @@ function classifyComfyUiError(raw, fallback = 'ComfyUI 调用失败。') {
   if (/(ckpt_name|checkpoint|model_name|lora_name|vae_name|clip_name|control_net_name|unet_name).*(not in list|not found|does not exist|missing|no such file)|value not in list|not in list.*(safetensors|ckpt|vae|lora|clip)|model.*(not found|does not exist|missing)/.test(low)) {
     return {
       code: 'missing_model',
-      error: withDetail('ComfyUI 缺少模型或模型名不匹配。请把 Checkpoint / LoRA / VAE / CLIP 等参数改成本机 ComfyUI 已安装的文件名。'),
+      error: withDetail('ComfyUI 缺少模型或模型名不匹配。请把 Checkpoint / LoRA / VAE / CLIP 等参数改成目标 ComfyUI 已安装的文件名。'),
     };
   }
   if (/invalid prompt|prompt outputs failed validation|node_errors|validation/.test(low)) {
@@ -283,7 +274,7 @@ async function sourceValue(source, input, size, context = {}) {
     }
     return Number.isFinite(Number(input.seed)) ? Number(input.seed) : Math.floor(Math.random() * 2147483647);
   }
-  if (['steps', 'cfg', 'sampler_name', 'scheduler', 'denoise', 'model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'strength_model', 'strength_clip'].includes(key)) {
+  if (['steps', 'cfg', 'sampler_name', 'scheduler', 'denoise', 'model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'unet_name', 'control_net_name', 'clip_vision_name', 'style_model_name', 'upscale_model', 'strength_model', 'strength_clip', 'start_at_step', 'end_at_step', 'guidance', 'shift', 'fps', 'frame_rate', 'num_frames', 'duration', 'strength', 'weight', 'control_after_generate', 'add_noise'].includes(key)) {
     if (input.providerParams && Object.prototype.hasOwnProperty.call(input.providerParams, key)) return input.providerParams[key];
     return Object.prototype.hasOwnProperty.call(input, key) ? input[key] : undefined;
   }
@@ -291,10 +282,153 @@ async function sourceValue(source, input, size, context = {}) {
   return input.providerParams && Object.prototype.hasOwnProperty.call(input.providerParams, key) ? input.providerParams[key] : undefined;
 }
 
+function normalizeWorkflowInputKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function hasWorkflowField(inputs, key) {
+  return Object.prototype.hasOwnProperty.call(inputs || {}, key);
+}
+
+function isLinkedWorkflowInput(value) {
+  return Array.isArray(value)
+    && value.length >= 1
+    && value.length <= 3
+    && (typeof value[0] === 'string' || typeof value[0] === 'number')
+    && (value.length === 1 || typeof value[1] === 'number' || typeof value[1] === 'string');
+}
+
+function isPrimitiveWorkflowValue(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    for (const key of ['value', 'default', 'selected', 'current']) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const next = value[key];
+        return next === null || ['string', 'number', 'boolean'].includes(typeof next);
+      }
+    }
+  }
+  return value === null || ['string', 'number', 'boolean'].includes(typeof value);
+}
+
+function workflowNodeText(node) {
+  return `${node?._meta?.title || ''} ${node?.title || ''} ${node?.class_type || ''}`.toLowerCase();
+}
+
+function isOutputPathWorkflowField(fieldName) {
+  const key = normalizeWorkflowInputKey(fieldName);
+  return /^(filename|file_name|filename_prefix|prefix|save_path|output_path|output_dir|folder|subfolder)$/.test(key);
+}
+
+function isNegativeWorkflowField(fieldName, node) {
+  return /(^|_)(negative|neg|uncond|反向|负向|不要|排除)(_|$)/i.test(fieldName)
+    || /negative|neg|反向|负向|不要|排除/i.test(workflowNodeText(node));
+}
+
+function isTextWorkflowField(fieldName, node) {
+  if (isOutputPathWorkflowField(fieldName)) return false;
+  const key = normalizeWorkflowInputKey(fieldName);
+  if (/^(prompt|positive|positive_prompt|negative|negative_prompt|caption|instruction|description|subject|style|wildcard|conditioning_text)$/.test(key)) return true;
+  const nodeLooksPromptDriven = /prompt|textencode|caption|wildcard|llm|chat|conditioning|encode|positive|negative/i.test(workflowNodeText(node));
+  if (/^(text|string|value)$/.test(key)) return nodeLooksPromptDriven;
+  if (/(^|_)(prompt|caption|instruction|description)(_|$)/.test(key)) return true;
+  if (/(^|_)(text|string)(_|$)/.test(key)) return nodeLooksPromptDriven;
+  return nodeLooksPromptDriven && ['text', 'prompt', 'value'].includes(key);
+}
+
+function isImageWorkflowField(fieldName, node) {
+  const key = normalizeWorkflowInputKey(fieldName);
+  if (/^(image|img|mask|control_image|reference_image|ref_image|source_image|input_image|init_image|start_image|end_image|face_image|person_image|pose_image|depth_image|normal_image|lineart_image|image_path|mask_image)$/.test(key)) return true;
+  if (/(^|_)(image|img|mask)(_|$)/.test(key)) return true;
+  return /(loadimage|imageinput|mask|controlnet|ipadapter|openpose|depth|lineart|reference)/i.test(workflowNodeText(node)) && ['image', 'img', 'mask', 'path', 'file'].includes(key);
+}
+
+function isVideoWorkflowField(fieldName, node) {
+  const key = normalizeWorkflowInputKey(fieldName);
+  if (/^(video|video_path|input_video|source_video|reference_video|init_video|frames_video)$/.test(key)) return true;
+  if (/(^|_)(video|movie|frames)(_|$)/.test(key)) return true;
+  return /(loadvideo|videoinput|vhs|video|wanvideo|ltxv|svd|animatediff)/i.test(workflowNodeText(node)) && ['video', 'path', 'file'].includes(key);
+}
+
+function isAudioWorkflowField(fieldName, node) {
+  const key = normalizeWorkflowInputKey(fieldName);
+  if (/^(audio|audio_path|input_audio|source_audio|reference_audio|voice|sound|music|speech|wav)$/.test(key)) return true;
+  if (/(^|_)(audio|voice|sound|music|speech|wav)(_|$)/.test(key)) return true;
+  return /(loadaudio|audioinput|audio|tts|stt|voice|sound)/i.test(workflowNodeText(node)) && ['audio', 'path', 'file', 'voice'].includes(key);
+}
+
+const DIRECT_WORKFLOW_SOURCE_FIELDS = new Set([
+  'width',
+  'height',
+  'batch_size',
+  'seed',
+  'steps',
+  'cfg',
+  'sampler_name',
+  'scheduler',
+  'denoise',
+  'model_name',
+  'ckpt_name',
+  'clip_name',
+  'vae_name',
+  'lora_name',
+  'unet_name',
+  'control_net_name',
+  'clip_vision_name',
+  'style_model_name',
+  'upscale_model',
+  'strength_model',
+  'strength_clip',
+  'start_at_step',
+  'end_at_step',
+  'guidance',
+  'shift',
+  'fps',
+  'frame_rate',
+  'num_frames',
+  'duration',
+  'strength',
+  'weight',
+  'control_after_generate',
+  'add_noise',
+]);
+
+function directWorkflowSourceForField(fieldName) {
+  const key = normalizeWorkflowInputKey(fieldName);
+  if (key === 'noise_seed') return 'seed';
+  if (key === 'positive_prompt') return 'prompt';
+  if (key === 'negative_prompt') return 'negative';
+  if (DIRECT_WORKFLOW_SOURCE_FIELDS.has(key)) return key;
+  if (/(^|_)(model_name|ckpt_name|clip_name|vae_name|lora_name|unet_name|control_net_name|clip_vision_name|style_model_name|upscale_model)(_|$)/.test(key)) return key;
+  return '';
+}
+
+function shouldSkipGenericWorkflowField(fieldName, value) {
+  if (isLinkedWorkflowInput(value)) return true;
+  if (!isPrimitiveWorkflowValue(value)) return true;
+  const key = normalizeWorkflowInputKey(fieldName);
+  if (isOutputPathWorkflowField(key)) return true;
+  return /^(model|clip|vae|positive|negative|latent|latent_image|samples|images|conditioning|control_net)$/.test(key);
+}
+
+function isOutputWorkflowNode(classType) {
+  const low = String(classType || '').toLowerCase();
+  return /(save|preview|output|export).*(image|video|audio|text|string)|(image|video|audio|text|string).*(save|preview|output|export)/.test(low);
+}
+
+function isDisplayOnlyWorkflowNode(node) {
+  const text = workflowNodeText(node);
+  if (/(show\s*anything|showanything|展示任何|展示|viewer|display|inspect|debug|logger|console|watch|note|result)/i.test(text)) {
+    return !/(prompt|textencode|caption|wildcard|llm|chat|input|loadimage|loadvideo|loadaudio|sampler|generate|generator)/i.test(text);
+  }
+  return false;
+}
+
 function inferWorkflowFields(prompt) {
   const fields = [];
   let promptSeen = false;
   let imageIndex = 0;
+  let videoIndex = 0;
+  let audioIndex = 0;
   const seen = new Set();
   const clipTextRoles = new Map();
   for (const [, node] of Object.entries(prompt || {})) {
@@ -306,45 +440,74 @@ function inferWorkflowFields(prompt) {
   }
   const push = (nodeId, fieldName, source) => {
     const key = `${nodeId}::${fieldName}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) return false;
     seen.add(key);
     fields.push({ nodeId, fieldName, source });
+    return true;
   };
   for (const [nodeId, node] of Object.entries(prompt || {})) {
     if (!node || typeof node !== 'object' || !node.inputs || typeof node.inputs !== 'object') continue;
     const classType = String(node.class_type || '').toLowerCase();
-    const title = `${node._meta?.title || ''} ${node.title || ''}`.toLowerCase();
+    const title = workflowNodeText(node);
     const inputs = node.inputs;
-    if (classType.includes('cliptextencode') && Object.prototype.hasOwnProperty.call(inputs, 'text')) {
+    const inputKeys = Object.keys(inputs);
+    const skipGenericInputs = isDisplayOnlyWorkflowNode(node) || isOutputWorkflowNode(classType);
+    if (classType.includes('cliptextencode') && hasWorkflowField(inputs, 'text')) {
       const role = clipTextRoles.get(String(nodeId));
       const isNegative = role ? role === 'negative' : (/negative|neg|反向|负向|不要|排除/.test(title) || promptSeen);
       push(nodeId, 'text', isNegative ? 'negative' : 'prompt');
       if (!isNegative) promptSeen = true;
     }
-    if ((classType.includes('loadimage') || classType.includes('imageinput')) && Object.prototype.hasOwnProperty.call(inputs, 'image')) {
+    if ((classType.includes('loadimage') || classType.includes('imageinput')) && hasWorkflowField(inputs, 'image')) {
       imageIndex += 1;
-      push(nodeId, 'image', `image${Math.min(imageIndex, 3)}`);
+      push(nodeId, 'image', `image${imageIndex}`);
     }
-    if ((classType.includes('loadvideo') || classType.includes('videoinput') || classType.includes('vhs')) && Object.prototype.hasOwnProperty.call(inputs, 'video')) {
-      push(nodeId, 'video', 'video1');
+    if ((classType.includes('loadvideo') || classType.includes('videoinput') || classType.includes('vhs')) && hasWorkflowField(inputs, 'video')) {
+      videoIndex += 1;
+      push(nodeId, 'video', `video${videoIndex}`);
     }
-    if ((classType.includes('loadaudio') || classType.includes('audioinput')) && Object.prototype.hasOwnProperty.call(inputs, 'audio')) {
-      push(nodeId, 'audio', 'audio1');
+    if ((classType.includes('loadaudio') || classType.includes('audioinput')) && hasWorkflowField(inputs, 'audio')) {
+      audioIndex += 1;
+      push(nodeId, 'audio', `audio${audioIndex}`);
     }
     if (classType.includes('emptylatent') || classType.includes('latentimage')) {
-      if (Object.prototype.hasOwnProperty.call(inputs, 'width')) push(nodeId, 'width', 'width');
-      if (Object.prototype.hasOwnProperty.call(inputs, 'height')) push(nodeId, 'height', 'height');
-      if (Object.prototype.hasOwnProperty.call(inputs, 'batch_size')) push(nodeId, 'batch_size', 'batch_size');
+      if (hasWorkflowField(inputs, 'width')) push(nodeId, 'width', 'width');
+      if (hasWorkflowField(inputs, 'height')) push(nodeId, 'height', 'height');
+      if (hasWorkflowField(inputs, 'batch_size')) push(nodeId, 'batch_size', 'batch_size');
     }
     if (classType.includes('ksampler') || classType.includes('sampler')) {
-      if (Object.prototype.hasOwnProperty.call(inputs, 'seed')) push(nodeId, 'seed', 'seed');
-      if (Object.prototype.hasOwnProperty.call(inputs, 'noise_seed')) push(nodeId, 'noise_seed', 'seed');
+      for (const key of ['seed', 'noise_seed']) {
+        if (hasWorkflowField(inputs, key)) push(nodeId, key, 'seed');
+      }
       for (const key of ['steps', 'cfg', 'sampler_name', 'scheduler', 'denoise']) {
-        if (Object.prototype.hasOwnProperty.call(inputs, key)) push(nodeId, key, key);
+        if (hasWorkflowField(inputs, key)) push(nodeId, key, key);
       }
     }
-    for (const key of ['model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'strength_model', 'strength_clip']) {
-      if (Object.prototype.hasOwnProperty.call(inputs, key)) push(nodeId, key, key);
+    for (const key of ['model_name', 'ckpt_name', 'clip_name', 'vae_name', 'lora_name', 'unet_name', 'control_net_name', 'clip_vision_name', 'style_model_name', 'upscale_model', 'strength_model', 'strength_clip']) {
+      if (hasWorkflowField(inputs, key)) push(nodeId, key, key);
+    }
+    for (const key of inputKeys) {
+      if (skipGenericInputs) continue;
+      if (seen.has(`${nodeId}::${key}`) || shouldSkipGenericWorkflowField(key, inputs[key])) continue;
+      const directSource = directWorkflowSourceForField(key);
+      if (directSource) {
+        push(nodeId, key, directSource);
+      } else if (isTextWorkflowField(key, node)) {
+        const source = isNegativeWorkflowField(key, node) ? 'negative' : 'prompt';
+        push(nodeId, key, source);
+        if (source === 'prompt') promptSeen = true;
+      } else if (isImageWorkflowField(key, node)) {
+        imageIndex += 1;
+        push(nodeId, key, `image${imageIndex}`);
+      } else if (isVideoWorkflowField(key, node)) {
+        videoIndex += 1;
+        push(nodeId, key, `video${videoIndex}`);
+      } else if (isAudioWorkflowField(key, node)) {
+        audioIndex += 1;
+        push(nodeId, key, `audio${audioIndex}`);
+      } else {
+        push(nodeId, key, normalizeWorkflowInputKey(key));
+      }
     }
   }
   return fields;
@@ -656,13 +819,13 @@ async function pollHistory(baseUrl, promptId, options = {}) {
 
 async function generateImage(provider, input = {}, options = {}) {
   const baseUrl = cleanBaseUrl(provider?.baseUrl || provider?.comfyuiConfig?.instances?.[0]);
-  if (!isLocalUrl(baseUrl)) {
+  if (!isAllowedComfyuiUrl(baseUrl, { allowRemote: !!provider?.allowRemote })) {
     return {
       ok: false,
       code: 'non_local_comfyui',
       providerId: provider.id,
       protocol: 'comfyui',
-      error: 'ComfyUI 默认只允许 localhost/127.0.0.1 地址。',
+      error: 'ComfyUI 默认只允许本机地址；如需接入其他地址，请在后端启用远端 ComfyUI 访问。',
     };
   }
   const promptText = String(input.prompt || '').trim();
@@ -725,13 +888,13 @@ async function generateImage(provider, input = {}, options = {}) {
 
 async function testProvider(provider, options = {}) {
   const baseUrl = cleanBaseUrl(provider?.baseUrl || provider?.comfyuiConfig?.instances?.[0]);
-  if (!isLocalUrl(baseUrl)) {
+  if (!isAllowedComfyuiUrl(baseUrl, { allowRemote: !!provider?.allowRemote })) {
     return {
       ok: false,
       code: 'non_local_comfyui',
       providerId: provider.id,
       protocol: 'comfyui',
-      error: 'ComfyUI 默认只允许 localhost/127.0.0.1 地址。',
+      error: 'ComfyUI 默认只允许本机地址；如需接入其他地址，请在后端启用远端 ComfyUI 访问。',
     };
   }
 
@@ -741,12 +904,15 @@ async function testProvider(provider, options = {}) {
       code: 'dry_run_ok',
       providerId: provider.id,
       protocol: 'comfyui',
-      message: '本地 ComfyUI 地址格式可用，已跳过真实请求。',
+      message: 'ComfyUI 地址格式可用，已跳过真实请求。',
     };
   }
 
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/queue`, { timeoutMs: options.timeoutMs });
+    const res = await fetchWithTimeout(`${baseUrl}/queue`, {
+      timeoutMs: options.timeoutMs,
+      fetchImpl: options.fetchImpl,
+    });
     if (!res.ok) {
       return {
         ok: false,

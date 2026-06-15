@@ -29,6 +29,7 @@
 1. ComfyUI 本地 API 简化接入 + ComfyUI 超市/应用制作工具
    - 继续做样例工作流、字段识别准确率、导入向导和缺模型/缺节点错误提示。
    - 2026-06-04 已收口：内置基础文生图样例、设置页/制作工具「载入样例」、导入检查清单、超市运行前素材缺口提示、后端缺模型/缺自定义节点/未启动/校验失败错误分类。
+   - 2026-06-11 已增强 API Workflow 字段识别：前端 `analyzeComfyWorkflow()` 和后端 `inferWorkflowFields()` 同步支持自定义 prompt、mask/reference/control image、video/audio、ControlNet/UNet/CLIP Vision、帧率/帧数/FPS/guidance/shift/strength 等常见字段；后续维护必须保证 `src/utils/comfyuiWorkflow.ts`、`src/utils/comfyuiApps.ts`、`src/components/nodes/ImageNode.tsx` 和 `backend/src/providers/comfyui.js` 四处规则一致。
    - 后续继续做：ControlNet / OpenPose / Mask / Video 专用映射来源，以及从 ComfyUI 历史任务导入当前 prompt/workflow。
 
 2. RH 工具箱
@@ -38,7 +39,7 @@
 3. 云端上传目标
    - 先把 COS/OSS 做稳。
    - 2026-06-04 已补可诊断性：`classifyCloudUploadError()` 将 COS/OSS 的签名、密钥、Bucket/Region/Endpoint、权限和网络错误转成可执行中文提示，上传路由返回结构化 `code/hint`。
-   - 百度网盘/夸克继续保留实验或占位，不急着承诺稳定上传。
+   - 2026-06-11 已补百度网盘/夸克网盘 WebDAV 真实上传：用户通过 Alist / CloudDrive2 / rclone 等提供 WebDAV 地址，画布负责配置检查、自动建目录、PUT 上传和右键菜单复用；不在公开版依赖不稳定 Cookie 抓包接口。
 
 ## 后续打磨
 
@@ -49,6 +50,6 @@
 ## 暂缓
 
 - 奖励影片播放/加密：等影片素材提供。
-- 百度/夸克真实上传：授权链路稳定前不作为正式能力。
+- 百度/夸克官方直传/OAuth：公开版当前使用 WebDAV 网关方案；若后续接官方授权，必须保留现有 WebDAV 兼容路径。
 - 成就云同步/账号系统：第一版不引入账号与隐私复杂度。
 - 肖像大师、姿势大师、工作流资源库：路线图已完成，除非有具体反馈，先维护。

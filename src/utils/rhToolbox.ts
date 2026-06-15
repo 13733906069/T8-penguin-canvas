@@ -2,6 +2,14 @@ export type RhToolboxMediaKind = 'text' | 'image' | 'video' | 'audio';
 
 export type RhToolboxUserParamKind = 'text' | 'number' | 'select' | 'boolean';
 export type RhToolboxQuickSurface = 'image' | 'video' | 'text' | 'audio';
+export type RhToolboxMajorCategoryId = 'image' | 'video' | 'audio' | 'model3d' | 'text';
+
+export interface RhToolboxMajorCategory {
+  id: RhToolboxMajorCategoryId;
+  name: string;
+  description: string;
+  order: number;
+}
 
 export type RhToolboxOutputRole =
   | 'append-output'
@@ -12,6 +20,7 @@ export type RhToolboxOutputRole =
 export interface RhToolboxCategory {
   id: string;
   name: string;
+  parentId?: RhToolboxMajorCategoryId;
   description?: string;
   order?: number;
   icon?: string;
@@ -81,13 +90,11 @@ export interface RhToolboxTool {
   };
   ui?: {
     icon?: string;
-    accent?: string;
     showInNode?: boolean;
     showInImageEditor?: boolean;
     showInVideoEditor?: boolean;
     showInTextEditor?: boolean;
     showInAudioEditor?: boolean;
-    quickActionLabel?: string;
   };
   version?: number;
 }
@@ -139,7 +146,6 @@ export interface RhToolboxQuickAction {
   capabilities: string[];
   inputKinds: RhToolboxMediaKind[];
   outputKinds: RhToolboxMediaKind[];
-  accent?: string;
 }
 
 const DEFAULT_CATEGORY_ID = 'general';
@@ -150,6 +156,29 @@ const AUDIO_RE = /\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i;
 const TEXT_RE = /\.(txt|md|json|csv)(\?|$)/i;
 
 export const RH_TOOLBOX_ALL_CATEGORY_ID = 'all';
+
+export const RH_TOOLBOX_MAJOR_CATEGORIES: RhToolboxMajorCategory[] = [
+  { id: 'image', name: '图像', description: '图像生成、编辑、修复和放大工具', order: 10 },
+  { id: 'video', name: '视频', description: '视频生成、放大、插帧和剪辑工具', order: 20 },
+  { id: 'audio', name: '音频', description: '音频生成、克隆、分离和增强工具', order: 30 },
+  { id: 'model3d', name: '3D', description: '3D 模型、空间和模型处理工具', order: 40 },
+  { id: 'text', name: '文本', description: '文本、提示词和结构化内容工具', order: 50 },
+];
+
+export const RH_TOOLBOX_MAJOR_CATEGORY_IDS = RH_TOOLBOX_MAJOR_CATEGORIES.map((category) => category.id);
+
+export const RH_TOOLBOX_BUILTIN_CATEGORY_IDS = [
+  'image-tools',
+  'video-tools',
+  'text-tools',
+  'audio-tools',
+  'model3d-tools',
+] as const;
+
+export function isRhToolboxBuiltinCategoryId(categoryId: unknown): boolean {
+  const id = String(categoryId ?? '').trim();
+  return RH_TOOLBOX_BUILTIN_CATEGORY_IDS.includes(id as any);
+}
 
 export const RH_TOOLBOX_QUICK_SURFACE_LABELS: Record<RhToolboxQuickSurface, string> = {
   image: '图像',
@@ -212,6 +241,36 @@ function cleanText(value: unknown, fallback = ''): string {
   return raw.length > 160 ? raw.slice(0, 160) : raw;
 }
 
+export function normalizeRhToolboxMajorCategoryId(value: unknown): RhToolboxMajorCategoryId | undefined {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return undefined;
+  if (raw === 'image' || raw === 'images' || raw === 'img' || raw === 'photo' || raw === 'image-tools' || raw === '图像' || raw === '图片') return 'image';
+  if (raw === 'video' || raw === 'videos' || raw === 'movie' || raw === 'video-tools' || raw === '视频') return 'video';
+  if (raw === 'audio' || raw === 'sound' || raw === 'music' || raw === 'voice' || raw === 'audio-tools' || raw === '音频' || raw === '声音') return 'audio';
+  if (raw === '3d' || raw === 'model3d' || raw === 'model-3d' || raw === 'models' || raw === '3d-tools' || raw === 'model3d-tools' || raw === '模型') return 'model3d';
+  if (raw === 'text' || raw === 'texts' || raw === 'prompt' || raw === 'llm' || raw === 'text-tools' || raw === '文本' || raw === '文字') return 'text';
+  return undefined;
+}
+
+function inferMajorCategoryFromText(value: unknown): RhToolboxMajorCategoryId | undefined {
+  const raw = String(value ?? '').toLowerCase();
+  if (!raw) return undefined;
+  if (/3d|model|mesh|glb|gltf|模型|三维/.test(raw)) return 'model3d';
+  if (/video|movie|film|motion|视频|影片|动效/.test(raw)) return 'video';
+  if (/audio|sound|voice|music|tts|stt|音频|声音|音乐|语音/.test(raw)) return 'audio';
+  if (/text|prompt|llm|word|caption|文本|文字|提示词/.test(raw)) return 'text';
+  if (/image|img|photo|picture|visual|图像|图片|照片|视觉/.test(raw)) return 'image';
+  return undefined;
+}
+
+export function getRhToolboxCategoryMajorId(category: Partial<RhToolboxCategory> | null | undefined): RhToolboxMajorCategoryId {
+  return normalizeRhToolboxMajorCategoryId(category?.parentId)
+    || normalizeRhToolboxMajorCategoryId((category as any)?.majorCategoryId)
+    || normalizeRhToolboxMajorCategoryId((category as any)?.surface)
+    || inferMajorCategoryFromText(`${category?.id || ''} ${category?.name || ''} ${category?.description || ''}`)
+    || 'image';
+}
+
 function cleanCapabilities(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -238,6 +297,257 @@ function cleanRhNodeId(value: unknown): string {
   return String(value ?? '').trim().replace(/^#/, '');
 }
 
+type RhToolboxMappingLike = {
+  key?: unknown;
+  rhNodeId?: unknown;
+  fieldName?: unknown;
+};
+
+function parseRhFieldData(value: unknown): any {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return value;
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function fieldOptionValue(option: any): string | number | undefined {
+  if (typeof option === 'string' || typeof option === 'number') return option;
+  if (option && typeof option === 'object') {
+    const value = option.value ?? option.label ?? option.name ?? option.title;
+    if (typeof value === 'string' || typeof value === 'number') return value;
+  }
+  return undefined;
+}
+
+const RH_TOOLBOX_KNOWN_FIELD_OPTIONS: Record<string, Array<string | number>> = {
+  aspectRatio: ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4', '3:2', '2:3', '21:9', '9:21', '1:4', '4:1', '1:8', '8:1'],
+  aspect_ratio: ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4', '3:2', '2:3', '21:9', '9:21'],
+  ratio: ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4', '3:2', '2:3'],
+  resolution: ['1k', '2k', '4k', '8k'],
+  size: ['512', '768', '1024', '1280', '1536', '2048'],
+  mode: ['text2img', 'img2img'],
+  quality: ['low', 'medium', 'high', 'best'],
+  instanceType: ['default', 'plus', 'pro'],
+  instance_type: ['default', 'plus', 'pro'],
+  precision: ['fp16', 'fp32', 'bf16'],
+  scheduler: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform'],
+  sampler: ['euler', 'euler_ancestral', 'heun', 'dpm_2', 'dpm_2_ancestral', 'lms', 'dpmpp_2m', 'dpmpp_sde', 'ddim', 'uni_pc'],
+};
+
+function normalizeRhOptionList(candidate: unknown): Array<string | number> | undefined {
+  if (!Array.isArray(candidate)) return undefined;
+  const options = candidate.map(fieldOptionValue).filter((value): value is string | number => value !== undefined);
+  if (options.length <= 1) return undefined;
+  return Array.from(new Set(options.map((value) => String(value)))).map((value) => {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && String(numberValue) === value ? numberValue : value;
+  });
+}
+
+export function getRhToolboxNodeInfoFieldOptions(field: any): Array<string | number> | undefined {
+  const parsedFieldData = parseRhFieldData(field?.fieldData);
+  const candidates = [
+    field?.fieldData,
+    field?.options,
+    field?.list,
+    field?.values,
+    field?.enum,
+    field?.choices,
+    field?.items,
+    field?.selectOptions,
+    field?.dropdown,
+    field?.fieldValue,
+    parsedFieldData,
+    Array.isArray(parsedFieldData) ? parsedFieldData[0] : undefined,
+  ];
+  for (const candidate of candidates) {
+    const options = normalizeRhOptionList(candidate);
+    if (options?.length) return options;
+  }
+
+  const fieldName = getRhToolboxNodeInfoFieldName(field);
+  if (fieldName) {
+    const direct = RH_TOOLBOX_KNOWN_FIELD_OPTIONS[fieldName];
+    if (direct) return direct;
+    const lower = fieldName.toLowerCase();
+    for (const key of Object.keys(RH_TOOLBOX_KNOWN_FIELD_OPTIONS)) {
+      if (key.toLowerCase() === lower) return RH_TOOLBOX_KNOWN_FIELD_OPTIONS[key];
+    }
+  }
+  return undefined;
+}
+
+function rhNodeInfoFieldMeta(field: any): any {
+  const parsed = parseRhFieldData(field?.fieldData);
+  if (Array.isArray(parsed) && parsed[1] && typeof parsed[1] === 'object') return parsed[1];
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  return {};
+}
+
+export function getRhToolboxNodeInfoFieldNodeId(field: any): string {
+  return cleanRhNodeId(field?.nodeId ?? field?.node_id ?? field?.id);
+}
+
+export function getRhToolboxNodeInfoFieldName(field: any): string {
+  return cleanText(field?.fieldName ?? field?.field_name ?? field?.name ?? field?.key);
+}
+
+export function getRhToolboxNodeInfoFieldLabel(field: any): string {
+  const name = getRhToolboxNodeInfoFieldName(field);
+  return cleanText(
+    field?.descriptionCn
+      ?? field?.description
+      ?? field?.descriptionEn
+      ?? field?.label
+      ?? field?.title
+      ?? field?.displayName
+      ?? name,
+    name,
+  );
+}
+
+export function getRhToolboxNodeInfoFieldDefaultValue(field: any, kind?: RhToolboxUserParamKind): string | number | boolean {
+  const raw = field?.fieldValue ?? field?.defaultValue ?? field?.value ?? '';
+  const resolved = Array.isArray(raw) ? raw[0] : raw;
+  const resolvedKind = kind || inferRhToolboxNodeInfoParamKind(field);
+  if (resolvedKind === 'number') {
+    const n = numberFromUnknown(resolved);
+    return n ?? String(resolved ?? '');
+  }
+  if (resolvedKind === 'boolean') {
+    return resolved === true || resolved === 'true' || resolved === 1 || resolved === '1';
+  }
+  if (resolved && typeof resolved === 'object') return '';
+  return String(resolved ?? '');
+}
+
+export function inferRhToolboxNodeInfoMediaKind(field: any): RhToolboxMediaKind {
+  const haystack = [
+    field?.fieldType,
+    field?.valueType,
+    field?.nodeName,
+    getRhToolboxNodeInfoFieldName(field),
+  ].map((value) => String(value ?? '')).join(' ').toLowerCase();
+  if (/\bvideo\b|movie|film|视频/.test(haystack)) return 'video';
+  if (/\baudio\b|sound|music|voice|音频|声音|音乐|语音/.test(haystack)) return 'audio';
+  if (/\bimage\b|\bimg\b|photo|picture|loadimage|图像|图片|照片/.test(haystack)) return 'image';
+  return 'text';
+}
+
+export function inferRhToolboxNodeInfoParamKind(field: any): RhToolboxUserParamKind {
+  const typeText = [
+    field?.fieldType,
+    field?.valueType,
+    field?.nodeName,
+    parseRhFieldData(field?.fieldData)?.[0],
+  ].map((value) => String(value ?? '')).join(' ').toUpperCase();
+  if (typeText.includes('BOOLEAN') || typeText.includes('BOOL')) return 'boolean';
+  if (
+    typeText.includes('NUMBER')
+    || typeText.includes('FLOAT')
+    || typeText.includes('DOUBLE')
+    || typeText.includes('INTEGER')
+    || /\bINT\b/.test(typeText)
+  ) {
+    return 'number';
+  }
+  if (typeText.includes('LIST') || typeText.includes('SELECT') || typeText.includes('DROPDOWN') || typeText.includes('ENUM')) return 'select';
+  if (getRhToolboxNodeInfoFieldOptions(field)?.length) return 'select';
+  return 'text';
+}
+
+function isRhNodeInfoPromptLikeField(field: any): boolean {
+  const text = [
+    getRhToolboxNodeInfoFieldName(field),
+    getRhToolboxNodeInfoFieldLabel(field),
+    field?.description,
+    field?.descriptionEn,
+    field?.label,
+    field?.title,
+    field?.displayName,
+  ].map((value) => String(value ?? '')).join(' ').toLowerCase();
+  return /prompt|positive|negative|caption|description|instruction|query|text|content|提示词|提示|正向|负向|文本|文字|描述|内容/.test(text);
+}
+
+export function isRhToolboxNodeInfoUserParamField(field: any): boolean {
+  const nodeId = getRhToolboxNodeInfoFieldNodeId(field);
+  const name = getRhToolboxNodeInfoFieldName(field);
+  if (!nodeId || !name) return false;
+  if (inferRhToolboxNodeInfoMediaKind(field) !== 'text') return false;
+  if (isRhNodeInfoPromptLikeField(field)) return false;
+  const kind = inferRhToolboxNodeInfoParamKind(field);
+  return kind === 'number' || kind === 'boolean' || kind === 'select';
+}
+
+function rhMappingSignature(row: RhToolboxMappingLike): string {
+  return `${cleanRhNodeId(row.rhNodeId)}::${cleanText(row.fieldName)}`;
+}
+
+function uniqueRhUserParamKey(base: string, used: Set<string>): string {
+  const cleaned = cleanId(base, 'param');
+  if (!used.has(cleaned)) {
+    used.add(cleaned);
+    return cleaned;
+  }
+  for (let index = 2; index < 999; index += 1) {
+    const next = `${cleaned}-${index}`;
+    if (!used.has(next)) {
+      used.add(next);
+      return next;
+    }
+  }
+  const next = `${cleaned}-${Date.now().toString(36)}`;
+  used.add(next);
+  return next;
+}
+
+export function inferRhToolboxUserParamsFromNodeInfoList(
+  fields: any[],
+  existingMappings: RhToolboxMappingLike[] = [],
+): RhToolboxUserParam[] {
+  const mapped = new Set(existingMappings.map(rhMappingSignature).filter((item) => item !== '::'));
+  const usedKeys = new Set(existingMappings.map((row) => cleanId(row.key, '')).filter(Boolean));
+  const out: RhToolboxUserParam[] = [];
+
+  for (const field of Array.isArray(fields) ? fields : []) {
+    if (!isRhToolboxNodeInfoUserParamField(field)) continue;
+    const nodeId = getRhToolboxNodeInfoFieldNodeId(field);
+    const name = getRhToolboxNodeInfoFieldName(field);
+    const signature = `${nodeId}::${name}`;
+    if (mapped.has(signature)) continue;
+    const kind = inferRhToolboxNodeInfoParamKind(field);
+    const meta = rhNodeInfoFieldMeta(field);
+    const options = kind === 'select' ? getRhToolboxNodeInfoFieldOptions(field) : undefined;
+    const param: RhToolboxUserParam = {
+      key: uniqueRhUserParamKey(`node-${nodeId}-${name}`, usedKeys),
+      label: getRhToolboxNodeInfoFieldLabel(field),
+      kind,
+      rhNodeId: nodeId,
+      fieldName: name,
+      defaultValue: getRhToolboxNodeInfoFieldDefaultValue(field, kind),
+      options,
+      min: kind === 'number' ? numberFromUnknown(meta.min) : undefined,
+      max: kind === 'number' ? numberFromUnknown(meta.max) : undefined,
+      step: kind === 'number' ? numberFromUnknown(meta.step) : undefined,
+      required: false,
+    };
+    out.push(param);
+    mapped.add(signature);
+  }
+
+  return out;
+}
+
 function sortByOrderThenTitle<T extends { order?: number; title?: string; name?: string; id: string }>(items: T[]): T[] {
   return items.slice().sort((a, b) => {
     const ao = Number.isFinite(a.order) ? Number(a.order) : 9999;
@@ -259,6 +569,7 @@ export function normalizeRhToolboxManifest(manifest: Partial<RhToolboxManifest> 
     categories.push({
       id,
       name: cleanText((item as any)?.name, id),
+      parentId: getRhToolboxCategoryMajorId(item as any),
       description: cleanText((item as any)?.description),
       order: Number.isFinite((item as any)?.order) ? Number((item as any).order) : index,
       icon: cleanText((item as any)?.icon),
@@ -267,7 +578,7 @@ export function normalizeRhToolboxManifest(manifest: Partial<RhToolboxManifest> 
 
   if (categories.length === 0) {
     categoryIds.add(DEFAULT_CATEGORY_ID);
-    categories.push({ id: DEFAULT_CATEGORY_ID, name: '通用工具', order: 0, icon: 'Wrench' });
+    categories.push({ id: DEFAULT_CATEGORY_ID, name: '通用工具', parentId: 'image', order: 0, icon: 'Wrench' });
   }
 
   const rawTools = Array.isArray(manifest?.tools) ? manifest!.tools : [];
@@ -389,13 +700,11 @@ export function normalizeRhToolboxManifest(manifest: Partial<RhToolboxManifest> 
       ui: raw?.ui && typeof raw.ui === 'object'
         ? {
             icon: cleanText(raw.ui.icon),
-            accent: cleanText(raw.ui.accent),
             showInNode: raw.ui.showInNode !== false,
             showInImageEditor: raw.ui.showInImageEditor === true,
             showInVideoEditor: raw.ui.showInVideoEditor === true,
             showInTextEditor: raw.ui.showInTextEditor === true,
             showInAudioEditor: raw.ui.showInAudioEditor === true,
-            quickActionLabel: cleanText(raw.ui.quickActionLabel),
           }
         : { showInNode: true },
       version: Number.isFinite(raw?.version) ? Number(raw.version) : 1,
@@ -431,6 +740,7 @@ export function filterRhToolboxTools(
   manifest: Partial<RhToolboxManifest> | null | undefined,
   filters: {
     query?: string;
+    majorCategoryId?: RhToolboxMajorCategoryId | typeof RH_TOOLBOX_ALL_CATEGORY_ID;
     categoryId?: string;
     capability?: string;
     kind?: RhToolboxMediaKind;
@@ -438,7 +748,13 @@ export function filterRhToolboxTools(
   } = {},
 ): RhToolboxTool[] {
   const q = String(filters.query || '').trim().toLowerCase();
-  return listRhToolboxTools(manifest, { includeDisabled: filters.includeDisabled }).filter((tool) => {
+  const normalized = normalizeRhToolboxManifest(manifest);
+  const tools = normalized.tools.filter((tool) => filters.includeDisabled || tool.enabled !== false);
+  return tools.filter((tool) => {
+    const toolMajorCategoryId = getRhToolboxToolMajorCategory(tool, normalized.categories);
+    if (filters.majorCategoryId && filters.majorCategoryId !== RH_TOOLBOX_ALL_CATEGORY_ID && toolMajorCategoryId !== filters.majorCategoryId) {
+      return false;
+    }
     if (filters.categoryId && filters.categoryId !== RH_TOOLBOX_ALL_CATEGORY_ID && tool.categoryId !== filters.categoryId) {
       return false;
     }
@@ -454,6 +770,25 @@ export function filterRhToolboxTools(
     ].join(' ').toLowerCase();
     return haystack.includes(q);
   });
+}
+
+export function getRhToolboxToolMajorCategory(
+  tool: Partial<RhToolboxTool> | null | undefined,
+  categories: RhToolboxCategory[] = [],
+): RhToolboxMajorCategoryId {
+  const category = categories.find((item) => item.id === tool?.categoryId);
+  if (category) return getRhToolboxCategoryMajorId(category);
+  const capabilityMajor = (tool?.capabilities || [])
+    .map((capability) => inferMajorCategoryFromText(capability))
+    .find(Boolean);
+  if (capabilityMajor) return capabilityMajor;
+  const outputKinds = (tool?.outputSchema || []).map((output) => output.kind);
+  const inputKinds = (tool?.inputSchema || []).map((input) => input.kind);
+  const kinds = [...outputKinds, ...inputKinds];
+  if (kinds.includes('video')) return 'video';
+  if (kinds.includes('audio')) return 'audio';
+  if (kinds.includes('text')) return 'text';
+  return 'image';
 }
 
 export function buildRhToolboxQuickActions(
@@ -476,7 +811,7 @@ export function buildRhToolboxQuickActions(
         surface,
         toolId: tool.id,
         title: tool.title,
-        label: tool.ui?.quickActionLabel || tool.capabilities.map((capability) => RH_TOOLBOX_CAPABILITY_LABELS[capability]).find(Boolean) || tool.title,
+        label: tool.title,
         description: tool.description,
         enabled,
         reason: enabled ? undefined : '待维护者配置 WebApp ID 后启用',
@@ -484,7 +819,6 @@ export function buildRhToolboxQuickActions(
         capabilities: tool.capabilities,
         inputKinds: Array.from(new Set(tool.inputSchema.map((input) => input.kind))),
         outputKinds: Array.from(new Set(tool.outputSchema.map((output) => output.kind))),
-        accent: tool.ui?.accent,
       };
     })
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.label.localeCompare(b.label, 'zh-Hans-CN'));

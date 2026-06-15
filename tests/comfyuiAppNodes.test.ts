@@ -8,13 +8,16 @@ const store = fs.readFileSync('src/components/nodes/ComfyUIStoreNode.tsx', 'utf8
 test('ComfyUI app nodes keep the node shell draggable while controls remain protected', () => {
   assert.match(maker, /<div style=\{rootStyle\} className="relative nowheel">/);
   assert.doesNotMatch(maker, /<div style=\{rootStyle\} className="relative nodrag nowheel">/);
-  assert.match(maker, /px-input nodrag nowheel/);
-  assert.match(maker, /px-btn nodrag nowheel/);
+  assert.match(maker, /px-input nodrag nopan nowheel/);
+  assert.match(maker, /px-btn nodrag nopan nowheel/);
 
-  assert.match(store, /<div className="relative flex flex-col nowheel" style=\{rootStyle\}>/);
+  assert.match(store, /<div className="t8-comfyui-store-node relative flex flex-col nowheel" style=\{rootStyle\}>/);
+  assert.match(store, /overflow: 'visible'/);
+  assert.match(store, /<div className="flex min-h-0 flex-1 flex-col overflow-hidden" style=\{\{ borderRadius: isPixel \? 6 : 12 \}\}>/);
   assert.doesNotMatch(store, /<div className="relative flex flex-col nodrag nowheel" style=\{rootStyle\}>/);
-  assert.match(store, /px-input nodrag nowheel/);
-  assert.match(store, /px-btn nodrag nowheel/);
+  assert.doesNotMatch(store, /overflow: 'hidden',\s*boxShadow/);
+  assert.match(store, /px-input nodrag nopan nowheel/);
+  assert.match(store, /px-btn nodrag nopan nowheel/);
 });
 
 test('ComfyUI maker and store expose local library management controls', () => {
@@ -35,4 +38,11 @@ test('ComfyUI maker and store expose local library management controls', () => {
   assert.match(store, /删除应用/);
   assert.match(store, /missingRequirements/);
   assert.match(store, /当前应用需要更多上游素材/);
+});
+
+test('ComfyUI maker and store controls stop canvas and parent-card gesture hijacking', () => {
+  assert.match(maker, /className="nodrag nopan nowheel inline-flex h-5 w-5/);
+  assert.match(store, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(store, /onKeyDown=\{\(event\) => \{[\s\S]*event\.preventDefault\(\);[\s\S]*selectApp\(app\);[\s\S]*\}\}/);
+  assert.match(store, /type="checkbox"[\s\S]*className="nodrag nopan nowheel"/);
 });

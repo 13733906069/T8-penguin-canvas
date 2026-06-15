@@ -6,8 +6,19 @@ export interface CompletionSoundGateState {
   lastPlayedAt: number;
 }
 
+export interface TaskCompletionSoundPlaybackSettings {
+  mode?: 'default' | 'custom';
+  url?: string;
+}
+
 export function isCompletionSoundEligibleNodeType(nodeType?: string | null): boolean {
   return COMPLETION_SOUND_ELIGIBLE_NODE_TYPES.includes(nodeType as any);
+}
+
+export function resolveTaskCompletionSoundPlaybackUrl(settings?: TaskCompletionSoundPlaybackSettings | null): string {
+  if (!settings || settings.mode !== 'custom') return '';
+  const url = String(settings.url || '').trim();
+  return url ? url : '';
 }
 
 export function resolveCompletionSoundNodeType(
@@ -109,4 +120,39 @@ export async function playTaskCompletionTone(): Promise<void> {
       /* ignore cleanup errors */
     }
   }, 520);
+}
+
+async function playCustomTaskCompletionSound(url: string): Promise<boolean> {
+  if (typeof Audio === 'undefined') return false;
+  const audio = new Audio(url);
+  audio.preload = 'auto';
+  await audio.play();
+  return true;
+}
+
+export async function primeTaskCompletionSoundAudio(settings?: TaskCompletionSoundPlaybackSettings | null): Promise<void> {
+  const url = resolveTaskCompletionSoundPlaybackUrl(settings);
+  if (url && typeof Audio !== 'undefined') {
+    try {
+      const audio = new Audio(url);
+      audio.preload = 'auto';
+      audio.load();
+    } catch {
+      /* fall back to tone priming below */
+    }
+  }
+  await primeTaskCompletionToneAudio();
+}
+
+export async function playTaskCompletionSound(settings?: TaskCompletionSoundPlaybackSettings | null): Promise<void> {
+  const url = resolveTaskCompletionSoundPlaybackUrl(settings);
+  if (url) {
+    try {
+      const played = await playCustomTaskCompletionSound(url);
+      if (played) return;
+    } catch (error) {
+      console.warn('[task-completion-sound] custom audio failed, falling back to default tone', error);
+    }
+  }
+  await playTaskCompletionTone();
 }

@@ -223,7 +223,7 @@ export function parseMaterialSetBackup(raw: any): MaterialSetBackup | null {
   };
 }
 
-export function materialSetItemFromMedia(kind: MediaKind, item: { url: string; name?: string; size?: number; mime?: string }): MaterialSetItem {
+export function materialSetItemFromMedia(kind: Exclude<MediaKind, 'model3d'>, item: { url: string; name?: string; size?: number; mime?: string }): MaterialSetItem {
   return {
     id: makeMaterialSetItemId(kind),
     kind,

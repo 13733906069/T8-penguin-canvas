@@ -17,8 +17,10 @@ import {
   analyzeComfyWorkflow,
   BASIC_COMFY_TEXT_TO_IMAGE_SAMPLE_ID,
   buildComfyWorkflowImportChecklist,
+  createComfyFieldExcludeRulesBackup,
   filterComfyFieldsByExcludeRules,
   parseComfyFieldExcludeRules,
+  parseComfyFieldExcludeRulesBackup,
   stringifyBasicComfyTextToImageWorkflow,
 } from '../../utils/comfyuiWorkflow';
 import { useUpdateNodeData } from './useUpdateNodeData';
@@ -58,6 +60,7 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
   const isLight = theme === 'light';
   const isPixel = style === 'pixel';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const excludeRulesFileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState('');
   const [libraryManifest, setLibraryManifest] = useState(() => mergeComfyAppManifests(COMFYUI_APP_MANIFEST, getUserComfyAppManifest()));
 
@@ -120,8 +123,8 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
     boxShadow: isPixel ? '3px 3px 0 var(--px-ink)' : 'var(--t8-node-shadow, 0 12px 30px rgba(0,0,0,0.28))',
   };
   const inputCls = isPixel
-    ? 'px-input nodrag nowheel w-full text-xs px-2 py-1'
-    : 'nodrag nowheel w-full rounded border px-2 py-1 text-xs outline-none';
+    ? 'px-input nodrag nopan nowheel w-full text-xs px-2 py-1'
+    : 'nodrag nopan nowheel w-full rounded border px-2 py-1 text-xs outline-none';
   const inputStyle: CSSProperties = isPixel
     ? {}
     : {
@@ -130,8 +133,8 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
       color: text,
     };
   const btnCls = isPixel
-    ? 'px-btn nodrag nowheel text-[11px] px-2 py-1 inline-flex items-center justify-center gap-1'
-    : 'nodrag nowheel rounded border px-2 py-1 text-[11px] inline-flex items-center justify-center gap-1';
+    ? 'px-btn nodrag nopan nowheel text-[11px] px-2 py-1 inline-flex items-center justify-center gap-1'
+    : 'nodrag nopan nowheel rounded border px-2 py-1 text-[11px] inline-flex items-center justify-center gap-1';
 
   const setRaw = (raw: string) => {
     update({ comfyMakerWorkflowRaw: raw, comfyMakerHiddenParamKeys: [] });
@@ -158,6 +161,23 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
 
   const appendExcludeRules = (items: string[]) => {
     setExcludeRules([...excludeRules, ...items].join('\n'));
+  };
+
+  const exportExcludeRules = () => {
+    const payload = createComfyFieldExcludeRulesBackup(excludeRulesRaw, 'comfyui-app-maker');
+    downloadText(`t8-comfyui-exclude-rules-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.json`, JSON.stringify(payload, null, 2));
+    setStatus(`已导出 ${payload.rules.length} 条排除规则。`);
+  };
+
+  const importExcludeRulesFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rules = parseComfyFieldExcludeRulesBackup(String(reader.result || ''));
+      setExcludeRules(rules.join('\n'));
+      setStatus(`已导入 ${rules.length} 条排除规则，自动识别结果会按规则过滤。`);
+    };
+    reader.onerror = () => setStatus('读取排除规则 JSON 文件失败。');
+    reader.readAsText(file, 'utf-8');
   };
 
   const hideParam = (key: string) => {
@@ -285,8 +305,41 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
           </span>
         </label>
 
-        <label className="block space-y-1">
-          <span className="text-[11px] font-bold" style={{ color: sub }}>自动映射排除规则（可选）</span>
+        <div className="block space-y-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] font-bold" style={{ color: sub }}>自动映射排除规则（可选）</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={btnCls}
+                style={inputStyle}
+                onClick={exportExcludeRules}
+                title="导出当前排除规则 JSON"
+              >
+                <Download size={12} /> 导出规则
+              </button>
+              <button
+                type="button"
+                className={btnCls}
+                style={inputStyle}
+                onClick={() => excludeRulesFileInputRef.current?.click()}
+                title="导入排除规则 JSON"
+              >
+                <Upload size={12} /> 导入规则
+              </button>
+              <input
+                ref={excludeRulesFileInputRef}
+                type="file"
+                accept="application/json,.json,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) importExcludeRulesFile(file);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </div>
+          </div>
           <PromptTextarea
             title="ComfyUI 自动映射排除规则"
             value={excludeRulesRaw}
@@ -329,7 +382,7 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
           <span className="block text-[10px]" style={{ color: sub }}>
             支持 source/字段名/节点类名/节点编号，例如 source:cfg、field:width、class:KSampler、node:86、#86.width。
           </span>
-        </label>
+        </div>
 
         <div className="rounded border p-2" style={{ borderColor: border, background: isLight ? 'rgba(14,165,233,0.06)' : 'rgba(103,232,249,0.08)' }}>
           <div className="flex items-center gap-2">
@@ -380,9 +433,14 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
                 <div key={param.key} className="rounded border px-2 py-1" style={{ borderColor: border }}>
                   <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1 truncate text-[11px] font-bold">{param.label}</div>
+                    {(param.nodeId || param.fieldName) && (
+                      <span className="shrink-0 font-mono text-[10px]" style={{ color: accent }}>
+                        {param.nodeId ? `#${param.nodeId}` : ''}{param.fieldName ? `.${param.fieldName}` : ''}
+                      </span>
+                    )}
                     <button
                       type="button"
-                      className="nodrag nowheel inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px]"
+                      className="nodrag nopan nowheel inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px]"
                       style={{ borderColor: 'rgba(248,113,113,0.45)', color: '#f87171', background: isLight ? 'rgba(248,113,113,0.08)' : 'rgba(248,113,113,0.12)' }}
                       title="移除此参数"
                       onClick={() => hideParam(param.key)}
@@ -391,7 +449,7 @@ const ComfyUIAppMakerNode = ({ id, data, selected }: NodeProps) => {
                     </button>
                   </div>
                   <div className="truncate text-[10px]" style={{ color: sub }}>
-                    {COMFY_APP_SOURCE_LABELS[param.source] || param.source} · {param.kind} · 默认 {String(param.defaultValue ?? '空').slice(0, 28)}
+                    {COMFY_APP_SOURCE_LABELS[param.source] || COMFY_APP_SOURCE_LABELS[param.fieldName || ''] || param.fieldName || param.source} · {param.kind}{param.options?.length ? `(${param.options.length}项)` : ''} · 默认 {String(param.defaultValue ?? '空').slice(0, 28)}
                   </div>
                 </div>
               ))}

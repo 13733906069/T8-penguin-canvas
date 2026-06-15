@@ -5,7 +5,8 @@
 //   1. 检查 dist_electron/win-unpacked/resources/backend-enc/*.t8c 是否存在
 //   2. 检查 frontend/index.html 是否到位
 //   3. 强制移除任何意外混入的明文 backend/src/*.js (双保险)
-//   4. 输出最终产物清单
+//   4. 运行本地私有扩展的可选分发检查
+//   5. 输出最终产物清单
 // ============================================================================
 'use strict';
 
@@ -50,6 +51,26 @@ function checkFrontendAsset(prefix, ext) {
   else {
     missingCount += 1;
     bad(label);
+  }
+}
+
+function checkAchievementMedia() {
+  const mediaRoot = path.join(RES, 'resources', 'achievement-media');
+  const encryptedRewards = [
+    'film-tech-01.mp4.t8media',
+    'film-rh-01.mp4.t8media',
+    'film-yyh-01.mp4.t8media',
+    'film-dragon-ball-01.mp4.t8media',
+    'film-saint-seiya-01.mp4.t8media',
+    'film-tetris-01.mp4.t8media',
+  ];
+  for (const fileName of encryptedRewards) {
+    checkFile(path.join(mediaRoot, fileName));
+  }
+  for (const file of walkFiles(mediaRoot)) {
+    if (path.extname(file).toLowerCase() === '.mp4') {
+      failSecurity('achievement reward video must be encrypted before packaging:', file);
+    }
   }
 }
 
@@ -115,6 +136,42 @@ function isSmallTextFile(p) {
   }
 }
 
+function runLocalPostBuildChecks() {
+  const disabled = process.env.T8_ENABLE_LOCAL_PRIVATE === '0'
+    || process.env.T8_DISABLE_LOCAL_EXTENSIONS === '1';
+  const hookPath = path.join(ROOT, 'local-private', 'extensions', 'build', 'post-build.cjs');
+  if (disabled) {
+    console.log('  ⚠️  local private build hook disabled by environment');
+    return;
+  }
+  if (!fs.existsSync(hookPath)) {
+    console.log('  ✅ no local private build hook configured');
+    return;
+  }
+  const hook = require(hookPath);
+  const run = typeof hook === 'function' ? hook : hook && hook.runLocalPostBuildChecks;
+  if (typeof run !== 'function') {
+    failSecurity('local private build hook does not export a runnable check:', hookPath);
+  }
+  run({
+    ROOT,
+    PACKAGE_JSON,
+    APP_VERSION,
+    PRODUCT_NAME,
+    UNPACKED,
+    RES,
+    ok,
+    bad,
+    checkFile,
+    checkFrontendAsset,
+    listDir,
+    rel,
+    failSecurity,
+    walkFiles,
+    isSmallTextFile,
+  });
+}
+
 function checkAiWatermarkRuntime() {
   const runtimeRoot = path.join(RES, 'tools', 'remove-ai-watermarks');
   const archiveRoot = path.join(RES, 'tools', 'runtime-archives');
@@ -177,7 +234,6 @@ function checkParseHubRuntime() {
     ok(parsehubPkg);
     return;
   }
-
   if (fs.existsSync(archive)) {
     ok(archive);
     if (fs.existsSync(archiveManifest)) ok(archiveManifest);
@@ -194,6 +250,15 @@ function checkParseHubRuntime() {
   console.log('     Refresh with: tools\\remove-ai-watermarks-runtime\\python\\python.exe -m pip install --upgrade --target tools\\parsehub-pythonlibs .\\ParseHub, then npm run prepack:runtimes');
 }
 
+function checkFigmaBridgeRuntime() {
+  const root = path.join(RES, 'tools', 'figma-bridge');
+  checkFile(path.join(root, 'server.cjs'));
+  checkFile(path.join(root, 'start-figma-bridge.cmd'));
+  checkFile(path.join(root, 'plugin', 'manifest.json'));
+  checkFile(path.join(root, 'plugin', 'code.js'));
+  checkFile(path.join(root, 'plugin', 'ui.html'));
+}
+
 function checkUpdateArtifacts() {
   const distDir = path.join(ROOT, 'dist_electron');
   const installerName = `${PRODUCT_NAME}-Setup-${APP_VERSION}.exe`;
@@ -201,9 +266,10 @@ function checkUpdateArtifacts() {
   const blockmap = path.join(distDir, `${installerName}.blockmap`);
   const latest = path.join(distDir, 'latest.yml');
   const strict = process.env.T8_REQUIRE_UPDATE_ARTIFACTS === '1';
-  const hasAnyArtifact = fs.existsSync(installer) || fs.existsSync(blockmap) || fs.existsSync(latest);
+  const hasInstaller = fs.existsSync(installer);
+  const hasBlockmap = fs.existsSync(blockmap);
 
-  if (!hasAnyArtifact && !strict) {
+  if (!strict && !hasInstaller && !hasBlockmap) {
     console.log('  ⚠️  NSIS update artifacts not present; skipping installer/latest.yml checks for dir build');
     return;
   }
@@ -254,6 +320,75 @@ function checkNoRhToolboxMaker() {
   console.log('  ✅ RH toolbox maker is not present in packaged resources');
 }
 
+function isFrontendBundleTextFile(p) {
+  const ext = path.extname(p).toLowerCase();
+  if (!['.json', '.js', '.mjs', '.html'].includes(ext)) return false;
+  try {
+    return fs.statSync(p).size <= 20 * 1024 * 1024;
+  } catch (_) {
+    return false;
+  }
+}
+
+function checkRhToolboxReleaseManifest() {
+  const frontendRoot = path.join(RES, 'frontend');
+  if (!fs.existsSync(frontendRoot)) {
+    failSecurity('frontend assets missing before RH toolbox release manifest check:', frontendRoot);
+  }
+  const requiredMarkers = [
+    'image-cutout-v1',
+    'tuantiquv10',
+    'bernini1',
+    'berninituxiangbianji',
+    'bernini2',
+    '2066002530877927426',
+    '2034251740148666369',
+    '2064192352843034626',
+    '2064222937024131073',
+    '2064185875537420290',
+  ];
+  const found = new Set();
+  for (const p of walkFiles(frontendRoot).filter(isFrontendBundleTextFile)) {
+    const text = fs.readFileSync(p, 'utf-8');
+    for (const marker of requiredMarkers) {
+      if (text.includes(marker)) found.add(marker);
+    }
+  }
+  for (const marker of requiredMarkers) {
+    if (!found.has(marker)) {
+      failSecurity(`RH toolbox release manifest marker missing from frontend assets: ${marker}`, frontendRoot);
+    }
+  }
+  console.log('  ✅ RH toolbox release manifest is bundled in frontend assets');
+}
+
+function checkNoFalToolboxMaker() {
+  const forbiddenDirs = [
+    path.join(RES, 'tools', 'fal-toolbox-maker'),
+    path.join(RES, 'fal-toolbox-maker'),
+    path.join(RES, 'app', 'fal-toolbox-maker'),
+    path.join(RES, 'app.asar.unpacked', 'fal-toolbox-maker'),
+  ];
+  for (const p of forbiddenDirs) {
+    if (fs.existsSync(p)) {
+      failSecurity('FAL toolbox maker must not be shipped to end users:', p);
+    }
+  }
+
+  const forbiddenText = [
+    /FalToolboxMakerNode/,
+    /FAL应用制作工具/,
+    /fal-toolbox-maker/,
+  ];
+  for (const p of walkFiles(path.join(RES, 'frontend')).filter(isSmallTextFile)) {
+    const text = fs.readFileSync(p, 'utf-8');
+    if (forbiddenText.some((re) => re.test(text))) {
+      failSecurity('FAL toolbox maker frontend code leaked into packaged assets:', p);
+    }
+  }
+  console.log('  ✅ FAL toolbox maker is not present in packaged resources');
+}
+
 function main() {
   console.log('==========================================');
   console.log('[post-build] 验证打包产物');
@@ -276,14 +411,19 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'routes', 'resources.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'themes.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'eagle.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'figma.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'grokOAuth.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'codexCli.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'aiWatermark.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'cloudUploads.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'parseHub.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'achievements.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'topaz.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'achievements', 'media.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'achievements', 'store.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'settings.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'uploader.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'extensions', 'runtimeHooks.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'registry.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'mediaResolver.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'adapters.t8c'));
@@ -297,6 +437,8 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'tools', 'aiWatermark', 'media.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'tools', 'topaz', 'runner.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'duckPayload.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'utils', 'codexCliRunner.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'utils', 'figmaBridge.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'parseHubBridge.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'runtimeArchive.t8c'));
 
@@ -316,25 +458,42 @@ function main() {
   checkFrontendAsset('slamdunk-kimi-ga-suki-', '.mp3');
   checkFrontendAsset('soccer-tsubasa-burning-hero-', '.mid');
   checkFrontendAsset('dragonball-makafushigi-adventure-', '.mp3');
+  checkFrontendAsset('dragonball-shenron-cha-la-head-cha-la-', '.mp3');
+  checkFrontendAsset('saint-seiya-pegasus-fantasy-', '.mp3');
+  checkFrontendAsset('saint-seiya-hades-last-holy-war-', '.mp3');
+  checkAchievementMedia();
 
   console.log('\n[3] 清除可能混入的明文后端源码:');
   nukePlainBackend();
-  console.log('\n[4] 去AI水印 sidecar runtime:');
+
+  console.log('\n[4] 本地私有扩展分发检查:');
+  runLocalPostBuildChecks();
+
+  console.log('\n[5] 去AI水印 sidecar runtime:');
   checkAiWatermarkRuntime();
 
-  console.log('\n[5] ffmpeg sidecar runtime:');
+  console.log('\n[6] ffmpeg sidecar runtime:');
   checkFfmpegRuntime();
 
-  console.log('\n[6] ParseHub bridge/runtime:');
+  console.log('\n[7] ParseHub bridge/runtime:');
   checkParseHubRuntime();
 
-  console.log('\n[7] RH工具箱制作器分发检查:');
+  console.log('\n[8] Figma bridge/plugin:');
+  checkFigmaBridgeRuntime();
+
+  console.log('\n[9] RH工具箱制作器分发检查:');
   checkNoRhToolboxMaker();
 
-  console.log('\n[8] GitHub 自动更新资产:');
+  console.log('\n[10] RH工具箱发布清单分发检查:');
+  checkRhToolboxReleaseManifest();
+
+  console.log('\n[11] FAL应用制作工具分发检查:');
+  checkNoFalToolboxMaker();
+
+  console.log('\n[12] GitHub 自动更新资产:');
   checkUpdateArtifacts();
 
-  console.log('\n[9] resources/ 完整结构:');
+  console.log('\n[13] resources/ 完整结构:');
   listDir(RES);
 
   if (missingCount > 0) {

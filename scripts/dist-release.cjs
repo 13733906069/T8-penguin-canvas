@@ -45,6 +45,7 @@ function main() {
     process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder',
   );
 
+  run('RH toolbox release manifest check', command('npm'), ['run', 'rh-toolbox:check']);
   run('build + encrypt', command('npm'), ['run', 'prepack:enc']);
   run('prepare runtime archives', command('npm'), ['run', 'prepack:runtimes']);
   run('electron-builder nsis', electronBuilder, ['--win', '--x64']);

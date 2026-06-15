@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Undo2,
   Redo2,
@@ -15,9 +15,13 @@ import {
   Magnet,
   Bell,
   BellOff,
+  Archive,
   Search,
   Terminal as TerminalIcon,
   LayoutGrid,
+  MousePointer2,
+  RotateCcw,
+  GripVertical,
   AlignStartVertical,
   AlignCenterVertical,
   AlignEndVertical,
@@ -33,7 +37,9 @@ import { useThemeStore } from '../stores/theme';
 import { useLogStore } from '../stores/logs';
 import { useTaskCompletionSoundStore } from '../stores/taskCompletionSound';
 import { useShortcutStore } from '../stores/shortcuts';
+import { useRadialMenuStore } from '../stores/radialMenu';
 import { CANVAS_TEMPLATES, type CanvasTemplate } from '../config/canvasTemplates';
+import { NODE_REGISTRY } from '../config/nodeRegistry';
 import {
   DEFAULT_SHORTCUTS,
   formatShortcutCombo,
@@ -43,7 +49,13 @@ import {
   type ShortcutAction,
   type ShortcutCombo,
 } from '../utils/keyboardShortcuts';
+import {
+  RADIAL_NODE_COLOR_HEX,
+  normalizeRadialMenuSlots,
+  visibleRadialMenuNodeOptions,
+} from '../utils/radialMenu';
 import type { NodeAlignAction } from '../utils/nodeAlign';
+import type { NodeType } from '../types/canvas';
 
 interface CanvasToolbarProps {
   canUndo: boolean;
@@ -68,8 +80,11 @@ interface CanvasToolbarProps {
   // 吸附开关
   snapEnabled: boolean;
   onToggleSnap: () => void;
+  outputMaterialPersistenceEnabled: boolean;
+  onToggleOutputMaterialPersistence: () => void;
   onAlignSelection: (action: NodeAlignAction) => void;
   onOpenGuomanModels?: () => void;
+  children?: ReactNode;
 }
 
 export default function CanvasToolbar({
@@ -93,8 +108,11 @@ export default function CanvasToolbar({
   batchDone,
   snapEnabled,
   onToggleSnap,
+  outputMaterialPersistenceEnabled,
+  onToggleOutputMaterialPersistence,
   onAlignSelection,
   onOpenGuomanModels,
+  children,
 }: CanvasToolbarProps) {
   const { theme, style } = useThemeStore();
   const isDark = theme === 'dark';
@@ -109,13 +127,30 @@ export default function CanvasToolbar({
   const clearActionShortcuts = useShortcutStore((s) => s.clearActionShortcuts);
   const resetShortcutAction = useShortcutStore((s) => s.resetAction);
   const resetAllShortcuts = useShortcutStore((s) => s.resetAll);
+  const radialSlotsRaw = useRadialMenuStore((s) => s.slots);
+  const radialLongPressMs = useRadialMenuStore((s) => s.longPressMs);
+  const setRadialSlotNodeType = useRadialMenuStore((s) => s.setSlotNodeType);
+  const setRadialSlotEnabled = useRadialMenuStore((s) => s.setSlotEnabled);
+  const moveRadialSlot = useRadialMenuStore((s) => s.moveSlot);
+  const setRadialLongPressMs = useRadialMenuStore((s) => s.setLongPressMs);
+  const resetRadialMenu = useRadialMenuStore((s) => s.resetRadialMenu);
   const [tplOpen, setTplOpen] = useState(false);
   const [alignOpen, setAlignOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [recordingActionId, setRecordingActionId] = useState<string | null>(null);
   const [shortcutMessage, setShortcutMessage] = useState<string>('');
+  const [draggingRadialSlot, setDraggingRadialSlot] = useState<number | null>(null);
   const tplRef = useRef<HTMLDivElement>(null);
   const alignRef = useRef<HTMLDivElement>(null);
+  const radialNodeOptions = useMemo(() => visibleRadialMenuNodeOptions(NODE_REGISTRY), []);
+  const radialSlots = useMemo(
+    () => normalizeRadialMenuSlots(NODE_REGISTRY, radialSlotsRaw),
+    [radialSlotsRaw],
+  );
+  const radialNodesByType = useMemo(
+    () => new Map(radialNodeOptions.map((node) => [node.type, node])),
+    [radialNodeOptions],
+  );
   const groupedShortcutActions = useMemo(() => {
     const groups = new Map<string, ShortcutAction[]>();
     for (const action of DEFAULT_SHORTCUTS) {
@@ -235,14 +270,26 @@ export default function CanvasToolbar({
     [`拖线中 ${shortcutText('connection.pan-mode')}`, '开启/关闭连线导航模式'],
     ['左键拖动空白', '平移画布'],
     ['Ctrl + 左键拖动', '框选多个节点'],
+    ['中键长按空白', '打开节点圆盘'],
     ['右键点击节点 / 选区', '弹出菜单'],
     ['滚轮 / 触控板', '缩放画布'],
     [`${shortcutText('connection.pan-mode')} + 拖拽`, '平移画布(备选)'],
   ];
+  const radialDelayOptions = [
+    { label: '快', value: 240 },
+    { label: '标准', value: 320 },
+    { label: '稳', value: 450 },
+  ];
+  const onRadialSlotDrop = (toIndex: number) => {
+    if (draggingRadialSlot === null) return;
+    moveRadialSlot(draggingRadialSlot, toIndex);
+    setDraggingRadialSlot(null);
+  };
   const closeShortcutPanel = () => {
     setHelpOpen(false);
     setRecordingActionId(null);
     setShortcutMessage('');
+    setDraggingRadialSlot(null);
   };
   const runAlignAction = (action: NodeAlignAction) => {
     onAlignSelection(action);
@@ -385,6 +432,27 @@ export default function CanvasToolbar({
           aria-pressed={completionSoundEnabled}
         >
           {completionSoundEnabled ? <Bell size={15} /> : <BellOff size={15} />}
+        </button>
+        <button
+          className={`${baseBtn} ${
+            outputMaterialPersistenceEnabled
+              ? isPixel
+                ? 'bg-[var(--px-mint)] text-[var(--px-ink)]'
+                : isDark
+                  ? 'text-violet-200 bg-violet-500/20'
+                  : 'text-violet-700 bg-violet-500/10'
+              : ''
+          }`}
+          onClick={onToggleOutputMaterialPersistence}
+          title={
+            outputMaterialPersistenceEnabled
+              ? '关闭输出素材持久化：中断或重跑后允许自动清理输出素材'
+              : '开启输出素材持久化：中断或重跑后保留已生成的输出素材'
+          }
+          aria-label={outputMaterialPersistenceEnabled ? '关闭输出素材持久化' : '开启输出素材持久化'}
+          aria-pressed={outputMaterialPersistenceEnabled}
+        >
+          <Archive size={15} />
         </button>
         <button
           className={baseBtn}
@@ -574,6 +642,8 @@ export default function CanvasToolbar({
             </span>
           )}
         </button>
+
+        {children}
       </div>
 
       {/* 快捷键设置弹窗 */}
@@ -736,6 +806,128 @@ export default function CanvasToolbar({
                   </div>
                 </section>
               ))}
+
+              <section className="space-y-2">
+                <div
+                  className={`flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wide ${
+                    isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-white/55' : 'text-zinc-500'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <MousePointer2 size={13} />
+                    节点圆盘
+                  </span>
+                  <button
+                    type="button"
+                    className={compactBtnCls}
+                    onClick={() => {
+                      resetRadialMenu();
+                      setShortcutMessage('已恢复节点圆盘默认配置。');
+                    }}
+                    title="恢复节点圆盘默认配置"
+                  >
+                    <RotateCcw size={12} />
+                    默认
+                  </button>
+                </div>
+                <div
+                  className={`space-y-2 px-3 py-3 ${
+                    isPixel
+                      ? 'bg-[var(--px-muted)] border-2 border-[var(--px-ink)] rounded-[10px]'
+                      : isDark
+                        ? 'bg-white/5 border border-white/10 rounded-md'
+                        : 'bg-black/5 border border-black/10 rounded-md'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className={isPixel ? 'text-[var(--px-ink-soft)]' : isDark ? 'text-white/65' : 'text-zinc-600'}>
+                      中键长按画布空白区后滑向方向，松开创建节点；拖动行可调整方向顺序。
+                    </span>
+                    <label className="inline-flex items-center gap-2 text-[11px]">
+                      <span className={isPixel ? 'text-[var(--px-ink-soft)]' : isDark ? 'text-white/55' : 'text-zinc-500'}>
+                        长按
+                      </span>
+                      <select
+                        className={
+                          isPixel
+                            ? 'px-input h-7 min-w-[76px] rounded-[8px] text-xs'
+                            : `h-7 min-w-[76px] rounded border px-2 text-xs ${
+                                isDark ? 'border-white/10 bg-zinc-950 text-white' : 'border-black/10 bg-white text-zinc-900'
+                              }`
+                        }
+                        value={radialLongPressMs}
+                        onChange={(event) => setRadialLongPressMs(Number(event.target.value))}
+                      >
+                        {radialDelayOptions.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label} {item.value}ms
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {radialSlots.map((slot, index) => {
+                      const meta = radialNodesByType.get(slot.nodeType);
+                      const color = RADIAL_NODE_COLOR_HEX[meta?.color || 'slate'] || RADIAL_NODE_COLOR_HEX.slate;
+                      return (
+                        <div
+                          key={slot.id}
+                          draggable
+                          onDragStart={() => setDraggingRadialSlot(index)}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => onRadialSlotDrop(index)}
+                          onDragEnd={() => setDraggingRadialSlot(null)}
+                          className={`grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 px-2 py-2 ${
+                            isPixel
+                              ? 'bg-[var(--px-surface)] border-2 border-[var(--px-ink)] rounded-[10px]'
+                              : isDark
+                                ? 'bg-black/15 border border-white/10 rounded-md'
+                                : 'bg-white border border-black/10 rounded-md'
+                          } ${draggingRadialSlot === index ? 'opacity-55' : ''}`}
+                        >
+                          <GripVertical size={14} className="cursor-grab opacity-60" />
+                          <label className="inline-flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={slot.enabled}
+                              onChange={(event) => setRadialSlotEnabled(slot.id, event.target.checked)}
+                              aria-label={`启用圆盘槽位 ${index + 1}`}
+                            />
+                            <span
+                              className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold"
+                              style={{
+                                color: isPixel ? 'var(--px-ink)' : '#020617',
+                                background: color,
+                              }}
+                            >
+                              {index + 1}
+                            </span>
+                          </label>
+                          <select
+                            className={
+                              isPixel
+                                ? 'px-input min-w-0 rounded-[8px] px-2 py-1 text-xs'
+                                : `min-w-0 rounded border px-2 py-1 text-xs ${
+                                    isDark ? 'border-white/10 bg-zinc-950 text-white' : 'border-black/10 bg-white text-zinc-900'
+                                  }`
+                            }
+                            value={slot.nodeType}
+                            disabled={!slot.enabled}
+                            onChange={(event) => setRadialSlotNodeType(slot.id, event.target.value as NodeType)}
+                          >
+                            {radialNodeOptions.map((node) => (
+                              <option key={node.type} value={node.type}>
+                                {node.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
 
               <section className="space-y-2">
                 <div

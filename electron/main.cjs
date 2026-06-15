@@ -8,13 +8,14 @@
 //   5. 打包模式数据目录指向 app.getPath('userData') 而非项目目录
 // ============================================================================
 
-const { app, BrowserWindow, shell, ipcMain, session, safeStorage } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, session, safeStorage, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const { spawn } = require('child_process');
+const { fileURLToPath } = require('url');
 
-const APP_VERSION = '2.0.6';
+const APP_VERSION = '2.2.4';
 const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新';
 
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
@@ -451,6 +452,130 @@ function getUserDataDir() {
   return path.resolve(__dirname, '..');
 }
 
+function isPathInside(parentDir, candidatePath) {
+  const parent = path.resolve(parentDir);
+  const candidate = path.resolve(candidatePath);
+  const rel = path.relative(parent, candidate);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function dragOutRoots() {
+  const base = getUserDataDir();
+  return [
+    path.join(base, 'input'),
+    path.join(base, 'output'),
+    path.join(base, 'thumbnails'),
+    path.join(base, 'data', 'input'),
+    path.join(base, 'data', 'output'),
+    path.join(base, 'data', 'thumbnails'),
+  ];
+}
+
+function localOpenRoots() {
+  return dragOutRoots();
+}
+
+function resolveMountedDragOutFile(pathname) {
+  const cleanPath = decodeURIComponent(String(pathname || '')).replace(/\\/g, '/');
+  const base = getUserDataDir();
+  const mounts = [
+    { prefix: '/files/input/', dir: path.join(base, 'input') },
+    { prefix: '/input/', dir: path.join(base, 'input') },
+    { prefix: '/files/output/', dir: path.join(base, 'output') },
+    { prefix: '/output/', dir: path.join(base, 'output') },
+    { prefix: '/files/thumbnails/', dir: path.join(base, 'thumbnails') },
+    { prefix: '/thumbnails/', dir: path.join(base, 'thumbnails') },
+    // 兼容早期开发数据目录或用户手动迁移后的 data/* 结构。
+    { prefix: '/data/input/', dir: path.join(base, 'data', 'input') },
+    { prefix: '/data/output/', dir: path.join(base, 'data', 'output') },
+    { prefix: '/data/thumbnails/', dir: path.join(base, 'data', 'thumbnails') },
+  ];
+  for (const mount of mounts) {
+    if (!cleanPath.startsWith(mount.prefix)) continue;
+    const rel = cleanPath.slice(mount.prefix.length);
+    const resolved = path.resolve(mount.dir, rel);
+    if (!isPathInside(mount.dir, resolved)) return null;
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return null;
+    return resolved;
+  }
+  return null;
+}
+
+async function openLocalPath(targetPath) {
+  const raw = String(targetPath || '').trim();
+  if (!raw) return { success: false, message: 'empty path' };
+  const resolved = path.resolve(raw);
+  if (!localOpenRoots().some((root) => isPathInside(root, resolved))) {
+    return { success: false, message: 'path is outside allowed local folders', path: resolved };
+  }
+  if (!fs.existsSync(resolved)) {
+    return { success: false, message: 'path does not exist', path: resolved };
+  }
+  const message = await shell.openPath(resolved);
+  if (message) return { success: false, message, path: resolved };
+  return { success: true, path: resolved };
+}
+
+function isLocalHostForDragOut(parsed) {
+  const protocol = String(parsed.protocol || '').toLowerCase();
+  if (protocol !== 'http:' && protocol !== 'https:') return false;
+  const host = String(parsed.hostname || '').toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+}
+
+function resolveDragOutFile(payload) {
+  const raw = String(payload?.path || payload?.url || '').trim();
+  if (!raw) return null;
+
+  try {
+    if (/^[a-z]:[\\/]/i.test(raw)) {
+      const local = path.resolve(raw);
+      if (!dragOutRoots().some((root) => isPathInside(root, local))) return null;
+      return fs.existsSync(local) && fs.statSync(local).isFile() ? local : null;
+    }
+
+    const parsed = new URL(raw, `http://127.0.0.1:${backendPort}`);
+    if (parsed.protocol === 'file:') {
+      const local = path.resolve(fileURLToPath(parsed));
+      if (!dragOutRoots().some((root) => isPathInside(root, local))) return null;
+      return fs.existsSync(local) && fs.statSync(local).isFile() ? local : null;
+    }
+    if (isLocalHostForDragOut(parsed)) {
+      return resolveMountedDragOutFile(parsed.pathname);
+    }
+  } catch (error) {
+    dbgLog(`[drag-out] resolve failed: ${normalizeError(error)}`);
+  }
+  return null;
+}
+
+function dragOutIconForFile(filePath, kind) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (/^\.(png|jpe?g|webp|gif|bmp|avif|ico)$/i.test(ext)) {
+    const image = nativeImage.createFromPath(filePath);
+    if (!image.isEmpty()) {
+      return image.resize({ width: 64, height: 64, quality: 'best' });
+    }
+  }
+  const color = kind === 'video' ? '#38bdf8' : kind === 'audio' ? '#facc15' : '#34d399';
+  const label = kind === 'video' ? 'VID' : kind === 'audio' ? 'AUD' : 'T8';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect x="8" y="8" width="80" height="80" rx="18" fill="#111827"/><rect x="14" y="14" width="68" height="68" rx="14" fill="${color}"/><text x="48" y="56" font-family="Arial,sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#111827">${label}</text></svg>`;
+  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+}
+
+function sendDragOutStatus(event, payload, status) {
+  try {
+    event.sender.send('t8pc:drag-file-out-status', {
+      requestId: typeof payload?.requestId === 'string' ? payload.requestId.slice(0, 120) : '',
+      success: !!status.success,
+      message: String(status.message || ''),
+      file: status.file ? path.basename(String(status.file)) : '',
+    });
+  } catch (error) {
+    dbgLog(`[drag-out] status reply failed: ${normalizeError(error)}`);
+  }
+}
+
 // ---------- 日志 ----------
 function dbgLog(msg) {
   const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -821,6 +946,7 @@ ipcMain.handle('t8pc:get-info', () => ({
 }));
 
 ipcMain.handle('t8pc:open-external', async (_event, url) => openExternalUrl(url));
+ipcMain.handle('t8pc:open-path', async (_event, targetPath) => openLocalPath(targetPath));
 ipcMain.handle('t8pc:parse-auth:login', async (_event, profileId) => openParseAuthWindow(profileId));
 ipcMain.handle('t8pc:parse-auth:get-cookie', async (_event, profileId) => getParseAuthCookie(profileId));
 ipcMain.handle('t8pc:parse-auth:list-saved', async (_event, profileId) => listSavedParseAuth(profileId));
@@ -831,6 +957,29 @@ ipcMain.handle('t8pc:updater:status', () => emitUpdaterStatus());
 ipcMain.handle('t8pc:updater:check', async () => checkForUpdatesByUser());
 ipcMain.handle('t8pc:updater:download', async () => downloadAvailableUpdate());
 ipcMain.handle('t8pc:updater:install', () => installDownloadedUpdate());
+ipcMain.on('t8pc:drag-file-out', (event, payload) => {
+  try {
+    const file = resolveDragOutFile(payload);
+    if (!file) {
+      const message = '找不到可拖出的本地文件，只支持本机 input/output/thumbnails 素材';
+      dbgLog(`[drag-out] unsupported or missing file: ${String(payload?.url || payload?.path || '').slice(0, 180)}`);
+      sendDragOutStatus(event, payload, { success: false, message });
+      return;
+    }
+    if (!event.sender || typeof event.sender.startDrag !== 'function') {
+      throw new Error('当前 Electron 版本不支持 webContents.startDrag');
+    }
+    event.sender.startDrag({
+      file,
+      icon: dragOutIconForFile(file, String(payload?.kind || '')),
+    });
+    sendDragOutStatus(event, payload, { success: true, message: '系统拖出已启动，拖到文件夹后松开鼠标', file });
+  } catch (error) {
+    const message = normalizeError(error);
+    dbgLog(`[drag-out] startDrag failed: ${message}`);
+    sendDragOutStatus(event, payload, { success: false, message });
+  }
+});
 
 // ---------- 生命周期 ----------
 app.whenReady().then(async () => {

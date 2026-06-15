@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNodeConnections, useNodesData } from '@xyflow/react';
 
 /**
- * 检测当前节点是否已经连接了下游 OutputNode (type==='output').
+ * 检测当前节点是否已经连接了下游 OutputNode / 3D 预览节点。
  *
  * 用途:
  *   生成类节点 (image/video/audio/seedance/llm/runninghub/storyboard 等) 在生成完成后,
@@ -24,6 +24,6 @@ export function useHasAutoOutput(nodeId: string): boolean {
   const targets = useNodesData(targetIds);
   return useMemo(() => {
     const list = Array.isArray(targets) ? targets : [];
-    return list.some((n) => n?.type === 'output');
+    return list.some((n) => n?.type === 'output' || n?.type === 'model-3d-preview');
   }, [targets]);
 }

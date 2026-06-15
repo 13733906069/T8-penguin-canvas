@@ -10,10 +10,83 @@
 @import './theme-slamdunk.css';
 @import './theme-soccer.css';
 @import './theme-dragonball.css';
+@import './theme-saintseiya.css';
+@import './theme-tetris.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* RH工具箱应用按钮必须避开强主题的全局节点按钮覆盖。 */
+html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button,
+html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button,
+html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button,
+.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 42px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding: 7px 30px 7px 10px !important;
+  border: 1px solid var(--rh-toolbox-app-border, var(--t8-border, rgba(0, 0, 0, .18))) !important;
+  border-radius: 6px !important;
+  background: var(--rh-toolbox-app-bg, var(--t8-bg-panel-elevated, #fff7ed)) !important;
+  color: var(--rh-toolbox-app-text, var(--t8-text-main, #111827)) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.15 !important;
+  text-align: left !important;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease !important;
+}
+
+html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title,
+html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title,
+html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title,
+.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title {
+  min-width: 0 !important;
+  width: 100% !important;
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+}
+
+html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover,
+html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover,
+html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover,
+.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover {
+  background: var(--rh-toolbox-app-hover-bg, var(--t8-bg-panel-muted, #f8fafc)) !important;
+  color: var(--rh-toolbox-app-text, var(--t8-text-main, #111827)) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button,
+html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button,
+html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button,
+.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button {
+  position: absolute !important;
+  top: 50% !important;
+  right: 4px !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  border: 1px solid var(--rh-toolbox-app-border, var(--t8-border, rgba(0, 0, 0, .18))) !important;
+  border-radius: 5px !important;
+  background: var(--rh-toolbox-app-bg, var(--t8-bg-panel-elevated, #fff7ed)) !important;
+  color: var(--rh-toolbox-app-text, var(--t8-text-main, #111827)) !important;
+  box-shadow: none !important;
+  transform: translateY(-50%) !important;
+}
 
 /* API settings semantic theme adapter */
 .t8-api-settings-modal {
@@ -341,6 +414,16 @@ html[data-theme-visual] .t8-canvas-shell::after,
   pointer-events: all;
 }
 
+.t8-canvas-shell .react-flow__node-grok-oauth-agent,
+.t8-canvas-shell .react-flow__node:has(.t8-grok-oauth-agent-node),
+.t8-grok-oauth-agent-node {
+  overflow: visible !important;
+}
+
+.t8-grok-oauth-agent-handle {
+  pointer-events: all !important;
+}
+
 html[data-theme-visual] .t8-canvas-shell .react-flow__controls,
 .t8-canvas-shell[data-theme-visual] .react-flow__controls {
   left: var(--t8-floating-control-left, 14px) !important;
@@ -367,8 +450,18 @@ html[data-theme-visual] .t8-canvas-shell .t8-theme-music-toggle,
   position: absolute;
   left: var(--t8-floating-control-left, 14px);
   bottom: var(--t8-floating-control-bottom, 12px);
-  z-index: 22;
+  z-index: 78;
   display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--t8-floating-control-gap, 10px);
+  max-width: calc(100% - var(--t8-floating-control-left, 14px) - 14px);
+  pointer-events: none;
+}
+
+.t8-control-stack {
+  display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
   gap: var(--t8-floating-control-gap, 10px);
@@ -381,6 +474,16 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail,
   bottom: var(--t8-floating-control-bottom, 12px) !important;
 }
 
+.t8-canvas-shell .t8-control-rail .t8-theme-music-toggle {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  flex: 0 0 auto !important;
+  z-index: auto !important;
+}
+
 html[data-theme-visual] .t8-canvas-shell .t8-control-rail .t8-theme-music-toggle,
 .t8-canvas-shell[data-theme-visual] .t8-control-rail .t8-theme-music-toggle {
   position: relative !important;
@@ -388,6 +491,17 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail .t8-theme-music-toggle
   right: auto !important;
   top: auto !important;
   bottom: auto !important;
+  flex: 0 0 auto !important;
+}
+
+.t8-canvas-shell .t8-control-rail .react-flow__controls {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  margin: 0 !important;
+  transform: none !important;
   flex: 0 0 auto !important;
 }
 
@@ -455,6 +569,115 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail .react-flow__controls,
   opacity: 0.5 !important;
 }
 
+.t8-placement-shelf {
+  flex: 0 1 auto;
+  align-self: flex-end;
+  width: max-content;
+  max-width: min(392px, calc(100vw - var(--t8-floating-control-left, 14px) - 78px));
+  pointer-events: all;
+}
+
+.t8-placement-shelf__grid {
+  max-width: 100%;
+}
+
+body.t8-file-drag-out-active,
+body.t8-file-drag-out-active * {
+  cursor: copy !important;
+}
+
+.t8-file-drag-out-feedback {
+  position: fixed;
+  z-index: 10050;
+  display: flex;
+  max-width: 340px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  pointer-events: none;
+  color: var(--t8-text-main, #f8fafc);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--t8-accent, #38bdf8) 14%, transparent), transparent 62%),
+    color-mix(in srgb, var(--t8-bg-node, #0f172a) 94%, transparent);
+  border: 2px solid var(--t8-accent, #60a5fa);
+  border-radius: 14px;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.35),
+    0 0 0 1px color-mix(in srgb, var(--t8-bg-page, #020617) 52%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.t8-file-drag-out-feedback.is-success {
+  border-color: var(--t8-success, #22c55e);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--t8-success, #22c55e) 20%, transparent), transparent 64%),
+    color-mix(in srgb, var(--t8-bg-node, #0f172a) 94%, transparent);
+}
+
+.t8-file-drag-out-feedback.is-warning {
+  border-color: var(--t8-warning, #facc15);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--t8-warning, #facc15) 24%, transparent), transparent 62%),
+    color-mix(in srgb, var(--t8-bg-node, #0f172a) 94%, transparent);
+}
+
+.t8-file-drag-out-feedback.is-error {
+  border-color: var(--t8-danger, #fb7185);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--t8-danger, #fb7185) 22%, transparent), transparent 62%),
+    color-mix(in srgb, var(--t8-bg-node, #0f172a) 94%, transparent);
+}
+
+.t8-file-drag-out-feedback__keys {
+  display: inline-flex;
+  width: 46px;
+  height: 38px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--t8-bg-node, #0f172a);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  border: 1px solid color-mix(in srgb, var(--t8-border-strong, #94a3b8) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--t8-bg-soft, #f8fafc) 72%, transparent);
+}
+
+.t8-file-drag-out-feedback__keys span {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--t8-bg-page, #020617);
+  background: color-mix(in srgb, var(--t8-text-main, #ffffff) 88%, var(--t8-bg-soft, #ffffff));
+}
+
+.t8-file-drag-out-feedback__keys span + span {
+  border-left: 1px solid color-mix(in srgb, var(--t8-border-strong, #94a3b8) 75%, transparent);
+}
+
+.t8-file-drag-out-feedback__copy {
+  min-width: 0;
+}
+
+.t8-file-drag-out-feedback__title {
+  display: block;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.2;
+  color: var(--t8-text-main, #f8fafc);
+}
+
+.t8-file-drag-out-feedback__detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--t8-text-muted, #cbd5e1);
+}
+
 .t8-control-rail-help {
   box-sizing: border-box;
   width: var(--t8-theme-music-size, 32px);
@@ -488,6 +711,330 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail .react-flow__controls,
 
 .t8-control-rail-help:active {
   transform: translateY(1px) scale(0.98);
+}
+
+.t8-creative-desk-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.t8-creative-desk-layer.is-editing {
+  pointer-events: auto;
+}
+
+.t8-creative-desk-item {
+  position: absolute;
+  transform-origin: center center;
+  pointer-events: none;
+  user-select: none;
+  touch-action: none;
+}
+
+.t8-creative-desk-layer.is-editing .t8-creative-desk-item {
+  pointer-events: auto;
+  cursor: move;
+}
+
+.t8-creative-desk-item.is-locked {
+  cursor: not-allowed;
+}
+
+.t8-creative-desk-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.t8-creative-desk-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.t8-creative-desk-frame--poster-card {
+  padding: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.12));
+}
+
+.t8-creative-desk-frame--glass-card {
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.t8-creative-desk-frame--sticker {
+  padding: 7px;
+  border: 3px solid #fff;
+  background: #fff;
+  filter: drop-shadow(0 8px 0 rgba(0, 0, 0, 0.18));
+}
+
+.t8-creative-desk-frame--polaroid {
+  padding: 10px 10px 34px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #fffaf0;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.28);
+}
+
+.t8-creative-desk-frame--comic-panel {
+  padding: 6px;
+  border: 4px solid #111827;
+  border-radius: 4px;
+  background: #f8fafc;
+  box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.24);
+}
+
+.t8-creative-desk-frame--none {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.t8-creative-desk-item.is-selected .t8-creative-desk-frame {
+  outline: 2px solid var(--t8-accent, #38bdf8);
+  outline-offset: 5px;
+}
+
+.t8-creative-desk-handle {
+  position: absolute;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--t8-border-strong, rgba(255, 255, 255, 0.28));
+  border-radius: 999px;
+  background: var(--t8-bg-panel, rgba(15, 23, 42, 0.92));
+  color: var(--t8-text-main, #f8fafc);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.t8-creative-desk-handle--rotate {
+  left: 50%;
+  top: -48px;
+  transform: translateX(-50%);
+  cursor: grab;
+}
+
+.t8-creative-desk-handle--scale {
+  right: -18px;
+  bottom: -18px;
+  cursor: nwse-resize;
+}
+
+.t8-creative-desk-panel {
+  position: absolute;
+  left: calc(var(--t8-floating-control-left, 14px) + var(--t8-theme-music-size, 32px) + 14px);
+  bottom: var(--t8-floating-control-bottom, 12px);
+  z-index: 74;
+  width: min(380px, calc(100vw - var(--t8-floating-control-left, 14px) - 76px));
+  max-height: min(76vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.16));
+  border-radius: 8px;
+  background: var(--t8-bg-panel, rgba(15, 23, 42, 0.94));
+  color: var(--t8-text-main, #f8fafc);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(14px);
+}
+
+.t8-creative-desk-panel__header,
+.t8-creative-desk-panel__actions,
+.t8-creative-desk-panel__row,
+.t8-creative-desk-panel__subhead,
+.t8-creative-desk-panel__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.t8-creative-desk-panel__header,
+.t8-creative-desk-panel__subhead {
+  justify-content: space-between;
+}
+
+.t8-creative-desk-panel__header strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.t8-creative-desk-panel__header span,
+.t8-creative-desk-panel__subhead em,
+.t8-creative-desk-empty {
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  font-size: 11px;
+  font-style: normal;
+}
+
+.t8-creative-desk-panel__section {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: var(--t8-bg-panel-muted, rgba(255, 255, 255, 0.05));
+}
+
+.t8-creative-desk-panel__row {
+  justify-content: space-between;
+}
+
+.t8-creative-desk-panel__row label {
+  min-width: 54px;
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.t8-creative-desk-panel__row input[type="range"] {
+  min-width: 0;
+  flex: 1;
+}
+
+.t8-creative-desk-panel__row select {
+  width: 152px;
+  min-width: 0;
+}
+
+.t8-creative-desk-panel button,
+.t8-creative-desk-panel select {
+  min-height: 34px;
+  border: 1px solid var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.18)));
+  border-radius: 8px;
+  background: var(--t8-bg-panel-elevated, rgba(255, 255, 255, 0.08));
+  color: var(--t8-text-main, #f8fafc);
+  font-weight: 800;
+}
+
+.t8-creative-desk-panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.t8-creative-desk-panel button:hover:not(:disabled) {
+  border-color: var(--t8-accent, #38bdf8);
+  color: var(--t8-accent, #38bdf8);
+}
+
+.t8-creative-desk-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.t8-creative-desk-icon-button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0 !important;
+}
+
+.t8-creative-desk-panel__actions > button,
+.t8-creative-desk-panel__footer > button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.t8-creative-desk-layer-tools {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.t8-creative-desk-layer-tools button {
+  min-width: 0;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.t8-creative-desk-layer-tools button.is-danger {
+  border-color: rgba(244, 63, 94, 0.72);
+  color: #fb7185;
+}
+
+.t8-creative-desk-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.t8-creative-desk-resource {
+  min-width: 0;
+  min-height: 84px !important;
+  flex-direction: column;
+  padding: 6px !important;
+  overflow: hidden;
+}
+
+.t8-creative-desk-resource img {
+  width: 100%;
+  aspect-ratio: 1.35;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.t8-creative-desk-resource span {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.t8-creative-desk-empty {
+  grid-column: 1 / -1;
+  padding: 10px;
+  text-align: center;
+}
+
+.t8-creative-desk-panel.is-pixel {
+  border: 2px solid var(--px-ink, #1a1410);
+  background: var(--px-surface, #fff7c2);
+  color: var(--px-ink, #1a1410);
+  box-shadow: 4px 4px 0 var(--px-ink, #1a1410);
+}
+
+.t8-creative-desk-panel.is-pixel button,
+.t8-creative-desk-panel.is-pixel select,
+.t8-creative-desk-panel.is-pixel .t8-creative-desk-panel__section {
+  border-color: var(--px-ink, #1a1410);
+  background: var(--px-card, #fffdf1);
+  color: var(--px-ink, #1a1410);
+}
+
+@media (max-width: 720px) {
+  .t8-creative-desk-panel {
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--t8-floating-control-bottom, 12px) + 54px);
+    width: auto;
+  }
+
+  .t8-creative-desk-resource-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .t8-model-help-panel {
@@ -559,10 +1106,360 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail .react-flow__controls,
 }
 
 .t8-model-help-panel__text {
-  white-space: pre-wrap;
   color: var(--t8-text-main, #f4f4f5);
   font-size: 14px;
-  line-height: 1.78;
+  line-height: 1.72;
+}
+
+.t8-model-help-panel__section + .t8-model-help-panel__section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+}
+
+.t8-model-help-panel__section h3 {
+  margin: 0 0 10px;
+  color: var(--t8-text-main, #f4f4f5);
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.t8-model-help-panel__section p {
+  margin: 0;
+  color: var(--t8-text-main, #f4f4f5);
+}
+
+.t8-model-help-panel__section ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.t8-model-help-panel__section li {
+  padding-left: 2px;
+  color: var(--t8-text-main, #f4f4f5);
+}
+
+.t8-radial-settings-panel {
+  position: absolute;
+  left: calc(var(--t8-floating-control-left, 14px) + var(--t8-theme-music-size, 32px) + 14px);
+  bottom: var(--t8-floating-control-bottom, 12px);
+  z-index: 72;
+  width: min(760px, calc(100vw - var(--t8-floating-control-left, 14px) - 84px));
+  max-height: min(82vh, 740px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--t8-text-main, #f4f4f5);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--t8-bg-panel, #141416) 94%, var(--t8-flow-controls-accent, #38bdf8) 6%), var(--t8-bg-panel, #141416));
+  border: 1px solid color-mix(in srgb, var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.2))) 70%, var(--t8-flow-controls-accent, #38bdf8) 30%);
+  border-radius: 8px;
+  box-shadow: var(--t8-shadow-node, 0 22px 60px rgba(0, 0, 0, 0.42));
+}
+
+.t8-radial-settings-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--t8-flow-controls-accent, #38bdf8) 18%, transparent), transparent);
+}
+
+.t8-radial-settings-panel__eyebrow {
+  margin-bottom: 4px;
+  color: var(--t8-flow-controls-accent, #38bdf8);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.t8-radial-settings-panel__header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 850;
+}
+
+.t8-radial-settings-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.t8-radial-settings-panel__body {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px 16px;
+}
+
+.t8-radial-settings-button,
+.t8-radial-settings-close,
+.t8-radial-settings-slot__moves button,
+.t8-radial-settings-delay__reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.2)));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--t8-bg-panel, #141416) 86%, transparent);
+  color: var(--t8-text-main, #f4f4f5);
+  cursor: pointer;
+}
+
+.t8-radial-settings-button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.t8-radial-settings-close {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.t8-radial-settings-button:hover,
+.t8-radial-settings-close:hover,
+.t8-radial-settings-slot__moves button:hover:not(:disabled),
+.t8-radial-settings-delay__reset:hover {
+  border-color: var(--t8-flow-controls-accent, #38bdf8);
+  background: var(--t8-flow-controls-button-hover-bg);
+  color: var(--t8-flow-controls-accent, #38bdf8);
+}
+
+.t8-radial-settings-delay {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(180px, 1.5fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #111827) 72%, transparent);
+}
+
+.t8-radial-settings-delay__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+}
+
+.t8-radial-settings-delay__meta strong {
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.t8-radial-settings-delay input[type="range"] {
+  width: 100%;
+  accent-color: var(--t8-flow-controls-accent, #38bdf8);
+}
+
+.t8-radial-settings-delay__reset {
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.t8-radial-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.t8-radial-settings-slot {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #111827) 76%, transparent);
+  cursor: grab;
+}
+
+.t8-radial-settings-slot:active {
+  cursor: grabbing;
+}
+
+.t8-radial-settings-slot.is-disabled {
+  opacity: 0.62;
+}
+
+.t8-radial-settings-slot.is-drag-over {
+  border-color: var(--t8-flow-controls-accent, #38bdf8);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--t8-flow-controls-accent, #38bdf8) 18%, transparent);
+}
+
+.t8-radial-settings-slot__top,
+.t8-radial-settings-slot__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.t8-radial-settings-slot__index,
+.t8-radial-settings-slot__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.t8-radial-settings-slot__index {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: var(--t8-accent-text, #031522);
+  background: var(--t8-flow-controls-accent, #38bdf8);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.t8-radial-settings-slot__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--radial-slot-color, var(--t8-flow-controls-accent, #38bdf8));
+  background: color-mix(in srgb, var(--radial-slot-color, #38bdf8) 18%, var(--t8-bg-panel, #141416));
+  border: 1px solid color-mix(in srgb, var(--radial-slot-color, #38bdf8) 46%, transparent);
+}
+
+.t8-radial-settings-slot__title {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.t8-radial-settings-slot__title strong,
+.t8-radial-settings-slot__title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t8-radial-settings-slot__title strong {
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.t8-radial-settings-slot__title small {
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  font-size: 11px;
+}
+
+.t8-radial-settings-slot__controls select {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.2)));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--t8-bg-panel, #141416) 88%, transparent);
+  color: var(--t8-text-main, #f4f4f5);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.t8-radial-settings-slot__moves {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.t8-radial-settings-slot__moves button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.t8-radial-settings-slot__moves button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.t8-radial-settings-switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.t8-radial-settings-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.t8-radial-settings-switch span {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.2)));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--t8-bg-panel, #141416) 92%, transparent);
+}
+
+.t8-radial-settings-switch span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.t8-radial-settings-switch input:checked + span {
+  border-color: var(--t8-flow-controls-accent, #38bdf8);
+  background: color-mix(in srgb, var(--t8-flow-controls-accent, #38bdf8) 26%, var(--t8-bg-panel, #141416));
+}
+
+.t8-radial-settings-switch input:checked + span::after {
+  transform: translateX(18px);
+  background: var(--t8-flow-controls-accent, #38bdf8);
+}
+
+@media (max-width: 760px) {
+  .t8-radial-settings-panel {
+    left: var(--t8-floating-control-left, 14px);
+    right: 14px;
+    width: auto;
+  }
+
+  .t8-radial-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .t8-radial-settings-delay {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* === xyflow 内置保留 type 名防御 ===
@@ -1380,6 +2277,21 @@ html[data-theme-visual="op"] .t8-group-box__handle {
   pointer-events: none;
 }
 
+.panorama-avatar-overlay-toggle {
+  box-shadow: none !important;
+}
+
+.panorama-avatar-overlay-toggle.is-active {
+  border-color: var(--t8-border-strong);
+  background: var(--t8-accent);
+  color: var(--t8-accent-text);
+  box-shadow: none !important;
+}
+
+.panorama-avatar-overlay-toggle.is-active:hover {
+  background: var(--t8-accent-hover);
+}
+
 .t8-image-preview-trigger {
   border-color: color-mix(in srgb, var(--t8-border-strong, #38bdf8) 72%, transparent);
   background:
@@ -1555,6 +2467,149 @@ html[data-theme-visual="op"] .t8-group-box__handle {
   border: 1px solid color-mix(in srgb, var(--t8-menu-icon-color, var(--t8-accent, #38bdf8)) 48%, transparent);
 }
 
+.t8-radial-node-menu-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  pointer-events: none;
+}
+
+.t8-radial-node-menu {
+  position: fixed;
+  pointer-events: none;
+  color: var(--t8-radial-fg, var(--t8-text-main, #f8fafc));
+  --t8-radial-bg: color-mix(in srgb, var(--t8-bg-panel-elevated, #0f172a) 72%, transparent);
+  --t8-radial-border: color-mix(in srgb, var(--t8-accent, #38bdf8) 48%, transparent);
+  --t8-radial-glow: color-mix(in srgb, var(--t8-accent, #38bdf8) 28%, transparent);
+  --t8-radial-slot-bg: color-mix(in srgb, var(--t8-bg-panel, #111827) 88%, transparent);
+  --t8-radial-slot-border: color-mix(in srgb, var(--t8-border-strong, rgba(255,255,255,.2)) 80%, transparent);
+  --t8-radial-active-fg: #020617;
+}
+
+.t8-radial-node-menu__ring {
+  position: absolute;
+  inset: 7px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 50px, color-mix(in srgb, var(--t8-radial-glow) 34%, transparent) 51px 53px, transparent 54px 92px, color-mix(in srgb, var(--t8-radial-glow) 22%, transparent) 93px 96px, transparent 97px),
+    conic-gradient(from -90deg, color-mix(in srgb, var(--t8-radial-border) 28%, transparent), transparent 10%, color-mix(in srgb, var(--t8-radial-border) 28%, transparent) 12%, transparent 24%);
+  border: 1px solid var(--t8-radial-border);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.36), 0 0 34px var(--t8-radial-glow);
+  backdrop-filter: blur(10px);
+}
+
+.t8-radial-node-menu__ray {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--t8-radial-border), transparent);
+  box-shadow: 0 0 12px var(--t8-radial-glow);
+}
+
+.t8-radial-node-menu__anchor {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--t8-radial-border);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--t8-radial-border) 24%, transparent);
+}
+
+.t8-radial-node-menu__slot {
+  position: absolute;
+  width: 70px;
+  height: 58px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 14px;
+  background: var(--t8-radial-slot-bg);
+  border: 1px solid var(--t8-radial-slot-border);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  color: var(--t8-radial-fg, var(--t8-text-main, #f8fafc));
+  transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+
+.t8-radial-node-menu__slot svg {
+  color: var(--radial-slot-color, var(--t8-accent, #38bdf8));
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--radial-slot-color, #38bdf8) 38%, transparent));
+}
+
+.t8-radial-node-menu__slot span {
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.t8-radial-node-menu__slot.is-active {
+  transform: translate(-50%, -50%) scale(1.14);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--radial-slot-color) 82%, white), var(--radial-slot-color));
+  border-color: color-mix(in srgb, var(--radial-slot-color) 75%, white);
+  color: var(--t8-radial-active-fg);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34), 0 0 22px color-mix(in srgb, var(--radial-slot-color) 48%, transparent);
+}
+
+.t8-radial-node-menu__slot.is-active svg {
+  color: var(--t8-radial-active-fg);
+  filter: none;
+}
+
+.t8-radial-node-menu__slot.is-disabled {
+  opacity: 0.34;
+}
+
+.t8-radial-node-menu__center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 88px;
+  height: 88px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-align: center;
+  background: var(--t8-radial-bg);
+  border: 1.5px solid var(--t8-radial-border);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 10%, transparent), 0 12px 30px rgba(0, 0, 0, 0.36);
+}
+
+.t8-radial-node-menu__center strong {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.t8-radial-node-menu__center span {
+  font-size: 10px;
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.7));
+}
+
+.t8-radial-node-menu__center.has-active {
+  border-color: var(--t8-accent, #38bdf8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t8-radial-node-menu__slot {
+    transition: none;
+  }
+}
+
 .t8-node-action-bar {
   --t8-actionbar-bg: color-mix(in srgb, var(--t8-bg-panel-elevated, #111827) 94%, transparent);
   --t8-actionbar-border: 1px solid var(--t8-border-strong, rgba(255, 255, 255, 0.18));
@@ -1582,11 +2637,16 @@ html[data-theme-visual="op"] .t8-group-box__handle {
 }
 
 .llm-chat-action-button--single {
-  right: 31px;
+  right: 58px;
 }
 
 .llm-chat-action-button--smart {
+  right: 31px;
+}
+
+.llm-chat-action-button--delete {
   right: 4px;
+  color: var(--t8-danger, #f87171);
 }
 
 .llm-chat-action-button:hover,
@@ -1614,6 +2674,73 @@ html[data-theme-visual="pixel"] .t8-context-menu__node-icon {
   border: 2px solid var(--px-ink, #1A1410);
   color: var(--px-ink, #1A1410);
   background: var(--t8-menu-icon-color, var(--px-candy-mint, #A8E6C9));
+}
+
+html[data-theme-visual="pixel"] .t8-radial-node-menu {
+  --t8-radial-bg: #fff7d6;
+  --t8-radial-border: var(--px-ink, #1A1410);
+  --t8-radial-glow: color-mix(in srgb, var(--px-yellow, #FFE08A) 55%, transparent);
+  --t8-radial-slot-bg: var(--px-surface, #fffdf0);
+  --t8-radial-slot-border: var(--px-ink, #1A1410);
+  --t8-radial-fg: var(--px-ink, #1A1410);
+}
+
+html[data-theme-visual="pixel"] .t8-radial-node-menu__ring,
+html[data-theme-visual="pixel"] .t8-radial-node-menu__slot,
+html[data-theme-visual="pixel"] .t8-radial-node-menu__center {
+  border-width: 2px;
+  box-shadow: 4px 4px 0 var(--px-ink, #1A1410);
+  backdrop-filter: none;
+}
+
+html[data-theme-visual="dragon-ball"] .t8-radial-node-menu {
+  --t8-radial-bg: color-mix(in srgb, var(--db-panel, #fff1b8) 88%, transparent);
+  --t8-radial-border: var(--db-orange, #f97316);
+  --t8-radial-glow: color-mix(in srgb, var(--db-gold, #facc15) 60%, transparent);
+  --t8-radial-slot-bg: color-mix(in srgb, var(--db-paper, #fff6d4) 92%, transparent);
+  --t8-radial-slot-border: var(--db-ink, #271606);
+  --t8-radial-fg: var(--db-ink, #271606);
+}
+
+html[data-theme-visual="dragon-ball"] .t8-radial-node-menu__ring {
+  border-width: 2px;
+  box-shadow: 0 0 0 3px var(--db-ink, #271606), 0 0 34px var(--t8-radial-glow);
+}
+
+html[data-theme-visual="rh"] .t8-radial-node-menu {
+  --t8-radial-bg: color-mix(in srgb, var(--rh-card, #102310) 86%, transparent);
+  --t8-radial-border: var(--rh-lime, #9cff4d);
+  --t8-radial-glow: color-mix(in srgb, var(--rh-lime, #9cff4d) 45%, transparent);
+  --t8-radial-slot-bg: color-mix(in srgb, var(--rh-card, #102310) 88%, transparent);
+  --t8-radial-slot-border: color-mix(in srgb, var(--rh-lime, #9cff4d) 42%, transparent);
+  --t8-radial-fg: var(--t8-text-main, #f4ffe8);
+}
+
+html[data-theme-visual="eva"] .t8-radial-node-menu {
+  --t8-radial-bg: color-mix(in srgb, var(--eva-panel-2, #0a1110) 88%, transparent);
+  --t8-radial-border: var(--eva-red, #ff3046);
+  --t8-radial-glow: color-mix(in srgb, var(--eva-green, #78ff4d) 34%, transparent);
+  --t8-radial-slot-bg: color-mix(in srgb, var(--eva-panel, #101817) 90%, transparent);
+  --t8-radial-slot-border: color-mix(in srgb, var(--eva-green, #78ff4d) 34%, transparent);
+  --t8-radial-fg: var(--t8-text-main, #ecffe8);
+}
+
+html[data-theme-visual="slamdunk"] .t8-radial-node-menu {
+  --t8-radial-bg: color-mix(in srgb, var(--sd-cream, #fff1c2) 90%, transparent);
+  --t8-radial-border: var(--sd-red, #c52222);
+  --t8-radial-glow: color-mix(in srgb, var(--sd-orange, #f97316) 46%, transparent);
+  --t8-radial-slot-bg: color-mix(in srgb, var(--sd-paper, #fff8df) 92%, transparent);
+  --t8-radial-slot-border: var(--sd-ink, #20120b);
+  --t8-radial-fg: var(--sd-ink, #20120b);
+}
+
+html[data-theme-visual="soccer-hero"] .t8-radial-node-menu {
+  --t8-radial-bg: color-mix(in srgb, var(--sc-blue, #1d4ed8) 48%, var(--sc-green, #16a34a));
+  --t8-radial-border: var(--sc-gold, #facc15);
+  --t8-radial-glow: color-mix(in srgb, var(--sc-gold, #facc15) 42%, transparent);
+  --t8-radial-slot-bg: color-mix(in srgb, var(--sc-field, #14532d) 86%, transparent);
+  --t8-radial-slot-border: color-mix(in srgb, var(--sc-white, #f8fafc) 48%, transparent);
+  --t8-radial-fg: var(--sc-white, #f8fafc);
 }
 
 html[data-theme-style="pixel"] .t8-theme-music-toggle {
@@ -1869,6 +2996,116 @@ html[data-theme-visual="op"] .t8-theme-music-toggle.is-playing {
   color: var(--t8-text-muted);
 }
 
+.t8-achievement-passport,
+.t8-achievement-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.t8-achievement-card__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.t8-achievement-passport__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.t8-achievement-passport__top strong {
+  color: var(--t8-accent, #38bdf8);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.t8-achievement-passport__top span,
+.t8-achievement-review p {
+  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
+  font-size: 11px;
+}
+
+.t8-achievement-passport__themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.t8-achievement-passport__themes button {
+  --achievement-accent: var(--t8-accent, #38bdf8);
+  min-width: 0;
+  min-height: 46px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--achievement-accent) 42%, var(--t8-border, transparent));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--achievement-accent) 10%, transparent);
+  color: var(--t8-text-main, #f8fafc);
+  text-align: left;
+}
+
+.t8-achievement-passport__themes button.is-complete {
+  background: color-mix(in srgb, var(--achievement-accent) 22%, transparent);
+}
+
+.t8-achievement-passport__themes span,
+.t8-achievement-passport__themes strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t8-achievement-passport__themes span {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.t8-achievement-passport__themes strong {
+  margin-top: 3px;
+  color: var(--achievement-accent);
+  font-size: 10px;
+}
+
+.t8-achievement-review__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.t8-achievement-review__grid > div {
+  min-height: 54px;
+  padding: 8px;
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, .14));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 72%, transparent);
+}
+
+.t8-achievement-review__grid span {
+  display: block;
+  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
+  font-size: 11px;
+}
+
+.t8-achievement-review__grid strong {
+  display: block;
+  min-width: 0;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t8-achievement-review p {
+  margin: 0;
+  line-height: 1.45;
+}
+
 .t8-achievement-theme-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1879,6 +3116,15 @@ html[data-theme-visual="op"] .t8-theme-music-toggle.is-playing {
   --achievement-accent: var(--t8-accent, #38bdf8);
   padding: 12px;
   border-color: color-mix(in srgb, var(--achievement-accent) 45%, var(--t8-border, transparent));
+  color: var(--t8-text-main, #f8fafc);
+  text-align: left;
+  cursor: pointer;
+}
+
+.t8-achievement-theme-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--achievement-accent) 72%, var(--t8-border, transparent));
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--achievement-accent) 16%, transparent);
 }
 
 .t8-achievement-theme-card__top,
@@ -1901,6 +3147,21 @@ html[data-theme-visual="op"] .t8-theme-music-toggle.is-playing {
   color: var(--achievement-accent);
   font-size: 20px;
   font-weight: 900;
+}
+
+.t8-achievement-theme-card__next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.t8-achievement-theme-card__next span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .t8-achievement-progress {
@@ -1971,6 +3232,789 @@ html[data-theme-visual="op"] .t8-theme-music-toggle.is-playing {
   color: var(--t8-accent, #38bdf8);
 }
 
+.t8-achievement-film__player {
+  display: block;
+  width: 100%;
+  max-height: 190px;
+  margin-top: 8px;
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  background: #020617;
+}
+
+.t8-achievement-theme-film .t8-achievement-film__player {
+  max-height: 150px;
+}
+
+.t8-achievement-film__stage-card {
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  border: 1px solid color-mix(in srgb, var(--achievement-accent, var(--t8-accent, #38bdf8)) 46%, var(--t8-border, transparent));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--achievement-accent, var(--t8-accent, #38bdf8)) 22%, transparent), transparent 46%),
+    color-mix(in srgb, var(--t8-bg-panel-muted, rgba(255, 255, 255, 0.05)) 92%, transparent);
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.t8-achievement-film__stage-card:hover {
+  border-color: color-mix(in srgb, var(--achievement-accent, var(--t8-accent, #38bdf8)) 72%, var(--t8-border, transparent));
+  transform: translateY(-1px);
+}
+
+.t8-achievement-film__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.t8-achievement-film-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 10080;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  pointer-events: auto;
+  background:
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--t8-accent, #38bdf8) 20%, transparent), transparent 34%),
+    rgba(2, 6, 23, 0.9);
+}
+
+.t8-achievement-film-stage__panel {
+  position: relative;
+  width: min(1120px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1.5px solid var(--t8-border-strong, rgba(255, 255, 255, 0.2));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #0f172a) 96%, transparent);
+  color: var(--t8-text-main, #f8fafc);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.52);
+}
+
+.t8-achievement-film-stage__aura {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--t8-accent, #38bdf8) 22%, transparent), transparent 34%),
+    radial-gradient(circle at 82% 100%, color-mix(in srgb, var(--t8-warning, #facc15) 14%, transparent), transparent 34%);
+  opacity: 0.88;
+}
+
+.t8-achievement-film-stage__header,
+.t8-achievement-film-stage__footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-color: var(--t8-border, rgba(255, 255, 255, 0.12));
+}
+
+.t8-achievement-film-stage__header {
+  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.12));
+}
+
+.t8-achievement-film-stage__footer {
+  border-top: 1px solid var(--t8-border, rgba(255, 255, 255, 0.12));
+}
+
+.t8-achievement-film-stage__header span,
+.t8-achievement-film-stage__header em,
+.t8-achievement-film-stage__footer span {
+  display: block;
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  font-size: 11px;
+  font-style: normal;
+}
+
+.t8-achievement-film-stage__header strong {
+  display: block;
+  margin-top: 3px;
+  font-size: clamp(18px, 2.2vw, 28px);
+  font-weight: 1000;
+}
+
+.t8-achievement-film-stage__player {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-height: min(68vh, 720px);
+  background: #020617;
+}
+
+.t8-achievement-film-stage[data-film-theme]::before,
+.t8-achievement-film-stage[data-film-theme]::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.t8-achievement-film-stage[data-film-theme="tetris"] {
+  background:
+    linear-gradient(rgba(103, 232, 249, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 232, 249, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 74% 20%, rgba(255, 205, 61, 0.2), transparent 20%),
+    radial-gradient(circle at 22% 78%, rgba(164, 92, 255, 0.18), transparent 24%),
+    #06101f;
+  background-size: 34px 34px, 34px 34px, auto, auto, auto;
+}
+
+.t8-achievement-film-stage[data-film-theme="tetris"]::before {
+  left: max(22px, 4vw);
+  top: max(28px, 8vh);
+  width: 164px;
+  height: 164px;
+  background:
+    linear-gradient(#67e8f9 0 0) 0 0 / 38px 38px,
+    linear-gradient(#67e8f9 0 0) 40px 0 / 38px 38px,
+    linear-gradient(#4ade80 0 0) 80px 0 / 38px 38px,
+    linear-gradient(#ffcf3a 0 0) 40px 40px / 38px 38px,
+    linear-gradient(#a855f7 0 0) 80px 40px / 38px 38px,
+    linear-gradient(#fb7185 0 0) 120px 40px / 38px 38px,
+    linear-gradient(#fb923c 0 0) 80px 80px / 38px 38px,
+    linear-gradient(#3b82f6 0 0) 120px 80px / 38px 38px;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 20px rgba(103, 232, 249, 0.38));
+  opacity: 0.62;
+  transform: rotate(-8deg);
+}
+
+.t8-achievement-film-stage[data-film-theme="tetris"]::after {
+  right: max(18px, 5vw);
+  bottom: max(30px, 7vh);
+  width: 210px;
+  height: 110px;
+  border: 2px solid rgba(255, 207, 58, 0.55);
+  background:
+    linear-gradient(#22d3ee 0 0) 12px 60px / 26px 26px,
+    linear-gradient(#22d3ee 0 0) 40px 60px / 26px 26px,
+    linear-gradient(#22d3ee 0 0) 68px 60px / 26px 26px,
+    linear-gradient(#f97316 0 0) 116px 34px / 26px 26px,
+    linear-gradient(#f97316 0 0) 144px 34px / 26px 26px,
+    linear-gradient(#f97316 0 0) 144px 62px / 26px 26px,
+    linear-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, repeat;
+  background-size: 26px 26px, 26px 26px, 26px 26px, 26px 26px, 26px 26px, 26px 26px, 14px 14px, 14px 14px;
+  border-radius: 10px;
+  box-shadow: 0 0 32px rgba(255, 207, 58, 0.24);
+  opacity: 0.58;
+}
+
+.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__panel {
+  border-width: 3px;
+  border-color: #ffcf3a;
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+    linear-gradient(180deg, #0b1220, #111827 46%, #060b16);
+  background-size: 24px 24px, 24px 24px, auto;
+  box-shadow:
+    0 0 0 5px rgba(6, 182, 212, 0.24),
+    0 0 62px rgba(255, 207, 58, 0.22),
+    0 28px 110px rgba(0, 0, 0, 0.72);
+}
+
+.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__header,
+.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__footer {
+  border-color: rgba(103, 232, 249, 0.42);
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.14), rgba(255, 207, 58, 0.13), rgba(168, 85, 247, 0.13));
+}
+
+.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__header strong {
+  color: #ffcf3a;
+  text-shadow: 0 0 14px rgba(255, 207, 58, 0.34);
+}
+
+.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__player {
+  min-height: min(58vw, 580px);
+  border-top: 2px solid rgba(103, 232, 249, 0.42);
+  border-bottom: 2px solid rgba(103, 232, 249, 0.42);
+}
+
+.t8-achievement-film-stage[data-film-theme="rh"] {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(34, 211, 238, 0.18), transparent 25%),
+    linear-gradient(rgba(45, 212, 191, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45, 212, 191, 0.1) 1px, transparent 1px),
+    #041418;
+  background-size: auto, 38px 38px, 38px 38px, auto;
+}
+
+.t8-achievement-film-stage[data-film-theme="yyh"] {
+  background:
+    radial-gradient(circle at 54% 46%, rgba(16, 185, 129, 0.22), transparent 28%),
+    radial-gradient(circle at 80% 80%, rgba(59, 130, 246, 0.16), transparent 28%),
+    #07130f;
+}
+
+.t8-achievement-film-stage[data-film-theme="dragon-ball"] {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.2), transparent 24%),
+    radial-gradient(circle at 24% 78%, rgba(239, 68, 68, 0.18), transparent 24%),
+    #130c05;
+}
+
+.t8-achievement-film-stage[data-film-theme="tech"] {
+  background:
+    linear-gradient(rgba(96, 165, 250, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 165, 250, 0.12) 1px, transparent 1px),
+    radial-gradient(circle at 78% 12%, rgba(56, 189, 248, 0.18), transparent 28%),
+    #040b17;
+  background-size: 42px 42px, 42px 42px, auto, auto;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__panel,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__panel {
+  --saint-achievement-ink: #211607;
+  --saint-achievement-muted: rgba(33, 22, 7, 0.72);
+  --saint-achievement-panel: #fff7dc;
+  --saint-achievement-card: rgba(255, 251, 235, 0.96);
+  --saint-achievement-card-strong: #fff1b7;
+  --saint-achievement-line: rgba(33, 22, 7, 0.62);
+  --saint-achievement-accent: #bf7f14;
+  --saint-achievement-cosmo: #087b86;
+  --t8-text-main: var(--saint-achievement-ink);
+  --t8-text-muted: var(--saint-achievement-muted);
+  --t8-bg-panel: var(--saint-achievement-panel);
+  --t8-bg-panel-elevated: var(--saint-achievement-card);
+  --t8-bg-panel-muted: rgba(255, 238, 180, 0.82);
+  --t8-border: var(--saint-achievement-line);
+  --t8-border-strong: #211607;
+  --t8-accent: var(--saint-achievement-accent);
+  --t8-accent-text: #211607;
+  --t8-warning: #d49d2d;
+  color: var(--saint-achievement-ink) !important;
+  border-color: #211607 !important;
+  background:
+    radial-gradient(circle at 80% 7%, rgba(255, 230, 138, 0.62), transparent 27%),
+    radial-gradient(circle at 14% 98%, rgba(39, 214, 223, 0.16), transparent 26%),
+    linear-gradient(180deg, #fff9df, #f3d989 48%, #fff5cf) !important;
+}
+
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-drawer__panel,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-film-stage__panel {
+  --saint-achievement-ink: #fff7db;
+  --saint-achievement-muted: rgba(255, 247, 219, 0.78);
+  --saint-achievement-panel: #071226;
+  --saint-achievement-card: rgba(12, 24, 46, 0.96);
+  --saint-achievement-card-strong: #142744;
+  --saint-achievement-line: rgba(255, 230, 138, 0.54);
+  --saint-achievement-accent: #ffe68a;
+  --saint-achievement-cosmo: #67e8f9;
+  --t8-border-strong: #ffe68a;
+  --t8-accent-text: #071226;
+  color: var(--saint-achievement-ink) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(248, 200, 74, 0.22), transparent 30%),
+    radial-gradient(circle at 82% 94%, rgba(103, 232, 249, 0.16), transparent 28%),
+    linear-gradient(180deg, #081125, #0d1e38 48%, #071226) !important;
+}
+
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .t8-achievement-drawer__panel,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .t8-achievement-film-stage__panel {
+  --saint-achievement-accent: #ffe68a;
+  --saint-achievement-cosmo: #67e8f9;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 230, 138, 0.2), transparent 27%),
+    radial-gradient(circle at 50% 100%, rgba(183, 42, 89, 0.28), transparent 34%),
+    linear-gradient(180deg, #080b19, #16102a 50%, #090817) !important;
+}
+
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"]:not([data-theme-mode="dark"]) .t8-achievement-drawer__panel,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"]:not([data-theme-mode="dark"]) .t8-achievement-film-stage__panel {
+  --saint-achievement-ink: #211607;
+  --saint-achievement-muted: rgba(33, 22, 7, 0.74);
+  --saint-achievement-card: rgba(255, 250, 229, 0.96);
+  --saint-achievement-line: rgba(33, 22, 7, 0.64);
+  --saint-achievement-accent: #9a5f09;
+  --saint-achievement-cosmo: #087b86;
+  --t8-accent-text: #211607;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(255, 255, 255, 0.58), transparent 22%),
+    radial-gradient(circle at 70% 70%, rgba(222, 74, 112, 0.18), transparent 28%),
+    linear-gradient(180deg, #fff8dd, #efd27b 52%, #fff1c3) !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__header,
+html[data-theme-visual="saint-seiya"] .t8-achievement-tabs,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__footer {
+  border-color: var(--saint-achievement-line) !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__header {
+  color: var(--saint-achievement-ink) !important;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--saint-achievement-accent) 64%, #fff8dc), color-mix(in srgb, var(--saint-achievement-cosmo) 22%, #fff1b7)) !important;
+}
+
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-drawer__header,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-film-stage__header {
+  background:
+    linear-gradient(90deg, rgba(248, 200, 74, 0.2), rgba(103, 232, 249, 0.08), rgba(248, 200, 74, 0.14)) !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__title,
+html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__subtitle,
+html[data-theme-visual="saint-seiya"] .t8-achievement-card__title,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task-group h4,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film__title,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__top strong,
+html[data-theme-visual="saint-seiya"] .t8-achievement-medal__title strong,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header strong {
+  color: var(--saint-achievement-ink) !important;
+  text-shadow: none !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__subtitle,
+html[data-theme-visual="saint-seiya"] .t8-achievement-kpis span,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-card__next,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film__condition,
+html[data-theme-visual="saint-seiya"] .t8-achievement-passport__top span,
+html[data-theme-visual="saint-seiya"] .t8-achievement-review p,
+html[data-theme-visual="saint-seiya"] .t8-achievement-review__grid span,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-detail__kpis span,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__body p,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__meta,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__hint,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase p,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__head span,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__foot,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header span,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header em,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__footer span {
+  color: var(--saint-achievement-muted) !important;
+  text-shadow: none !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-kpis > div,
+html[data-theme-visual="saint-seiya"] .t8-achievement-card,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-card,
+html[data-theme-visual="saint-seiya"] .t8-achievement-medal,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-detail__kpis > div,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-next,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-film,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__grid > div,
+html[data-theme-visual="saint-seiya"] .t8-achievement-review__grid > div {
+  color: var(--saint-achievement-ink) !important;
+  border-color: var(--saint-achievement-line) !important;
+  background: var(--saint-achievement-card) !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-tabs button,
+html[data-theme-visual="saint-seiya"] .t8-achievement-back,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film__stage-card,
+html[data-theme-visual="saint-seiya"] .t8-achievement-passport__themes button,
+html[data-theme-visual="saint-seiya"] .t8-achievement-task {
+  color: var(--saint-achievement-ink) !important;
+  border-color: var(--saint-achievement-line) !important;
+  background: color-mix(in srgb, var(--saint-achievement-card-strong) 78%, transparent) !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-tabs button.is-active,
+html[data-theme-visual="saint-seiya"] .t8-achievement-task:hover,
+html[data-theme-visual="saint-seiya"] .t8-achievement-passport__themes button.is-complete {
+  color: var(--t8-accent-text, #211607) !important;
+  border-color: var(--saint-achievement-line) !important;
+  background: linear-gradient(180deg, var(--saint-achievement-cosmo), var(--saint-achievement-accent)) !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-progress {
+  background: color-mix(in srgb, var(--saint-achievement-ink) 12%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--saint-achievement-line) 70%, transparent);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-progress span,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__grid strong,
+html[data-theme-visual="saint-seiya"] .t8-achievement-theme-detail__kpis strong,
+html[data-theme-visual="saint-seiya"] .t8-achievement-passport__top strong,
+html[data-theme-visual="saint-seiya"] .t8-achievement-film__status {
+  color: var(--saint-achievement-accent) !important;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage {
+  background:
+    radial-gradient(circle at 50% 47%, rgba(248, 200, 74, 0.24), transparent 22%),
+    radial-gradient(circle at 50% 48%, transparent 0 30%, rgba(103, 232, 249, 0.13) 31% 36%, transparent 37%),
+    linear-gradient(rgba(255, 230, 138, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 230, 138, 0.12) 1px, transparent 1px),
+    rgba(2, 5, 18, 0.92);
+  background-size: auto, auto, 52px 52px, 52px 52px, auto;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__panel {
+  box-shadow:
+    0 0 0 3px rgba(255, 247, 219, 0.16),
+    0 0 70px rgba(248, 200, 74, 0.28),
+    0 30px 110px rgba(0, 0, 0, 0.62);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__aura {
+  background:
+    conic-gradient(from -20deg at 50% 50%, transparent 0 18deg, rgba(248, 200, 74, 0.18) 20deg 24deg, transparent 26deg 56deg, rgba(103, 232, 249, 0.12) 58deg 62deg, transparent 64deg 100deg),
+    radial-gradient(circle at 50% 48%, rgba(248, 200, 74, 0.18), transparent 32%);
+  animation: t8-achievement-saint-cosmo 8s linear infinite;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__player {
+  min-height: min(58vw, 580px);
+  border-top: 1px solid var(--saint-achievement-line);
+  border-bottom: 1px solid var(--saint-achievement-line);
+  background: #020617;
+}
+
+@keyframes t8-achievement-saint-cosmo {
+  from {
+    transform: rotate(0deg) scale(1.02);
+  }
+  to {
+    transform: rotate(360deg) scale(1.02);
+  }
+}
+
+.t8-achievement-back {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+  border-radius: 999px;
+  background: var(--t8-bg-panel-muted, rgba(255, 255, 255, 0.05));
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.t8-achievement-theme-detail {
+  --achievement-accent: var(--t8-accent, #38bdf8);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.t8-achievement-theme-hero {
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--achievement-accent) 52%, var(--t8-border, transparent));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--achievement-accent) 28%, transparent), transparent 36%),
+    color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 90%, transparent);
+}
+
+.t8-achievement-theme-hero span {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--achievement-accent) 20%, transparent);
+  color: var(--achievement-accent);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.t8-achievement-theme-hero h3 {
+  margin: 8px 0 0;
+  font-size: 20px;
+  line-height: 1.05;
+}
+
+.t8-achievement-theme-hero strong {
+  min-width: 64px;
+  text-align: right;
+  color: var(--achievement-accent);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.t8-achievement-theme-detail__kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.t8-achievement-theme-detail__kpis > div,
+.t8-achievement-theme-next,
+.t8-achievement-theme-task,
+.t8-achievement-theme-film,
+.t8-achievement-theme-showcase {
+  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 88%, transparent);
+}
+
+.t8-achievement-theme-detail__kpis > div {
+  min-height: 62px;
+  padding: 9px;
+}
+
+.t8-achievement-theme-detail__kpis span,
+.t8-achievement-theme-task__meta,
+.t8-achievement-theme-task__hint {
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  font-size: 11px;
+}
+
+.t8-achievement-theme-detail__kpis strong {
+  display: block;
+  min-width: 0;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 15px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t8-achievement-theme-next {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-color: color-mix(in srgb, var(--achievement-accent) 40%, var(--t8-border, transparent));
+}
+
+.t8-achievement-theme-next svg {
+  color: var(--achievement-accent);
+}
+
+.t8-achievement-theme-next span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t8-achievement-theme-next strong {
+  color: var(--achievement-accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.t8-achievement-theme-showcase {
+  padding: 10px;
+}
+
+.t8-achievement-theme-showcase__head,
+.t8-achievement-theme-showcase__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.t8-achievement-theme-showcase__head {
+  color: var(--achievement-accent);
+}
+
+.t8-achievement-theme-showcase__head strong {
+  min-width: 0;
+  flex: 1;
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 13px;
+}
+
+.t8-achievement-theme-showcase__head span,
+.t8-achievement-theme-showcase__foot {
+  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
+  font-size: 10px;
+}
+
+.t8-achievement-theme-showcase p {
+  margin: 8px 0;
+  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.t8-achievement-theme-showcase__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.t8-achievement-theme-showcase__grid > div {
+  min-height: 48px;
+  padding: 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--achievement-accent) 10%, transparent);
+}
+
+.t8-achievement-theme-showcase__grid span {
+  display: block;
+  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
+  font-size: 10px;
+}
+
+.t8-achievement-theme-showcase__grid strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--achievement-accent);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.t8-achievement-theme-showcase__foot {
+  margin-top: 8px;
+}
+
+.t8-achievement-theme-showcase__foot span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t8-achievement-theme-task-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.t8-achievement-theme-task-group h4 {
+  margin: 4px 0 0;
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.t8-achievement-theme-task-list {
+  display: grid;
+  gap: 8px;
+}
+
+.t8-achievement-theme-task,
+.t8-achievement-theme-film {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+}
+
+.t8-achievement-theme-task.is-hidden-task {
+  border-color: color-mix(in srgb, var(--achievement-accent) 62%, var(--t8-border, transparent));
+  background:
+    repeating-linear-gradient(135deg, transparent 0 13px, color-mix(in srgb, var(--achievement-accent) 8%, transparent) 13px 14px),
+    color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 88%, transparent);
+}
+
+.t8-achievement-theme-task:not(.is-unlocked),
+.t8-achievement-theme-film:not(.is-unlocked) {
+  opacity: .82;
+}
+
+.t8-achievement-theme-task.is-tracking-disabled {
+  opacity: .66;
+}
+
+.t8-achievement-theme-task__icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--achievement-accent) 42%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--achievement-accent) 16%, transparent);
+  color: var(--achievement-accent);
+}
+
+.t8-achievement-theme-task__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.t8-achievement-theme-task__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.t8-achievement-theme-task__top strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t8-achievement-theme-task__top span {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--achievement-accent) 16%, transparent);
+  color: var(--achievement-accent);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.t8-achievement-theme-task__body p {
+  margin: 4px 0 8px;
+  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.t8-achievement-theme-task__hint {
+  margin: -2px 0 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--achievement-accent) 10%, transparent);
+}
+
+.t8-achievement-theme-task__disabled {
+  margin: -2px 0 8px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--t8-warning, #facc15) 36%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--t8-warning, #facc15) 14%, transparent);
+  color: var(--t8-text-main, #f8fafc);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.t8-achievement-theme-task__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .t8-achievement-alert,
 .t8-achievement-empty {
   border-radius: 8px;
@@ -1978,6 +4022,29 @@ html[data-theme-visual="op"] .t8-theme-music-toggle.is-playing {
   font-size: 12px;
   background: color-mix(in srgb, var(--t8-warning, #facc15) 18%, transparent);
   color: var(--t8-text-main, #f8fafc);
+}
+
+.t8-achievement-alert--disabled {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--t8-warning, #facc15) 38%, transparent);
+}
+
+.t8-achievement-alert--disabled strong,
+.t8-achievement-alert--disabled span {
+  display: block;
+}
+
+.t8-achievement-alert--disabled strong {
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+
+.t8-achievement-alert--disabled span {
+  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
+  line-height: 1.45;
 }
 
 .t8-achievement-toast-stack {
@@ -2022,6 +4089,161 @@ html[data-theme-visual="op"] .t8-theme-music-toggle.is-playing {
   color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
 }
 
+.t8-hidden-ceremony {
+  --ceremony-accent: #38bdf8;
+  --ceremony-ink: #f8fafc;
+  position: fixed;
+  inset: 0;
+  z-index: 10035;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.t8-hidden-ceremony.is-rh-duck {
+  --ceremony-accent: #ff345f;
+  --ceremony-ink: #ffe8ee;
+}
+
+.t8-hidden-ceremony.is-yyh-portrait {
+  --ceremony-accent: #ff5fd2;
+  --ceremony-ink: #f0fff8;
+}
+
+.t8-hidden-ceremony.is-dragon-ball-shenron {
+  --ceremony-accent: #24f2c1;
+  --ceremony-ink: #eafffb;
+}
+
+.t8-hidden-ceremony__scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--ceremony-accent) 22%, transparent), transparent 34%),
+    rgba(0, 0, 0, .38);
+  animation: t8-ceremony-scrim 4.6s ease forwards;
+}
+
+.t8-hidden-ceremony__stage {
+  position: relative;
+  width: min(520px, calc(100vw - 42px));
+  min-height: 230px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 28px 42px;
+  border: 2px solid color-mix(in srgb, var(--ceremony-accent) 78%, white 6%);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, transparent 0 48%, color-mix(in srgb, var(--ceremony-accent) 20%, transparent) 49% 51%, transparent 52%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, rgba(7, 18, 23, .96), rgba(3, 8, 13, .98));
+  color: var(--ceremony-ink);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ceremony-accent) 26%, transparent),
+    0 0 44px color-mix(in srgb, var(--ceremony-accent) 36%, transparent),
+    0 24px 80px rgba(0, 0, 0, .45);
+  pointer-events: auto;
+  animation: t8-ceremony-stage 4.2s ease both;
+}
+
+.t8-hidden-ceremony.is-dragon-ball-shenron .t8-hidden-ceremony__stage {
+  border-radius: 999px 18px 999px 18px;
+  background:
+    radial-gradient(circle at 50% 54%, color-mix(in srgb, var(--ceremony-accent) 20%, transparent), transparent 38%),
+    repeating-conic-gradient(from 0deg, rgba(36,242,193,.10) 0 6deg, transparent 6deg 18deg),
+    linear-gradient(180deg, #061c22, #02090d);
+}
+
+.t8-hidden-ceremony__sigil {
+  width: 74px;
+  height: 74px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  color: var(--ceremony-accent);
+  background: color-mix(in srgb, var(--ceremony-accent) 10%, transparent);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--ceremony-accent) 48%, transparent);
+  animation: t8-ceremony-sigil 1.35s ease-in-out infinite alternate;
+}
+
+.t8-hidden-ceremony__scan {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 0;
+  height: 42px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ceremony-accent) 24%, transparent), transparent);
+  animation: t8-ceremony-scan 1.4s linear infinite;
+}
+
+.t8-hidden-ceremony__label {
+  margin-top: 16px;
+  color: var(--ceremony-accent);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.t8-hidden-ceremony h3 {
+  margin: 8px 0 0;
+  font-size: clamp(24px, 4vw, 42px);
+  line-height: 1.05;
+  text-align: center;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--ceremony-accent) 54%, transparent);
+}
+
+.t8-hidden-ceremony p {
+  max-width: 360px;
+  margin: 10px 0 0;
+  color: color-mix(in srgb, var(--ceremony-ink) 76%, transparent);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.t8-hidden-ceremony__stage > span {
+  margin-top: 12px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--ceremony-accent) 42%, transparent);
+  border-radius: 999px;
+  color: var(--ceremony-accent);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.t8-hidden-ceremony__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+@keyframes t8-ceremony-scrim {
+  0% { opacity: 0; }
+  10%, 82% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes t8-ceremony-stage {
+  0% { opacity: 0; transform: translateY(18px) scale(.94); }
+  12%, 82% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px) scale(.98); }
+}
+
+@keyframes t8-ceremony-sigil {
+  from { transform: scale(.96); }
+  to { transform: scale(1.06); }
+}
+
+@keyframes t8-ceremony-scan {
+  from { transform: translateY(-44px); }
+  to { transform: translateY(250px); }
+}
+
 html[data-theme-style="pixel"] .t8-achievement-drawer__panel,
 html[data-theme-style="pixel"] .t8-achievement-toast {
   border: 2px solid var(--px-ink, #1A1410);
@@ -2040,6 +4262,12 @@ html[data-theme-style="pixel"] .t8-achievement-tabs button,
 html[data-theme-style="pixel"] .t8-achievement-kpis > div,
 html[data-theme-style="pixel"] .t8-achievement-card,
 html[data-theme-style="pixel"] .t8-achievement-theme-card,
+html[data-theme-style="pixel"] .t8-achievement-theme-detail__kpis > div,
+html[data-theme-style="pixel"] .t8-achievement-theme-hero,
+html[data-theme-style="pixel"] .t8-achievement-theme-next,
+html[data-theme-style="pixel"] .t8-achievement-theme-task,
+html[data-theme-style="pixel"] .t8-achievement-theme-film,
+html[data-theme-style="pixel"] .t8-achievement-theme-showcase,
 html[data-theme-style="pixel"] .t8-achievement-medal,
 html[data-theme-style="pixel"] .t8-achievement-film {
   border: 2px solid var(--px-ink, #1A1410);
@@ -2053,9 +4281,22 @@ html[data-theme-style="pixel"] .t8-achievement-tabs button.is-active {
   color: var(--px-ink, #1A1410);
 }
 
+html[data-theme-style="pixel"] .t8-achievement-back,
+html[data-theme-style="pixel"] .t8-achievement-theme-task__icon,
+html[data-theme-style="pixel"] .t8-achievement-theme-task__top span,
+html[data-theme-style="pixel"] .t8-achievement-passport__themes button,
+html[data-theme-style="pixel"] .t8-achievement-review__grid > div {
+  border: 2px solid var(--px-ink, #1A1410);
+  background: var(--px-yellow, #FFE08A);
+  color: var(--px-ink, #1A1410);
+}
+
 @media (max-width: 680px) {
   .t8-achievement-theme-grid,
-  .t8-achievement-kpis {
+  .t8-achievement-kpis,
+  .t8-achievement-theme-detail__kpis,
+  .t8-achievement-passport__themes,
+  .t8-achievement-review__grid {
     grid-template-columns: 1fr;
   }
 
@@ -2076,5 +4317,1421 @@ html[data-theme-style="pixel"] .t8-achievement-tabs button.is-active {
   to {
     transform: translateX(0);
     opacity: 1;
+
+[data-codex-studio-copyable],
+[data-codex-studio-copyable] *,
+[data-codex-message-copyable],
+[data-codex-message-copyable] *,
+[data-grok-studio-copyable],
+[data-grok-studio-copyable] *,
+[data-grok-message-copyable],
+[data-grok-message-copyable] * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.artist-style-master-node,
+.artist-style-master-modal,
+.artist-style-master-lightbox-backdrop {
+  --asm-bg: #fff8e7;
+  --asm-panel: #fffdfa;
+  --asm-panel-strong: #f7df9d;
+  --asm-text: #172033;
+  --asm-muted: #52616f;
+  --asm-border: #1e293b;
+  --asm-border-soft: rgba(30, 41, 59, 0.2);
+  --asm-accent: #14b8a6;
+  --asm-accent-strong: #0f766e;
+  --asm-warm: #f59e0b;
+  --asm-danger: #dc2626;
+  --asm-shadow: rgba(15, 23, 42, 0.24);
+  color: var(--asm-text);
+}
+
+[data-theme-mode="dark"] .artist-style-master-node,
+[data-theme-mode="dark"] .artist-style-master-modal,
+[data-theme-mode="dark"] .artist-style-master-lightbox-backdrop,
+html[data-theme-mode="dark"] .artist-style-master-node,
+html[data-theme-mode="dark"] .artist-style-master-modal,
+html[data-theme-mode="dark"] .artist-style-master-lightbox-backdrop {
+  --asm-bg: #07111f;
+  --asm-panel: #0e1d2e;
+  --asm-panel-strong: #15314a;
+  --asm-text: #f8fafc;
+  --asm-muted: #b6c6d8;
+  --asm-border: #7dd3fc;
+  --asm-border-soft: rgba(125, 211, 252, 0.28);
+  --asm-accent: #22d3ee;
+  --asm-accent-strong: #38bdf8;
+  --asm-warm: #facc15;
+  --asm-danger: #fb7185;
+  --asm-shadow: rgba(0, 0, 0, 0.58);
+}
+
+[data-theme-mode="light"] .artist-style-master-node,
+[data-theme-mode="light"] .artist-style-master-modal,
+[data-theme-mode="light"] .artist-style-master-lightbox-backdrop,
+html[data-theme-mode="light"] .artist-style-master-node,
+html[data-theme-mode="light"] .artist-style-master-modal,
+html[data-theme-mode="light"] .artist-style-master-lightbox-backdrop {
+  --asm-bg: #fff8e7;
+  --asm-panel: #fffdfa;
+  --asm-panel-strong: #f7df9d;
+  --asm-text: #172033;
+  --asm-muted: #52616f;
+  --asm-border: #1e293b;
+  --asm-border-soft: rgba(30, 41, 59, 0.2);
+}
+
+.artist-style-master-node {
+  width: 480px;
+  min-height: 620px;
+  background: linear-gradient(180deg, var(--asm-bg), color-mix(in srgb, var(--asm-bg) 82%, var(--asm-accent) 18%));
+  border: 3px solid var(--asm-border);
+  border-radius: 12px;
+  box-shadow: 8px 8px 0 var(--asm-shadow);
+  color: var(--asm-text);
+  overflow: visible;
+}
+
+.artist-style-master-node *,
+.artist-style-master-modal *,
+.artist-style-master-lightbox-backdrop * {
+  box-sizing: border-box;
+}
+
+.artist-style-master-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: linear-gradient(90deg, var(--asm-accent), var(--asm-panel-strong), var(--asm-warm));
+  border-bottom: 2px solid var(--asm-border);
+  border-radius: 8px 8px 0 0;
+  color: var(--asm-text);
+}
+
+.artist-style-master-header h3,
+.artist-style-master-modal h2,
+.artist-style-master-modal h3 {
+  margin: 0;
+  color: var(--asm-text);
+  line-height: 1.2;
+}
+
+.artist-style-master-header p,
+.artist-style-master-modal p,
+.artist-style-master-card small,
+.artist-style-master-selected small,
+.artist-style-master-cue,
+.artist-style-master-footer span,
+.artist-style-master-status {
+  color: var(--asm-muted);
+}
+
+.artist-style-master-icon,
+.asm-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 2px solid var(--asm-border);
+  border-radius: 8px;
+  background: var(--asm-panel);
+  color: var(--asm-text);
+}
+
+.asm-icon-button {
+  cursor: pointer;
+}
+
+.artist-style-master-section,
+.artist-style-master-actions,
+.artist-style-master-footer {
+  margin: 12px;
+  padding: 12px;
+  border: 2px solid var(--asm-border-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--asm-panel) 90%, transparent);
+}
+
+.artist-style-master-selected {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.artist-style-master-selected img {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border: 2px solid var(--asm-border);
+  border-radius: 8px;
+  background: var(--asm-panel);
+}
+
+.artist-style-master-selected strong,
+.artist-style-master-selected span {
+  display: block;
+  color: var(--asm-text);
+}
+
+.artist-style-master-section label,
+.artist-style-master-manager label {
+  display: grid;
+  gap: 6px;
+  color: var(--asm-text);
+  font-weight: 700;
+}
+
+.artist-style-master-section label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.artist-style-master-node input,
+.artist-style-master-node select,
+.artist-style-master-node textarea,
+.artist-style-master-modal input,
+.artist-style-master-modal select,
+.artist-style-master-modal textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 2px solid var(--asm-border);
+  border-radius: 8px;
+  background: var(--asm-panel);
+  color: var(--asm-text);
+  padding: 8px 10px;
+  outline: none;
+}
+
+.artist-style-master-modal textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.artist-style-master-two-cols,
+.artist-style-master-mode,
+.artist-style-master-actions,
+.artist-style-master-footer,
+.artist-style-master-card-actions,
+.artist-style-master-inline-form,
+.artist-style-master-custom-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.artist-style-master-mode button,
+.artist-style-master-actions button,
+.artist-style-master-footer button,
+.artist-style-master-modal button,
+.artist-style-master-card-actions button {
+  min-height: 36px;
+  border: 2px solid var(--asm-border);
+  border-radius: 8px;
+  background: var(--asm-panel);
+  color: var(--asm-text);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.artist-style-master-mode button,
+.artist-style-master-footer button,
+.artist-style-master-actions button,
+.artist-style-master-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.artist-style-master-mode button.active,
+.artist-style-master-mini-grid button.active,
+.artist-style-master-footer button {
+  background: linear-gradient(180deg, var(--asm-accent), var(--asm-accent-strong));
+  color: #ffffff;
+}
+
+.artist-style-master-actions {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.artist-style-master-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 360px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.artist-style-master-mini-grid button {
+  border: 2px solid var(--asm-border-soft);
+  border-radius: 8px;
+  background: var(--asm-panel);
+  color: var(--asm-text);
+  padding: 6px;
+  min-width: 0;
+  min-height: 142px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: end;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.artist-style-master-mini-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 138px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.artist-style-master-mini-grid span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.15;
+  word-break: break-word;
+  color: inherit;
+  font-weight: 700;
+}
+
+.artist-style-master-modal-backdrop,
+.artist-style-master-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--asm-accent) 25%, transparent), transparent 26%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--asm-warm) 22%, transparent), transparent 24%),
+    rgba(3, 7, 18, 0.72);
+}
+
+.artist-style-master-modal {
+  width: min(1380px, calc(100vw - 56px));
+  height: min(860px, calc(100vh - 56px));
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  overflow: hidden;
+  border: 2px solid var(--asm-border);
+  border-radius: 14px;
+  background: var(--asm-bg);
+  box-shadow: 0 24px 80px var(--asm-shadow);
+}
+
+.artist-style-master-modal-header,
+.artist-style-master-modal-tools {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--asm-border-soft);
+  background: color-mix(in srgb, var(--asm-panel-strong) 55%, var(--asm-bg));
+}
+
+.artist-style-master-modal-header {
+  grid-template-columns: 1fr auto;
+}
+
+.artist-style-master-kicker {
+  color: var(--asm-accent-strong);
+  font-weight: 900;
+}
+
+.artist-style-master-modal-tools {
+  grid-template-columns: minmax(260px, 1fr) 210px 210px auto auto;
+}
+
+.artist-style-master-search {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.artist-style-master-modal-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 14px;
+  padding: 14px;
+}
+
+.artist-style-master-gallery,
+.artist-style-master-manager {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.artist-style-master-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  align-content: start;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.artist-style-master-card,
+.artist-style-master-manager {
+  border: 2px solid var(--asm-border-soft);
+  border-radius: 12px;
+  background: var(--asm-panel);
+  color: var(--asm-text);
+}
+
+.artist-style-master-card.is-selected {
+  border-color: var(--asm-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--asm-accent) 24%, transparent);
+}
+
+.artist-style-master-thumb-button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-bottom: 2px solid var(--asm-border-soft);
+  border-radius: 10px 10px 0 0;
+  background: var(--asm-panel);
+  padding: 0;
+  overflow: hidden;
+}
+
+.artist-style-master-thumb-button img {
+  width: 100%;
+  height: 190px;
+  object-fit: cover;
+  display: block;
+  transition: transform 160ms ease;
+}
+
+.artist-style-master-thumb-button:hover img {
+  transform: scale(1.04);
+}
+
+.artist-style-master-card-body,
+.artist-style-master-manager {
+  padding: 12px;
+}
+
+.artist-style-master-card-body strong,
+.artist-style-master-card-body span {
+  display: block;
+  color: var(--asm-text);
+}
+
+.artist-style-master-card-body p {
+  min-height: 44px;
+}
+
+.artist-style-master-card-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.artist-style-master-card-actions button:last-child:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.artist-style-master-manager {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.artist-style-master-manager h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+}
+
+.artist-style-master-wide-button {
+  width: 100%;
+}
+
+.artist-style-master-inline-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.artist-style-master-inline-form > * {
+  min-width: 0;
+}
+
+.artist-style-master-inline-form button {
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.artist-style-master-custom-upload {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px dashed var(--asm-border-soft);
+  border-radius: 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--asm-panel) 80%, transparent);
+}
+
+.artist-style-master-custom-upload img,
+.artist-style-master-custom-upload-placeholder {
+  width: 96px;
+  height: 96px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--asm-border-soft);
+}
+
+.artist-style-master-custom-upload-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--asm-muted);
+}
+
+.artist-style-master-custom-upload button {
+  width: 100%;
+}
+
+.artist-style-master-custom-upload small {
+  display: block;
+  margin-top: 6px;
+  color: var(--asm-muted);
+  line-height: 1.35;
+}
+
+.artist-style-master-custom-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.artist-style-master-custom-actions .artist-style-master-wide-button:only-child {
+  grid-column: 1 / -1;
+}
+
+.artist-style-master-inline-form .danger,
+.artist-style-master-modal button.danger {
+  color: var(--asm-danger);
+  border-color: var(--asm-danger);
+}
+
+.artist-style-master-status {
+  border: 1px dashed var(--asm-border-soft);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.artist-style-master-lightbox-backdrop {
+  z-index: 10030;
+}
+
+.artist-style-master-lightbox {
+  width: min(1080px, calc(100vw - 160px));
+  max-height: calc(100vh - 80px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  overflow: hidden;
+  border: 2px solid var(--asm-border);
+  border-radius: 14px;
+  background: var(--asm-bg);
+  color: var(--asm-text);
+  box-shadow: 0 24px 80px var(--asm-shadow);
+}
+
+.artist-style-master-lightbox img {
+  width: 100%;
+  height: min(78vh, 760px);
+  object-fit: contain;
+  background: #050814;
+}
+
+.artist-style-master-lightbox figcaption {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 18px;
+}
+
+.artist-style-master-lightbox figcaption strong,
+.artist-style-master-lightbox figcaption span,
+.artist-style-master-lightbox figcaption p {
+  color: var(--asm-text);
+}
+
+.artist-style-master-lightbox figcaption button {
+  min-height: 38px;
+  border: 2px solid var(--asm-border);
+  border-radius: 8px;
+  background: var(--asm-panel);
+  color: var(--asm-text);
+  font-weight: 900;
+}
+
+.lightbox-close,
+.lightbox-prev,
+.lightbox-next {
+  position: fixed;
+  z-index: 10031;
+}
+
+.lightbox-close {
+  top: 24px;
+  right: 24px;
+}
+
+.lightbox-prev {
+  left: 34px;
+}
+
+.lightbox-next {
+  right: 34px;
+}
+
+.anime-tag-master-node,
+.anime-tag-master-modal,
+.anime-tag-master-lightbox-backdrop {
+  --atm-bg: #f7fee7;
+  --atm-panel: #fbfff2;
+  --atm-panel-strong: #d9f99d;
+  --atm-text: #132012;
+  --atm-muted: #476241;
+  --atm-border: #1f2937;
+  --atm-border-soft: rgba(31, 41, 55, 0.2);
+  --atm-accent: #84cc16;
+  --atm-accent-strong: #4d7c0f;
+  --atm-blue: #38bdf8;
+  --atm-danger: #dc2626;
+  --atm-shadow: rgba(15, 23, 42, 0.24);
+  color: var(--atm-text);
+}
+
+[data-theme-mode="dark"] .anime-tag-master-node,
+[data-theme-mode="dark"] .anime-tag-master-modal,
+[data-theme-mode="dark"] .anime-tag-master-lightbox-backdrop,
+html[data-theme-mode="dark"] .anime-tag-master-node,
+html[data-theme-mode="dark"] .anime-tag-master-modal,
+html[data-theme-mode="dark"] .anime-tag-master-lightbox-backdrop {
+  --atm-bg: #07111f;
+  --atm-panel: #0d1f2d;
+  --atm-panel-strong: #18351f;
+  --atm-text: #f8fafc;
+  --atm-muted: #bdd3c0;
+  --atm-border: #86efac;
+  --atm-border-soft: rgba(134, 239, 172, 0.26);
+  --atm-accent: #22c55e;
+  --atm-accent-strong: #4ade80;
+  --atm-blue: #38bdf8;
+  --atm-danger: #fb7185;
+  --atm-shadow: rgba(0, 0, 0, 0.58);
+}
+
+[data-theme-mode="light"] .anime-tag-master-node,
+[data-theme-mode="light"] .anime-tag-master-modal,
+[data-theme-mode="light"] .anime-tag-master-lightbox-backdrop,
+html[data-theme-mode="light"] .anime-tag-master-node,
+html[data-theme-mode="light"] .anime-tag-master-modal,
+html[data-theme-mode="light"] .anime-tag-master-lightbox-backdrop {
+  --atm-bg: #f7fee7;
+  --atm-panel: #fbfff2;
+  --atm-panel-strong: #d9f99d;
+  --atm-text: #132012;
+  --atm-muted: #476241;
+  --atm-border: #1f2937;
+  --atm-border-soft: rgba(31, 41, 55, 0.2);
+}
+
+.anime-tag-master-node {
+  width: 500px;
+  min-height: 660px;
+  overflow: visible;
+  border: 3px solid var(--atm-border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--atm-bg), color-mix(in srgb, var(--atm-bg) 80%, var(--atm-blue) 20%));
+  box-shadow: 8px 8px 0 var(--atm-shadow);
+  color: var(--atm-text);
+}
+
+.anime-tag-master-node *,
+.anime-tag-master-modal *,
+.anime-tag-master-lightbox-backdrop * {
+  box-sizing: border-box;
+}
+
+.anime-tag-master-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 2px solid var(--atm-border);
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(90deg, var(--atm-blue), var(--atm-accent), #facc15);
+  color: var(--atm-text);
+}
+
+.anime-tag-master-header h3,
+.anime-tag-master-modal h2,
+.anime-tag-master-modal h3 {
+  margin: 0;
+  color: var(--atm-text);
+  line-height: 1.2;
+}
+
+.anime-tag-master-header p,
+.anime-tag-master-modal p,
+.anime-tag-master-card small,
+.anime-tag-master-selected small,
+.anime-tag-master-cue,
+.anime-tag-master-footer span,
+.anime-tag-master-status {
+  color: var(--atm-muted);
+}
+
+.anime-tag-master-icon,
+.atm-icon-button,
+.anime-tag-master-lightbox button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--atm-border);
+  border-radius: 8px;
+  background: var(--atm-panel);
+  color: var(--atm-text);
+}
+
+.anime-tag-master-icon,
+.atm-icon-button {
+  width: 38px;
+  height: 38px;
+}
+
+.atm-icon-button,
+.anime-tag-master-node button,
+.anime-tag-master-modal button,
+.anime-tag-master-lightbox button {
+  cursor: pointer;
+}
+
+.anime-tag-master-section,
+.anime-tag-master-actions,
+.anime-tag-master-footer {
+  margin: 12px;
+  padding: 12px;
+  border: 2px solid var(--atm-border-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--atm-panel) 90%, transparent);
+}
+
+.anime-tag-master-selected {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.anime-tag-master-preview-wrap {
+  position: relative;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.anime-tag-master-selected .anime-tag-master-preview-wrap {
+  width: 84px;
+  height: 84px;
+}
+
+.anime-tag-master-selected img,
+.anime-tag-master-selected-placeholder,
+.anime-tag-master-selected .anime-tag-master-no-image {
+  width: 84px;
+  height: 84px;
+  border: 2px solid var(--atm-border);
+  border-radius: 8px;
+  background: var(--atm-panel);
+}
+
+.anime-tag-master-selected img {
+  object-fit: cover;
+}
+
+.anime-tag-master-selected-placeholder,
+.anime-tag-master-no-image,
+.anime-tag-master-tag-badge {
+  display: grid;
+  place-items: center;
+  color: var(--atm-muted);
+}
+
+.anime-tag-master-selected strong,
+.anime-tag-master-selected span {
+  display: block;
+  color: var(--atm-text);
+}
+
+.anime-tag-master-section label,
+.anime-tag-master-manager label {
+  display: grid;
+  gap: 6px;
+  color: var(--atm-text);
+  font-weight: 800;
+}
+
+.anime-tag-master-section label > span,
+.anime-tag-master-manager h3,
+.anime-tag-master-card-actions button,
+.anime-tag-master-mode button,
+.anime-tag-master-actions button,
+.anime-tag-master-footer button,
+.anime-tag-master-online-search,
+.anime-tag-master-pagination button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.anime-tag-master-node input,
+.anime-tag-master-node select,
+.anime-tag-master-node textarea,
+.anime-tag-master-modal input,
+.anime-tag-master-modal select,
+.anime-tag-master-modal textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 2px solid var(--atm-border);
+  border-radius: 8px;
+  background: var(--atm-panel);
+  color: var(--atm-text);
+  padding: 8px 10px;
+  outline: none;
+}
+
+.anime-tag-master-modal textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.anime-tag-master-two-cols,
+.anime-tag-master-filter-row,
+.anime-tag-master-mode,
+.anime-tag-master-actions,
+.anime-tag-master-footer,
+.anime-tag-master-card-actions,
+.anime-tag-master-inline-form,
+.anime-tag-master-custom-actions,
+.anime-tag-master-online {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.anime-tag-master-online {
+  grid-template-columns: 112px 128px minmax(0, 1fr) auto;
+  margin-top: 8px;
+}
+
+.anime-tag-master-compact-search {
+  display: grid;
+  gap: 8px;
+}
+
+.anime-tag-master-compact-query {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.anime-tag-master-compact-query svg {
+  color: var(--atm-muted);
+}
+
+.anime-tag-master-filter-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.anime-tag-master-online.is-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.anime-tag-master-online.is-compact input {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.anime-tag-master-online.is-compact .anime-tag-master-online-search {
+  grid-column: 2;
+  min-height: 46px;
+  width: 100%;
+  padding: 0 12px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.anime-tag-master-letter-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.anime-tag-master-letter-row button {
+  min-width: 32px;
+  min-height: 28px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+.anime-tag-master-letter-row button.active {
+  background: linear-gradient(180deg, var(--atm-accent), var(--atm-accent-strong));
+  color: #fff;
+}
+
+.anime-tag-master-pagination {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0 12px;
+}
+
+.anime-tag-master-pagination.is-modal,
+.anime-tag-master-pagination.is-compact {
+  margin: 0;
+  padding: 8px;
+  border: 2px solid var(--atm-border-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--atm-panel-strong) 35%, var(--atm-panel));
+}
+
+.anime-tag-master-pagination.is-compact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin-top: 8px;
+}
+
+.anime-tag-master-pagination.is-compact .anime-tag-master-pagination-back {
+  grid-column: 1 / -1;
+}
+
+.anime-tag-master-pagination span {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--atm-muted);
+  overflow-wrap: anywhere;
+}
+
+.anime-tag-master-mode button,
+.anime-tag-master-actions button,
+.anime-tag-master-footer button,
+.anime-tag-master-modal button,
+.anime-tag-master-card-actions button,
+.anime-tag-master-online-search,
+.anime-tag-master-pagination button {
+  min-height: 36px;
+  border: 2px solid var(--atm-border);
+  border-radius: 8px;
+  background: var(--atm-panel);
+  color: var(--atm-text);
+  font-weight: 900;
+  justify-content: center;
+  text-align: center;
+}
+
+.anime-tag-master-mode button.active,
+.anime-tag-master-grid button.active,
+.anime-tag-master-footer button {
+  background: linear-gradient(180deg, var(--atm-accent), var(--atm-accent-strong));
+  color: #fff;
+}
+
+.anime-tag-master-actions {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.anime-tag-master-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 432px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+  align-content: start;
+}
+
+.anime-tag-master-grid button {
+  min-width: 0;
+  min-height: 124px;
+  display: grid;
+  grid-template-rows: 92px auto;
+  gap: 6px;
+  align-items: end;
+  overflow: hidden;
+  border: 2px solid var(--atm-border-soft);
+  border-radius: 8px;
+  background: var(--atm-panel);
+  color: var(--atm-text);
+  padding: 6px;
+  cursor: pointer;
+}
+
+.anime-tag-master-grid .anime-tag-master-preview-wrap {
+  width: 100%;
+  height: 92px;
+  display: block;
+}
+
+.anime-tag-master-grid img {
+  width: 100%;
+  height: 92px;
+  max-height: 92px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.anime-tag-master-grid-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.15;
+  word-break: break-word;
+  color: inherit;
+  font-weight: 800;
+}
+
+.anime-tag-master-modal-backdrop,
+.anime-tag-master-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--atm-accent) 25%, transparent), transparent 26%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--atm-blue) 22%, transparent), transparent 24%),
+    rgba(3, 7, 18, 0.72);
+}
+
+.anime-tag-master-modal {
+  width: min(1380px, calc(100vw - 56px));
+  height: min(860px, calc(100vh - 56px));
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  overflow: hidden;
+  border: 2px solid var(--atm-border);
+  border-radius: 14px;
+  background: var(--atm-bg);
+  box-shadow: 0 24px 80px var(--atm-shadow);
+}
+
+.anime-tag-master-modal-header,
+.anime-tag-master-modal-tools {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--atm-border-soft);
+  background: color-mix(in srgb, var(--atm-panel-strong) 55%, var(--atm-bg));
+}
+
+.anime-tag-master-modal-header {
+  grid-template-columns: 1fr auto;
+}
+
+.anime-tag-master-kicker {
+  color: var(--atm-accent-strong);
+  font-weight: 900;
+}
+
+.anime-tag-master-modal-tools {
+  grid-template-columns: minmax(260px, 1fr) 210px 210px auto auto;
+}
+
+.anime-tag-master-search {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.anime-tag-master-modal-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 14px;
+  padding: 14px;
+}
+
+.anime-tag-master-gallery-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.anime-tag-master-gallery,
+.anime-tag-master-manager {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.anime-tag-master-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  align-content: start;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.anime-tag-master-card,
+.anime-tag-master-manager {
+  min-width: 0;
+  border: 2px solid var(--atm-border-soft);
+  border-radius: 12px;
+  background: var(--atm-panel);
+  color: var(--atm-text);
+}
+
+.anime-tag-master-card.is-selected {
+  border-color: var(--atm-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--atm-accent) 24%, transparent);
+}
+
+.anime-tag-master-thumb-button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-bottom: 2px solid var(--atm-border-soft);
+  border-radius: 10px 10px 0 0;
+  background: var(--atm-panel);
+  padding: 0;
+  overflow: hidden;
+}
+
+.anime-tag-master-thumb-button .anime-tag-master-preview-wrap {
+  width: 100%;
+  height: 180px;
+  border-radius: 10px 10px 0 0;
+}
+
+.anime-tag-master-thumb-button img,
+.anime-tag-master-no-image {
+  display: block;
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+}
+
+.anime-tag-master-no-image {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--atm-panel-strong) 44%, var(--atm-panel));
+  font-weight: 900;
+}
+
+.anime-tag-master-no-image.is-online-preview-loading,
+.anime-tag-master-no-image.is-online-preview-missing {
+  padding: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--atm-panel-strong) 82%, transparent), color-mix(in srgb, var(--atm-panel) 70%, transparent)),
+    repeating-linear-gradient(45deg, transparent 0 12px, color-mix(in srgb, var(--atm-border-soft) 32%, transparent) 12px 14px);
+  color: var(--atm-muted);
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.anime-tag-master-no-image.is-online-preview-missing {
+  color: color-mix(in srgb, var(--atm-muted) 82%, var(--atm-text));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--atm-panel-strong) 72%, transparent), color-mix(in srgb, var(--atm-panel) 86%, transparent)),
+    repeating-linear-gradient(45deg, transparent 0 12px, color-mix(in srgb, var(--atm-border-soft) 22%, transparent) 12px 14px);
+}
+
+.anime-tag-master-grid .anime-tag-master-no-image {
+  width: 100%;
+  height: 92px;
+  min-height: 92px;
+  aspect-ratio: auto;
+}
+
+.anime-tag-master-preview-eye {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 2px solid color-mix(in srgb, var(--atm-text) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--atm-panel-strong) 84%, transparent);
+  color: var(--atm-text);
+  opacity: 0;
+  overflow: visible;
+  line-height: 1;
+  box-shadow: 0 10px 28px var(--atm-shadow);
+  cursor: zoom-in;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.anime-tag-master-preview-eye svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  stroke-width: 2;
+}
+
+.anime-tag-master-preview-wrap:hover .anime-tag-master-preview-eye,
+.anime-tag-master-preview-eye:hover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.anime-tag-master-hover-preview-popover {
+  position: fixed;
+  z-index: 10070;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+  overflow: hidden;
+  border: 2px solid var(--atm-border);
+  border-radius: 10px;
+  background: var(--atm-panel);
+  box-shadow: 0 22px 70px var(--atm-shadow);
+}
+
+.anime-tag-master-hover-preview-popover img,
+.anime-tag-master-hover-preview-popover .anime-tag-master-no-image {
+  display: block;
+  width: 100%;
+  max-height: min(72vh, 520px);
+  object-fit: contain;
+  background: #020617;
+}
+
+.anime-tag-master-hover-preview-popover span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--atm-panel-strong) 82%, transparent);
+  color: var(--atm-text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.anime-tag-master-card-body,
+.anime-tag-master-manager {
+  padding: 12px;
+}
+
+.anime-tag-master-card-body {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.anime-tag-master-card-body strong,
+.anime-tag-master-card-body span,
+.anime-tag-master-card-body small,
+.anime-tag-master-card-body p {
+  min-width: 0;
+  display: block;
+  color: var(--atm-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.anime-tag-master-card-body strong,
+.anime-tag-master-card-body span,
+.anime-tag-master-card-body small {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+
+.anime-tag-master-card-body p {
+  overflow: hidden;
+  min-height: 44px;
+  max-height: 86px;
+  margin: 0;
+}
+
+.anime-tag-master-card-body strong,
+.anime-tag-master-card-body span {
+  -webkit-line-clamp: 2;
+}
+
+.anime-tag-master-card-body small {
+  -webkit-line-clamp: 3;
+}
+
+.anime-tag-master-card-actions {
+  grid-template-columns: 1fr 1fr;
+  min-width: 0;
+}
+
+.anime-tag-master-card-actions button:last-child:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.anime-tag-master-manager {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.anime-tag-master-wide-button {
+  width: 100%;
+}
+
+.anime-tag-master-inline-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.anime-tag-master-inline-form > * {
+  min-width: 0;
+}
+
+.anime-tag-master-custom-upload {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px dashed var(--atm-border-soft);
+  border-radius: 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--atm-panel) 80%, transparent);
+}
+
+.anime-tag-master-custom-upload img,
+.anime-tag-master-custom-upload-placeholder {
+  width: 96px;
+  height: 96px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--atm-border-soft);
+}
+
+.anime-tag-master-custom-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.anime-tag-master-inline-form .danger,
+.anime-tag-master-modal button.danger {
+  color: var(--atm-danger);
+  border-color: var(--atm-danger);
+}
+
+.anime-tag-master-status {
+  border: 1px dashed var(--atm-border-soft);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.anime-tag-master-lightbox-backdrop {
+  z-index: 10030;
+}
+
+.anime-tag-master-lightbox {
+  width: min(1080px, calc(100vw - 160px));
+  max-height: calc(100vh - 80px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  overflow: hidden;
+  border: 2px solid var(--atm-border);
+  border-radius: 14px;
+  background: var(--atm-bg);
+  color: var(--atm-text);
+  box-shadow: 0 24px 80px var(--atm-shadow);
+}
+
+.anime-tag-master-lightbox img {
+  width: 100%;
+  height: min(78vh, 760px);
+  object-fit: contain;
+  background: #050814;
+}
+
+.anime-tag-master-lightbox figcaption {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 18px;
+}
+
+.anime-tag-master-lightbox figcaption strong,
+.anime-tag-master-lightbox figcaption span,
+.anime-tag-master-lightbox figcaption p {
+  color: var(--atm-text);
+}
+
+@media (max-width: 900px) {
+  .anime-tag-master-modal-tools,
+  .anime-tag-master-modal-layout,
+  .anime-tag-master-lightbox {
+    grid-template-columns: 1fr;
+  }
+
+  .anime-tag-master-lightbox {
+    width: calc(100vw - 32px);
+  }
+
+  .anime-tag-master-lightbox img {
+    height: 52vh;
+  }
+}
+
+@media (max-width: 900px) {
+  .artist-style-master-modal-tools,
+  .artist-style-master-modal-layout,
+  .artist-style-master-lightbox {
+    grid-template-columns: 1fr;
+  }
+
+  .artist-style-master-lightbox {
+    width: calc(100vw - 32px);
+  }
+
+  .artist-style-master-lightbox img {
+    height: 52vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t8-achievement-theme-card:hover,
+  .t8-hidden-ceremony__scrim,
+  .t8-hidden-ceremony__stage,
+  .t8-hidden-ceremony__sigil,
+  .t8-hidden-ceremony__scan {
+    animation: none !important;
+    transform: none !important;
   }
 }
