@@ -3218,6 +3218,8 @@ router.post('/runninghub/submit', async (req, res) => {
   try {
     const body = { apiKey, webappId, nodeInfoList: nodeInfoList || [] };
     if (instanceType) body.instanceType = instanceType;
+    // 调试：打印提交给 RunningHub 的完整参数
+    console.log(`[RH/submit][DEBUG] webappId=${webappId} nodeInfoList=`, JSON.stringify(body.nodeInfoList, null, 2));
     const r = await fetch(`${config.RH_BASE_URL}/task/openapi/ai-app/run`, {
       method: 'POST',
       headers: { Host: 'www.runninghub.cn', 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },

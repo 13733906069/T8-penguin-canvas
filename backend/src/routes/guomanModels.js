@@ -33,6 +33,8 @@ function slimItem(item) {
     versions: (item.versions || []).map((v) => ({
       id: v.id,
       version: v.version,
+      versionResourceName: v.versionResourceName,
+      resourceStorageName: v.resourceStorageName,
       baseModel: v.baseModel,
       triggerWords: v.triggerWords,
       desc: v.desc,
@@ -89,7 +91,14 @@ router.get('/', async (req, res) => {
       });
     }
 
-    const records = (data.data?.records || []).map(slimItem);
+    // 调试：打印原始数据的第一个 item 的完整字段
+    const rawRecords = data.data?.records || [];
+    if (rawRecords.length > 0) {
+      const sample = rawRecords[0];
+      console.log('[guoman-models][DEBUG] 原始 item 字段:', Object.keys(sample).join(', '));
+      console.log('[guoman-models][DEBUG] versions[0] 完整字段:', sample.versions?.[0] ? JSON.stringify(sample.versions[0], null, 2) : '无 versions');
+    }
+    const records = rawRecords.map(slimItem);
     const total = parseInt(data.data?.total) || 0;
     const totalPages = parseInt(data.data?.pages) || Math.ceil(total / size);
 

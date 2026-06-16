@@ -207,15 +207,19 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
             try { const r = await uploadRhAsset(fieldValue); fieldValue = r.fileName; } catch {}
           }
         } else if (vt === 'number') {
+          // 数字类型：传真正的数字，与 RH 超市 coerceFieldValue 一致
           const num = Number(fieldValue);
-          fieldValue = Number.isFinite(num) ? String(num) : fieldValue;
+          fieldValue = Number.isFinite(num) ? num : fieldValue;
         }
+        // 布尔类型：传真正的布尔值，与 RH 超市 coerceFieldValue 一致
         if (String(it?.fieldType || '').toUpperCase() === 'BOOLEAN') {
-          fieldValue = 'false';
+          fieldValue = fieldValue === 'true' || fieldValue === '1' || fieldValue === true;
         }
         nodeInfoList.push({ nodeId: it.nodeId, fieldName: it.fieldName, fieldValue });
       }
       logBus.info(`提交任务 · ${nodeInfoList.length} 个字段`, src);
+      // 调试：打印提交参数，方便对比 RH 超市
+      console.log('[国漫节点] 提交参数:', JSON.stringify(nodeInfoList, null, 2));
       const r = await submitRh({ webappId: WEBAPP_ID, nodeInfoList, instanceType: instanceType || undefined });
       logBus.success(`任务已提交 taskId=${r.taskId}`, src);
       update({ status: 'polling', taskId: r.taskId });

@@ -927,6 +927,8 @@ export interface GuomanModel {
   versions?: {
     id: string;
     version: string;
+    versionResourceName?: string;
+    resourceStorageName?: string;
     baseModel?: string;
     triggerWords?: string | null;
     desc?: string | null;

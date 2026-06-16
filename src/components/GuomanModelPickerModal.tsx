@@ -252,11 +252,14 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
             {/* 卡片网格 */}
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${COLS}, 1fr)`, gap: 14 }}>
               {displayModels.map((model) => {
-                const isSelected = currentModel === model.resourceName;
+                // 取第一个版本的 versionResourceName，去掉路径前缀只保留文件名
+                const rawName = model.versions?.[0]?.versionResourceName || model.versions?.[0]?.resourceStorageName || '';
+                const modelFileName = rawName ? rawName.replace(/^.*[\\/]/, '') : model.resourceName;
+                const isSelected = currentModel === modelFileName;
                 const isFav = isFavorite(model.id);
                 return (
                   <div key={model.id}
-                    onClick={() => { onSelect(model.resourceName); onClose(); }}
+                    onClick={() => { onSelect(modelFileName); onClose(); }}
                     style={{
                       borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
                       border: `2px solid ${isSelected ? accent : bd}`,
@@ -315,8 +318,13 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
                       padding: '10px 10px', fontSize: 12, fontWeight: 600, color: text,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       borderTop: `1px solid ${bd}`,
-                    }} title={model.resourceName}>
+                    }} title={`${model.resourceName}\n${modelFileName}`}>
                       {model.resourceName}
+                      {modelFileName !== model.resourceName && (
+                        <div style={{ fontSize: 9, color: muted, marginTop: 2, fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {modelFileName}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
