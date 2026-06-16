@@ -156,6 +156,11 @@ const AUDIO_RE = /\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i;
 const TEXT_RE = /\.(txt|md|json|csv)(\?|$)/i;
 
 export const RH_TOOLBOX_ALL_CATEGORY_ID = 'all';
+export const RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS = 5000;
+export const RH_TOOLBOX_DEFAULT_POLL_TIMEOUT_MS = 60 * 60 * 1000;
+export const RH_TOOLBOX_DEFAULT_MAX_POLLS = Math.ceil(
+  RH_TOOLBOX_DEFAULT_POLL_TIMEOUT_MS / RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS,
+);
 
 export const RH_TOOLBOX_MAJOR_CATEGORIES: RhToolboxMajorCategory[] = [
   { id: 'image', name: '图像', description: '图像生成、编辑、修复和放大工具', order: 10 },
@@ -669,6 +674,13 @@ export function normalizeRhToolboxManifest(manifest: Partial<RhToolboxManifest> 
           .filter(Boolean) as RhToolboxUserParam[]
       : [];
     const webappId = cleanText(raw?.webappId);
+    const pollIntervalMs = Number.isFinite(raw?.runtime?.pollIntervalMs)
+      ? Math.max(1000, Number(raw.runtime.pollIntervalMs))
+      : RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS;
+    const minMaxPolls = Math.ceil(RH_TOOLBOX_DEFAULT_POLL_TIMEOUT_MS / Math.max(1, pollIntervalMs));
+    const maxPolls = Number.isFinite(raw?.runtime?.maxPolls)
+      ? Math.max(minMaxPolls, Math.floor(Number(raw.runtime.maxPolls)))
+      : minMaxPolls;
     tools.push({
       id,
       title: cleanText(raw?.title, id),
@@ -689,12 +701,8 @@ export function normalizeRhToolboxManifest(manifest: Partial<RhToolboxManifest> 
       userParams,
       runtime: {
         instanceType: cleanText(raw?.runtime?.instanceType),
-        pollIntervalMs: Number.isFinite(raw?.runtime?.pollIntervalMs)
-          ? Math.max(1000, Number(raw.runtime.pollIntervalMs))
-          : undefined,
-        maxPolls: Number.isFinite(raw?.runtime?.maxPolls)
-          ? Math.max(1, Math.floor(Number(raw.runtime.maxPolls)))
-          : undefined,
+        pollIntervalMs,
+        maxPolls,
         fetchAppInfo: raw?.runtime?.fetchAppInfo !== false,
       },
       ui: raw?.ui && typeof raw.ui === 'object'

@@ -233,5 +233,10 @@ test('artist style master frontend keeps gallery and theme readability hooks', (
   assert.match(styles, /artist-style-master-custom-upload/);
   assert.match(styles, /\[data-theme-mode="dark"\][\s\S]*artist-style-master-node/);
   assert.match(styles, /\[data-theme-mode="light"\][\s\S]*artist-style-master-node/);
+  assert.match(styles, /html\[data-theme-visual\] \.artist-style-master-node/);
+  assert.match(styles, /--asm-bg:\s*var\(--t8-bg-node/);
+  assert.match(styles, /--asm-panel:\s*var\(--t8-bg-panel/);
+  assert.match(styles, /--asm-accent:\s*var\(--t8-accent/);
+  assert.match(styles, /--asm-border:\s*var\(--t8-border-strong/);
   assert.match(styles, /color:\s*var\(--asm-text\)/);
 });

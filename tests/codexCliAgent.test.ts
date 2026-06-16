@@ -845,6 +845,27 @@ test('Codex creator studio keeps session memory with automatic compression', () 
   assert.doesNotMatch(node, /studioMemoryPrompt[\s\S]{0,160}simple/);
 });
 
+test('Codex creator keeps streaming and history data canvas-performant', () => {
+  const node = read('../src/components/nodes/CodexCliAgentNode.tsx');
+
+  assert.match(node, /CODEX_MESSAGE_STORAGE_CHAR_LIMIT/);
+  assert.match(node, /CODEX_ARTIFACT_TEXT_STORAGE_CHAR_LIMIT/);
+  assert.match(node, /CODEX_STUDIO_SESSION_STORAGE_LIMIT/);
+  assert.match(node, /function trimCodexStorageText/);
+  assert.match(node, /function compactCodexStudioSessionForCanvas/);
+  assert.match(node, /content:\s*trimCodexStorageText\(content,/);
+  assert.match(node, /text:\s*trimCodexStorageText\(text,\s*CODEX_ARTIFACT_TEXT_STORAGE_CHAR_LIMIT\)/);
+  assert.match(node, /compactCodexStudioSessionForCanvas\(current\)/);
+  assert.match(node, /slice\(0,\s*CODEX_STUDIO_SESSION_STORAGE_LIMIT\)/);
+
+  const deltaHandler = /onDelta:\s*\(delta\)\s*=>\s*\{([\s\S]*?)\n\s*\},\n\s*onEvent:/.exec(node)?.[1] || '';
+  assert.match(deltaHandler, /streamedText \+= delta/);
+  assert.match(deltaHandler, /setStreamingReply\(streamedText\)/);
+  assert.doesNotMatch(deltaHandler, /setMessages\(/);
+  assert.doesNotMatch(deltaHandler, /replaceAssistant\(streamedText/);
+  assert.match(node, /msg\.status === 'running' && msg\.role === 'assistant' \? streamingReply/);
+});
+
 test('Codex CLI Agent ports stay grouped around the node middle', () => {
   const node = read('../src/components/nodes/CodexCliAgentNode.tsx');
 

@@ -1,4 +1,4 @@
-import { fetchRhAppInfo, queryRh, submitRh, uploadRhAsset } from './generation';
+import { cancelRh, fetchRhAppInfo, queryRh, submitRh, uploadRhAsset } from './generation';
 import { RH_TOOLBOX_MANIFEST } from '../data/rhToolboxManifest';
 import {
   buildRhToolboxNodeInfoList,
@@ -6,6 +6,8 @@ import {
   findRhToolboxToolById,
   normalizeRhToolboxManifest,
   pickRhToolboxInputs,
+  RH_TOOLBOX_DEFAULT_MAX_POLLS,
+  RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS,
   type RhToolboxInputPools,
   type RhToolboxManifest,
   type RhToolboxNodeInfoItem,
@@ -19,6 +21,7 @@ export type RhToolboxProgressStage =
   | 'upload'
   | 'submit'
   | 'poll'
+  | 'cancel'
   | 'success'
   | 'error';
 
@@ -122,6 +125,26 @@ function normalizeFailedReason(reason: any, fallback = 'RH 工具箱任务失败
   }
 }
 
+async function cancelSubmittedRhTask(
+  taskId: string,
+  progress?: (progress: RunRhToolboxProgress) => void,
+): Promise<void> {
+  if (!taskId) return;
+  progress?.({ stage: 'cancel', message: '取消 RH 后台任务', taskId });
+  try {
+    await cancelRh(taskId);
+    progress?.({ stage: 'cancel', message: '已请求取消 RH 后台任务', taskId });
+  } catch (error: any) {
+    const message = `取消 RH 后台任务失败：${error?.message || error}`;
+    progress?.({
+      stage: 'error',
+      message,
+      taskId,
+    });
+    throw new Error(message);
+  }
+}
+
 export function getRhToolboxManifest(): RhToolboxManifest {
   return normalizeRhToolboxManifest(RH_TOOLBOX_MANIFEST);
 }
@@ -162,48 +185,71 @@ export async function runRhToolboxTool(options: RunRhToolboxToolOptions): Promis
     userParamValues: options.userParams,
   });
 
-  progress?.({ stage: 'submit', message: '提交 RH 任务' });
-  const submitResult = await submitRh({
-    webappId: tool.webappId,
-    nodeInfoList,
-    instanceType: options.instanceType || tool.runtime?.instanceType || undefined,
-  });
-  const taskId = submitResult.taskId;
-  if (!taskId) throw new Error('RH 未返回 taskId');
-
-  const pollIntervalMs = Math.max(1000, tool.runtime?.pollIntervalMs || 5000);
-  const maxPolls = Math.max(1, tool.runtime?.maxPolls || 480);
-  let lastRaw: any;
-  let lastError = '';
-
-  for (let pollCount = 1; pollCount <= maxPolls; pollCount += 1) {
-    assertNotAborted(options.signal);
-    progress?.({ stage: 'poll', message: `轮询中 ${pollCount}/${maxPolls}`, taskId, pollCount });
-    await delay(pollIntervalMs, options.signal);
-    try {
-      const query = await queryRh(taskId);
-      lastRaw = query;
-      if (query.status === 'SUCCESS') {
-        const classified = classifyRhToolboxOutputs(query.urls || []);
-        progress?.({ stage: 'success', message: `完成 · ${classified.urls.length} 个输出`, taskId, pollCount });
-        return {
-          ...classified,
-          tool,
-          taskId,
-          nodeInfoList,
-          appInfo,
-          raw: query,
-        };
-      }
-      if (query.status === 'FAILED') {
-        throw new Error(normalizeFailedReason(query.failReason));
-      }
-    } catch (error: any) {
-      lastError = error?.message || String(error);
-      if (lastRaw?.status === 'FAILED') break;
+  let taskId = '';
+  let remoteTaskCompleted = false;
+  let remoteCancelRequested = false;
+  const cancelTaskIfNeeded = async () => {
+    if (!taskId || remoteTaskCompleted || remoteCancelRequested) return;
+    remoteCancelRequested = true;
+    await cancelSubmittedRhTask(taskId, progress);
+  };
+  try {
+    progress?.({ stage: 'submit', message: '提交 RH 任务' });
+    const submitResult = await submitRh({
+      webappId: tool.webappId,
+      nodeInfoList,
+      instanceType: options.instanceType || tool.runtime?.instanceType || undefined,
+    });
+    taskId = submitResult.taskId;
+    if (!taskId) throw new Error('RH 未返回 taskId');
+    progress?.({ stage: 'submit', message: '已提交 RH 任务', taskId });
+    if (options.signal?.aborted) {
+      await cancelTaskIfNeeded();
+      throw new Error('已取消');
     }
-  }
 
-  progress?.({ stage: 'error', message: lastError || 'RH 工具箱轮询超时', taskId });
-  throw new Error(lastError || 'RH 工具箱轮询超时');
+    const pollIntervalMs = Math.max(1000, tool.runtime?.pollIntervalMs || RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS);
+    const maxPolls = Math.max(1, tool.runtime?.maxPolls || RH_TOOLBOX_DEFAULT_MAX_POLLS);
+    let lastRaw: any;
+    let lastError = '';
+
+    for (let pollCount = 1; pollCount <= maxPolls; pollCount += 1) {
+      assertNotAborted(options.signal);
+      progress?.({ stage: 'poll', message: `轮询中 ${pollCount}/${maxPolls}`, taskId, pollCount });
+      await delay(pollIntervalMs, options.signal);
+      try {
+        const query = await queryRh(taskId);
+        lastRaw = query;
+        if (query.status === 'SUCCESS') {
+          remoteTaskCompleted = true;
+          const classified = classifyRhToolboxOutputs(query.urls || []);
+          progress?.({ stage: 'success', message: `完成 · ${classified.urls.length} 个输出`, taskId, pollCount });
+          return {
+            ...classified,
+            tool,
+            taskId,
+            nodeInfoList,
+            appInfo,
+            raw: query,
+          };
+        }
+        if (query.status === 'FAILED') {
+          remoteTaskCompleted = true;
+          throw new Error(normalizeFailedReason(query.failReason));
+        }
+      } catch (error: any) {
+        lastError = error?.message || String(error);
+        if (lastRaw?.status === 'FAILED') break;
+      }
+    }
+
+    progress?.({ stage: 'error', message: lastError || 'RH 工具箱轮询超时', taskId });
+    if (!remoteTaskCompleted) await cancelTaskIfNeeded();
+    throw new Error(lastError || 'RH 工具箱轮询超时');
+  } catch (error) {
+    if (options.signal?.aborted && taskId && !remoteTaskCompleted) {
+      await cancelTaskIfNeeded();
+    }
+    throw error;
+  }
 }

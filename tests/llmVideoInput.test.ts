@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { generateLlmStream } from '../src/services/generation.ts';
 
 const require = createRequire(import.meta.url);
 const { normalizeLlmMessageMedia, resolveBundledFfmpeg } = require('../backend/src/providers/llmMedia.js');
@@ -29,6 +30,75 @@ test('LLM node accepts video ports and builds video_url payloads', () => {
   assert.match(node, /videoFrameCount/);
   assert.match(node, /userVideos\.length === 0/);
   assert.match(node, /llmVideoMode/);
+});
+
+test('LLM node uses a higher default output token budget for long replies', () => {
+  const canvas = read('src/components/Canvas.tsx');
+  const node = read('src/components/nodes/LLMNode.tsx');
+  const proxy = read('backend/src/routes/proxy.js');
+
+  assert.match(canvas, /maxTokens:\s*16384/);
+  assert.match(node, /d\?\.maxTokens === 'number' \? d\.maxTokens : 16384/);
+  assert.match(node, /Number\(e\.target\.value\) \|\| 16384/);
+  assert.match(proxy, /max_tokens:\s*max_tokens \?\? 16384/);
+});
+
+test('streaming LLM responses expose token-length truncation instead of silently ending', async () => {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"前半段"}}]}\n\n'));
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"后半段"},"finish_reason":"length"}]}\n\n'));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+    ) as any;
+
+    const chunks: string[] = [];
+    const result = await generateLlmStream(
+      { model: 'gemini-3.5-flash', messages: [{ role: 'user', content: '写长文' }], max_tokens: 4 },
+      { onDelta: (chunk) => chunks.push(chunk) },
+    );
+
+    assert.equal(result.content, '前半段后半段');
+    assert.deepEqual(chunks, ['前半段', '后半段']);
+    assert.equal(result.finishReason, 'length');
+    assert.equal(result.truncated, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('streaming LLM parser keeps final SSE data even without a trailing newline', async () => {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"前半段"}}]}\n\n'));
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"最后一段"},"finish_reason":"stop"}]}'));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+    ) as any;
+
+    const result = await generateLlmStream({
+      model: 'gemini-3.5-flash',
+      messages: [{ role: 'user', content: '写长文' }],
+    });
+
+    assert.equal(result.content, '前半段最后一段');
+    assert.equal(result.finishReason, 'stop');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('LLM media normalizer converts local video references to absolute URLs in url mode', async () => {

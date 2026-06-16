@@ -9,7 +9,7 @@ import { taskCompletionSound } from './taskCompletionSound';
  * - triggerRun(id)：单点调度 (外部应保证一次一个，等 lastDone)
  * - triggerRunMany(ids)：并发调度 (循环器专用) - 同时点亮多个节点让其同时进入 runFn
  * - markDone(id, ok)：节点完成时回调 (同时从 runningIds 移除，currentRunId 若是本节点则清空)
- * - cancelAll()：取消全部 (清空 runningIds + currentRunId)
+ * - cancelAll()：取消全部 (广播本轮 cancelTargets/cancelSeq，再清空 runningIds + currentRunId)
  *
  * 向后兼容保证：现有 16 个节点仅依赖 currentRunId 逻辑不变；useRunTrigger 后续会同时检查 runningIds 是否包含自身 id。
  */
@@ -25,6 +25,8 @@ interface RunBusState {
   currentRunId: string | null;
   runningIds: string[];
   lastDone: LastDoneInfo | null;
+  cancelSeq: number;
+  cancelTargets: string[];
   // 0=空闲, 1=单节点运行中, 2=批量运行中
   mode: 'idle' | 'single' | 'batch';
   batchTotal: number;
@@ -40,6 +42,8 @@ export const useRunBusStore = create<RunBusState>((set) => ({
   currentRunId: null,
   runningIds: [],
   lastDone: null,
+  cancelSeq: 0,
+  cancelTargets: [],
   mode: 'idle',
   batchTotal: 0,
   batchDoneCount: 0,
@@ -48,6 +52,7 @@ export const useRunBusStore = create<RunBusState>((set) => ({
     set((s) => ({
       currentRunId: id,
       runningIds: s.runningIds.includes(id) ? s.runningIds : [...s.runningIds, id],
+      cancelTargets: [],
       mode: s.mode === 'batch' ? 'batch' : mode,
     }));
   },
@@ -59,6 +64,7 @@ export const useRunBusStore = create<RunBusState>((set) => ({
       return {
         runningIds: merged,
         currentRunId: ids.length > 0 ? ids[0] : s.currentRunId,
+        cancelTargets: [],
         mode: s.mode === 'batch' ? 'batch' : mode,
       };
     });
@@ -83,7 +89,23 @@ export const useRunBusStore = create<RunBusState>((set) => ({
     });
   },
   cancelAll: () =>
-    set({ currentRunId: null, runningIds: [], mode: 'idle', batchTotal: 0, batchDoneCount: 0 }),
+    set((s) => {
+      const targets = Array.from(
+        new Set([
+          ...(s.currentRunId ? [s.currentRunId] : []),
+          ...s.runningIds,
+        ]),
+      );
+      return {
+        currentRunId: null,
+        runningIds: [],
+        mode: 'idle',
+        batchTotal: 0,
+        batchDoneCount: 0,
+        cancelSeq: s.cancelSeq + 1,
+        cancelTargets: targets,
+      };
+    }),
   setBatchProgress: (total, done) =>
     set({ batchTotal: total, batchDoneCount: done, mode: total > 0 ? 'batch' : 'idle' }),
 }));

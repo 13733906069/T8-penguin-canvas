@@ -324,6 +324,18 @@ test('local private zhenzhen group extension is opt-in and keeps FAL out when pr
   assert.match(frontend, /function notifyGroupStatusChanged/);
   assert.match(frontend, /notifyGroupStatusChanged\(nextStatus\)/);
   assert.match(frontend, /window\.addEventListener\(GROUP_STATUS_EVENT, handleStatusChanged\)/);
+  assert.match(frontend, /const GROUP_PREFERENCES_STORAGE_KEY = 't8:zhenzhen-group-preferences:v1'/);
+  assert.match(frontend, /const GROUP_PREFERENCES_EVENT = 't8:zhenzhen-group-preferences-changed'/);
+  assert.match(frontend, /schema: 't8-zhenzhen-group-preferences'/);
+  assert.match(frontend, /function readGroupPreferences/);
+  assert.match(frontend, /function writeGroupPreferences/);
+  assert.match(frontend, /function rememberPreferredGroup/);
+  assert.match(frontend, /function groupPreferenceKeysForNode/);
+  assert.match(frontend, /function preferredGroupForNode/);
+  assert.match(frontend, /applyRememberedGroup/);
+  assert.match(frontend, /导出习惯/);
+  assert.match(frontend, /导入习惯/);
+  assert.match(frontend, /不包含令牌密钥/);
   assert.match(frontend, /const \[statusRevision, setStatusRevision\] = useState\(0\)/);
   assert.match(frontend, /fetchGroupStatus\(model, statusRevision > 0\)/);
   assert.match(frontend, /JSON\.stringify\(\{ userId, accessToken, enabled: true, bootstrap: true \}\)/);

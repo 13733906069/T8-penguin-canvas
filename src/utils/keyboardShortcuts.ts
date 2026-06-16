@@ -41,6 +41,7 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   { id: 'canvas.nearest-node', group: '导航', label: '定位最近节点', description: '画布空白处定位当前视野最近节点', scope: 'canvas', defaults: [{ key: 'G' }] },
   { id: 'canvas.center-view', group: '导航', label: '回到画布中心', description: '未选中节点时快速跳回画布中央位置', scope: 'canvas', defaults: [{ key: 'Home' }] },
   { id: 'global.resource-library', group: '窗口', label: '资源库', description: '未选中节点时打开或关闭资源库', scope: 'canvas', defaults: [{ key: 'R' }] },
+  { id: 'global.sidebar-toggle', group: '窗口', label: '隐藏/显示侧边栏', description: '切换左侧画布与节点侧边栏，给小屏幕释放画布空间', scope: 'canvas', defaults: [{ key: 'H' }] },
   { id: 'editor.expand-prompt', group: '输入', label: '放大编辑提示词', description: '聚焦提示词输入框时打开大编辑器', scope: 'global', defaults: [{ key: 'Enter', alt: true }] },
   { id: 'connection.pan-mode', group: '连线', label: '连线导航模式', description: '拖线中保留起点并允许平移画布', scope: 'connection', defaults: [{ key: 'Space' }] },
 ];

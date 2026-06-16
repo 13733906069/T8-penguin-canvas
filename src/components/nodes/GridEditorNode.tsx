@@ -1,4 +1,15 @@
-import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
@@ -22,15 +33,25 @@ import {
   buildGridComposeRequest,
   buildGridEditorItems,
   createGridEditorSlots,
+  gridEditorCellDropTargetId,
   gridEditorRatioSelectValue,
   moveGridEditorItem,
   normalizeGridEditorConfig,
+  parseGridEditorCellDropTargetId,
+  placeGridEditorItemsAtSlot,
   rowsNeededForItems,
   splitGridEditorItems,
   type GridEditorConfig,
   type GridEditorFit,
   type GridEditorItem,
+  type GridEditorSlotOrder,
 } from '../../utils/gridEditor';
+import {
+  MATERIAL_DROP_EVENT,
+  useDragMaterialStore,
+  type MaterialDropEventDetail,
+  type MaterialPayload,
+} from '../../stores/dragMaterial';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
@@ -57,6 +78,14 @@ const toItemList = (value: unknown): GridEditorItem[] => {
 
 const toStringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((item) => String(item || '')).filter(Boolean) : [];
+
+const toSlotOrder = (value: unknown): GridEditorSlotOrder =>
+  Array.isArray(value)
+    ? value.map((item) => {
+        const id = typeof item === 'string' ? item.trim() : '';
+        return id || null;
+      })
+    : [];
 
 const toCaptionMap = (value: unknown): Record<string, string> => {
   if (!isRecord(value)) return {};
@@ -92,6 +121,37 @@ const cellObjectFit = (fit: GridEditorFit): CSSProperties['objectFit'] => {
   return 'cover';
 };
 
+const IMAGE_FILE_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|avif)$/i;
+
+const isImageFile = (file: File) => file.type.startsWith('image/') || IMAGE_FILE_EXT_RE.test(file.name || '');
+
+const imageFilesFromFileList = (files: FileList | File[]): File[] => Array.from(files || []).filter(isImageFile);
+
+const dragEventHasImageFile = (event: ReactDragEvent<HTMLElement>) => {
+  const transfer = event.dataTransfer;
+  if (!transfer) return false;
+  const items = Array.from(transfer.items || []);
+  if (items.some((item) => item.kind === 'file' && (item.type.startsWith('image/') || !item.type))) return true;
+  return imageFilesFromFileList(transfer.files || []).length > 0;
+};
+
+const safeDecodeFileName = (value: string) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const titleFromImageUrl = (url: string) => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return safeDecodeFileName(parsed.pathname.split('/').pop() || '拖入图像');
+  } catch {
+    return safeDecodeFileName(url.split('/').pop() || '拖入图像');
+  }
+};
+
 const GridEditorNode = ({ id, data, selected }: NodeProps) => {
   const d = (data as any) || {};
   const update = useUpdateNodeData(id);
@@ -105,6 +165,9 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
   const [sortDrag, setSortDrag] = useState<{ activeId: string; overId: string | null; moved: boolean } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dropCellIndex, setDropCellIndex] = useState<number | null>(null);
+  const materialHoverTargetId = useDragMaterialStore((s) => s.hoverTargetId);
+  const materialHoverAccepts = useDragMaterialStore((s) => s.hoverAccepts);
   const [gridDimensionDrafts, setGridDimensionDrafts] = useState<{ width: string | null; height: string | null }>({
     width: null,
     height: null,
@@ -146,6 +209,7 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
   const captionMap = useMemo(() => toCaptionMap(d.gridEditorCaptions), [d.gridEditorCaptions]);
   const localItems = useMemo(() => toItemList(d.gridEditorLocalItems), [d.gridEditorLocalItems]);
   const order = useMemo(() => toStringArray(d.gridEditorOrder), [d.gridEditorOrder]);
+  const slotOrder = useMemo(() => toSlotOrder(d.gridEditorSlotOrder), [d.gridEditorSlotOrder]);
   const upstreamItems = useMemo<GridEditorItem[]>(
     () =>
       upstream.images
@@ -173,7 +237,7 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
     [captionMap, items],
   );
   const itemIds = useMemo(() => items.map((item) => item.id), [items]);
-  const slots = useMemo(() => createGridEditorSlots(itemsWithCaptions, config), [config, itemsWithCaptions]);
+  const slots = useMemo(() => createGridEditorSlots(itemsWithCaptions, config, slotOrder), [config, itemsWithCaptions, slotOrder]);
   const totalSlots = config.rows * config.cols;
   const overflowCount = Math.max(0, items.length - totalSlots);
   const status: 'idle' | 'running' | 'success' | 'error' = d.status || 'idle';
@@ -222,6 +286,63 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
 
   const openFilePicker = () => fileInputRef.current?.click();
 
+  const commitItemsToCell = useCallback(
+    (cellIndex: number, incomingItems: GridEditorItem[]) => {
+      const cleanIncoming = incomingItems.filter((item) => item.id && item.url);
+      if (cleanIncoming.length === 0) return;
+      const placement = placeGridEditorItemsAtSlot(items, config, slotOrder, cleanIncoming, cellIndex);
+      if (placement.placedIds.length === 0) return;
+      const incomingIds = new Set(cleanIncoming.map((item) => item.id));
+      const replacedIds = new Set(placement.replacedIds);
+      const localIds = new Set(localItems.map((item) => item.id));
+      const nextLocal = [
+        ...localItems.filter((item) => !incomingIds.has(item.id) && !replacedIds.has(item.id)),
+        ...cleanIncoming.map((item) => ({ ...item, origin: 'local' as const })),
+      ];
+      const nextHiddenIds = new Set(hiddenIds);
+      for (const replacedId of replacedIds) {
+        if (!localIds.has(replacedId)) nextHiddenIds.add(replacedId);
+      }
+      update({
+        gridEditorLocalItems: nextLocal,
+        gridEditorOrder: placement.order,
+        gridEditorSlotOrder: placement.slotOrder,
+        gridEditorHiddenIds: Array.from(nextHiddenIds),
+      });
+    },
+    [config, hiddenIds, items, localItems, slotOrder, update],
+  );
+
+  const uploadFilesToCell = useCallback(
+    async (cellIndex: number, files: File[]) => {
+      const imageFiles = files.filter(isImageFile);
+      if (imageFiles.length === 0) return;
+      setUploading(true);
+      setError(null);
+      try {
+        const stamp = Date.now();
+        const uploaded = await Promise.all(
+          imageFiles.map(async (file, index) => {
+            const url = await uploadFileBlob(file, file.name);
+            return {
+              id: `local:cell:${stamp}:${cellIndex}:${index}:${url}`,
+              url,
+              title: file.name,
+              origin: 'local' as const,
+            };
+          }),
+        );
+        commitItemsToCell(cellIndex, uploaded);
+      } catch (e: any) {
+        setError(e?.message || '拖入上传失败');
+      } finally {
+        setUploading(false);
+        setDropCellIndex(null);
+      }
+    },
+    [commitItemsToCell],
+  );
+
   const handleFiles = async (files: File[]) => {
     if (files.length === 0) return;
     setUploading(true);
@@ -251,23 +372,72 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
   };
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith('image/'));
+    const files = imageFilesFromFileList(event.target.files || []);
     event.currentTarget.value = '';
     handleFiles(files);
   };
 
+  const handleCellDragOver = (event: ReactDragEvent<HTMLDivElement>, cellIndex: number) => {
+    if (!dragEventHasImageFile(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+    setDropCellIndex(cellIndex);
+  };
+
+  const handleCellDragLeave = (event: ReactDragEvent<HTMLDivElement>, cellIndex: number) => {
+    if (dropCellIndex !== cellIndex) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setDropCellIndex(null);
+  };
+
+  const handleCellFileDrop = (event: ReactDragEvent<HTMLDivElement>, cellIndex: number) => {
+    if (!dragEventHasImageFile(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void uploadFilesToCell(cellIndex, imageFilesFromFileList(event.dataTransfer.files || []));
+  };
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<MaterialDropEventDetail>).detail;
+      const cellIndex = parseGridEditorCellDropTargetId(detail?.targetNodeId, id);
+      const payload: MaterialPayload | undefined = detail?.payload;
+      if (cellIndex === null || payload?.kind !== 'image' || !payload.url) return;
+      const stamp = Date.now();
+      commitItemsToCell(cellIndex, [
+        {
+          id: `local:drag:${stamp}:${cellIndex}:${payload.url}`,
+          url: payload.url,
+          title: titleFromImageUrl(payload.url),
+          origin: 'local',
+        },
+      ]);
+      setDropCellIndex(null);
+    };
+    window.addEventListener(MATERIAL_DROP_EVENT, handler as EventListener);
+    return () => window.removeEventListener(MATERIAL_DROP_EVENT, handler as EventListener);
+  }, [commitItemsToCell, id]);
+
   const removeItem = (item: GridEditorItem) => {
     const nextOrder = itemIds.filter((itemId) => itemId !== item.id);
+    const nextSlotOrder = slotOrder.length
+      ? slots.map((slot) => (slot?.id === item.id ? null : slot?.id || null))
+      : undefined;
+    const slotPatch = nextSlotOrder ? { gridEditorSlotOrder: nextSlotOrder } : {};
     if (item.origin === 'local') {
       update({
         gridEditorLocalItems: localItems.filter((local) => local.id !== item.id),
         gridEditorOrder: nextOrder,
+        ...slotPatch,
       });
       return;
     }
     update({
       gridEditorHiddenIds: Array.from(new Set([...hiddenIds, item.id])),
       gridEditorOrder: nextOrder,
+      ...slotPatch,
     });
   };
 
@@ -306,7 +476,22 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
     const current = sortDragRef.current;
     cleanupSortListeners();
     if (current?.moved && current.overId && current.activeId !== current.overId) {
-      update({ gridEditorOrder: moveGridEditorItem(itemIds, current.activeId, current.overId) });
+      if (slotOrder.length) {
+        const nextSlotOrder = slots.map((slot) => slot?.id || null);
+        const activeIndex = nextSlotOrder.indexOf(current.activeId);
+        const overIndex = nextSlotOrder.indexOf(current.overId);
+        if (activeIndex >= 0 && overIndex >= 0) {
+          const [movedId] = nextSlotOrder.splice(activeIndex, 1);
+          nextSlotOrder.splice(overIndex, 0, movedId || null);
+          const slottedIds = Array.from(new Set(nextSlotOrder.filter((itemId): itemId is string => Boolean(itemId))));
+          update({
+            gridEditorSlotOrder: nextSlotOrder,
+            gridEditorOrder: [...slottedIds, ...itemIds.filter((itemId) => !slottedIds.includes(itemId))],
+          });
+        }
+      } else {
+        update({ gridEditorOrder: moveGridEditorItem(itemIds, current.activeId, current.overId) });
+      }
     }
     sortStartRef.current = null;
     setSortDragState(null);
@@ -351,7 +536,7 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
   useEffect(() => () => cleanupSortListeners(), []);
 
   const handleSplit = () => {
-    const urls = splitGridEditorItems(itemsWithCaptions.slice(0, totalSlots));
+    const urls = splitGridEditorItems(slots.filter((slot): slot is GridEditorItem => !!slot));
     if (urls.length === 0) {
       setError('暂无可拆分图像');
       return;
@@ -376,7 +561,7 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
     }
     update({ status: 'running', error: null });
     try {
-      const request = buildGridComposeRequest(itemsWithCaptions, config);
+      const request = buildGridComposeRequest(itemsWithCaptions, config, slotOrder);
       const result = await opGridCompose(request);
       update({
         status: 'success',
@@ -666,18 +851,30 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
           >
             <div className="w-full" style={previewGridStyle}>
               {slots.map((item, index) => {
+              const cellDropTargetId = gridEditorCellDropTargetId(id, index);
               const active = !!item && sortDrag?.activeId === item.id;
               const over = !!item && sortDrag?.overId === item.id && sortDrag.activeId !== item.id;
+              const dropHover = dropCellIndex === index || (materialHoverAccepts && materialHoverTargetId === cellDropTargetId);
               return (
                 <div
                   key={`${item?.id || 'empty'}-${index}`}
+                  data-drop-kinds="image"
+                  data-node-id={cellDropTargetId}
                   data-grid-editor-scope={item ? sortScopeRef.current : undefined}
                   data-grid-editor-item-id={item?.id}
                   onPointerDown={item ? (event) => beginSortDrag(event, item) : undefined}
+                  onDragEnter={(event) => handleCellDragOver(event, index)}
+                  onDragOver={(event) => handleCellDragOver(event, index)}
+                  onDragLeave={(event) => handleCellDragLeave(event, index)}
+                  onDrop={(event) => handleCellFileDrop(event, index)}
                   className="relative min-h-0 min-w-0 overflow-hidden"
                   style={{
-                    background: item ? 'rgba(15,23,42,.18)' : 'rgba(255,255,255,.055)',
-                    outline: active ? `2px solid ${COLOR}` : over ? '2px solid var(--t8-accent, #fb923c)' : '1px dashed rgba(255,255,255,.16)',
+                    background: dropHover
+                      ? 'color-mix(in srgb, var(--t8-accent, #fb923c) 18%, rgba(15,23,42,.32))'
+                      : item ? 'rgba(15,23,42,.18)' : 'rgba(255,255,255,.055)',
+                    outline: dropHover
+                      ? '2px solid var(--t8-accent, #fb923c)'
+                      : active ? `2px solid ${COLOR}` : over ? '2px solid var(--t8-accent, #fb923c)' : '1px dashed rgba(255,255,255,.16)',
                     opacity: active && sortDrag?.moved ? 0.72 : 1,
                     cursor: item ? 'grab' : 'default',
                   }}
@@ -742,6 +939,18 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
                     >
                       <Plus size={20} />
                     </button>
+                  )}
+                  {dropHover && (
+                    <div
+                      className="pointer-events-none absolute inset-1 flex items-center justify-center rounded-md text-[11px] font-bold"
+                      style={{
+                        background: 'color-mix(in srgb, var(--t8-accent, #fb923c) 20%, transparent)',
+                        color: 'var(--t8-text-main, #f8fafc)',
+                        textShadow: '0 1px 2px rgba(0,0,0,.45)',
+                      }}
+                    >
+                      松开填入
+                    </div>
                   )}
                 </div>
               );

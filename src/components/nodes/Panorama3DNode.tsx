@@ -56,6 +56,7 @@ import {
   PANORAMA_RATIO_OPTIONS,
   PANORAMA_SHOT_PRESETS,
   PANORAMA_SHOT_TARGET_BONES,
+  PANORAMA_STORYBOARD_PROMPT_DEFAULT,
   PANORAMA_KEYFRAME_SEQUENCE_DEFAULT,
   PANORAMA_KEYFRAME_SEQUENCE_MAX,
   PANORAMA_SIZE_LEVELS,
@@ -68,6 +69,7 @@ import {
   buildPanoramaImageRequest,
   buildPanoramaPromptFinal,
   clampPanoramaNumber,
+  composePanoramaStoryboardPromptDataUrl,
   deletePanoramaAvatarKeyframe,
   deletePanoramaAvatar,
   deletePanoramaCameraView,
@@ -76,6 +78,8 @@ import {
   estimatePanoramaImageQuality,
   isLikelyPanoramaImage,
   markPanoramaDefaultCameraView,
+  measurePanoramaStoryboardPromptPanel,
+  normalizePanoramaStoryboardPrompt,
   normalizePanoramaYaw,
   inferPanoramaAvatarPoseFromText,
   panoramaAvatarPoseDefaultParams,
@@ -1110,6 +1114,8 @@ const Panorama3DNode = (p: NodeProps) => {
   const avatarIkEditMode = Boolean(d.panoramaAvatarIkEditMode);
   const occlusionMaskVisible = d.panoramaOcclusionMaskVisible !== false;
   const sceneLegendVisible = d.panoramaSceneLegendVisible !== false;
+  const storyboardPromptEnabled = Boolean(d.panoramaStoryboardPromptEnabled);
+  const storyboardPromptText = normalizePanoramaStoryboardPrompt(d.panoramaStoryboardPromptText);
   const compositionGuide: PanoramaCompositionGuideId = safePanoramaCompositionGuide(d.panoramaCompositionGuide);
   const shotCamera: PanoramaShotCamera = useMemo(
     () => sanitizePanoramaShotCamera(d.panoramaShotCamera),
@@ -1153,6 +1159,10 @@ const Panorama3DNode = (p: NodeProps) => {
   const isGenerating = d.status === 'generating';
   const ratio = useMemo(() => resolvePanoramaRatio(ratioId, customW, customH), [customH, customW, ratioId]);
   const renderSize = useMemo(() => panoramaRenderSize(ratio), [ratio]);
+  const storyboardPromptPreviewPanel = useMemo(
+    () => measurePanoramaStoryboardPromptPanel(storyboardPromptText, Math.max(420, renderSize.width)),
+    [renderSize.width, storyboardPromptText],
+  );
   const isLikely = useMemo(
     () => isLikelyPanoramaImage({ url: sourceUrl, label: connectedSource?.label, title: d.title, prompt: d.prompt }),
     [d.prompt, d.title, connectedSource?.label, sourceUrl],
@@ -2917,6 +2927,15 @@ const Panorama3DNode = (p: NodeProps) => {
 
   const resetView = () => applyView({ yaw: 0, pitch: 0, fov: 75 }, { panoramaActiveCameraViewId: '' });
 
+  const composeStoryboardSnapshotDataUrl = useCallback(
+    async (dataUrl: string) => (
+      storyboardPromptEnabled
+        ? composePanoramaStoryboardPromptDataUrl(dataUrl, storyboardPromptText)
+        : dataUrl
+    ),
+    [storyboardPromptEnabled, storyboardPromptText],
+  );
+
   const exportFrame = useCallback(async () => {
     if (textureStatus !== 'ready' || !canvasRef.current) {
       update({ panoramaError: '请先连接并加载全景图' });
@@ -2926,7 +2945,7 @@ const Panorama3DNode = (p: NodeProps) => {
     try {
       if (!drawFrame()) throw new Error('当前画面不可导出');
       const dataUrl = canvasRef.current.toDataURL('image/png');
-      const imageUrl = await uploadDataUrl(dataUrl, `${cleanFileBase(sourceUrl)}-panorama-frame`);
+      const imageUrl = await uploadDataUrl(await composeStoryboardSnapshotDataUrl(dataUrl), `${cleanFileBase(sourceUrl)}-panorama-frame`);
       const view = viewRef.current;
       update({
         status: 'success',
@@ -2957,7 +2976,7 @@ const Panorama3DNode = (p: NodeProps) => {
       update({ status: 'error', panoramaError: msg });
       setError(msg);
     }
-  }, [activeCameraViewId, cameraViews.length, customH, customW, drawFrame, hotspots.length, ratioId, sourceUrl, textureStatus, update]);
+  }, [activeCameraViewId, cameraViews.length, composeStoryboardSnapshotDataUrl, customH, customW, drawFrame, hotspots.length, ratioId, sourceUrl, textureStatus, update]);
 
   const renderControlSnapshotDataUrl = useCallback(async () => {
     const rt = runtimeRef.current;
@@ -3050,7 +3069,10 @@ const Panorama3DNode = (p: NodeProps) => {
           occlusionMaskVisible ? occlusionMasks : [],
           { sequenceLabel: `${frame.frameLabel} / ${sequenceFrames.length}` },
         );
-        const imageUrl = await uploadDataUrl(dataUrl, `${cleanFileBase(sourceUrl)}-panorama-seq-${String(frame.frameIndex).padStart(2, '0')}`);
+        const imageUrl = await uploadDataUrl(
+          await composeStoryboardSnapshotDataUrl(dataUrl),
+          `${cleanFileBase(sourceUrl)}-panorama-seq-${String(frame.frameIndex).padStart(2, '0')}`,
+        );
         urls.push(imageUrl);
       }
     } finally {
@@ -3059,7 +3081,7 @@ const Panorama3DNode = (p: NodeProps) => {
       drawFrame();
     }
     return urls;
-  }, [avatarKeyframes, avatars, drawFrame, effectiveShotCamera, keyframeSequenceCount, occlusionMaskVisible, occlusionMasks, sceneLegendVisible, sourceUrl, updateAvatarMeshes]);
+  }, [avatarKeyframes, avatars, composeStoryboardSnapshotDataUrl, drawFrame, effectiveShotCamera, keyframeSequenceCount, occlusionMaskVisible, occlusionMasks, sceneLegendVisible, sourceUrl, updateAvatarMeshes]);
 
   const exportSceneSnapshot = useCallback(async () => {
     if (textureStatus !== 'ready' || !canvasRef.current) {
@@ -3070,7 +3092,7 @@ const Panorama3DNode = (p: NodeProps) => {
     try {
       if (!drawFrame()) throw new Error('当前场景不可导出');
       const dataUrl = await canvasDataUrlWithLegend(canvasRef.current, avatars, sceneLegendVisible, effectiveShotCamera, shotTarget, occlusionMaskVisible ? occlusionMasks : []);
-      const imageUrl = await uploadDataUrl(dataUrl, `${cleanFileBase(sourceUrl)}-panorama-scene`);
+      const imageUrl = await uploadDataUrl(await composeStoryboardSnapshotDataUrl(dataUrl), `${cleanFileBase(sourceUrl)}-panorama-scene`);
       const sequenceUrls = await renderSceneSequenceSnapshots();
       const view = sanitizePanoramaViewAngles(viewRef.current);
       const snapshot = buildPanoramaSceneSnapshot({
@@ -3111,7 +3133,7 @@ const Panorama3DNode = (p: NodeProps) => {
       update({ status: 'error', panoramaError: msg });
       setError(msg);
     }
-  }, [avatarKeyframes, avatars, compositionGuide, d.panoramaControlSnapshotUrl, drawFrame, effectiveShotCamera, keyframeSequenceCount, occlusionMaskVisible, occlusionMasks, p.id, promptFinal, ratioId, renderSceneSequenceSnapshots, sceneLegendVisible, shotTarget, sourceUrl, syncSequenceMaterialSet, textureStatus, update]);
+  }, [avatarKeyframes, avatars, composeStoryboardSnapshotDataUrl, compositionGuide, d.panoramaControlSnapshotUrl, drawFrame, effectiveShotCamera, keyframeSequenceCount, occlusionMaskVisible, occlusionMasks, p.id, promptFinal, ratioId, renderSceneSequenceSnapshots, sceneLegendVisible, shotTarget, sourceUrl, syncSequenceMaterialSet, textureStatus, update]);
 
   const exportControlSnapshot = useCallback(async () => {
     if (textureStatus !== 'ready' || !canvasRef.current) {
@@ -3121,7 +3143,7 @@ const Panorama3DNode = (p: NodeProps) => {
     update({ status: 'generating', progress: '控制快照导出中', panoramaError: '' });
     try {
       const dataUrl = await renderControlSnapshotDataUrl();
-      const imageUrl = await uploadDataUrl(dataUrl, `${cleanFileBase(sourceUrl)}-panorama-control`);
+      const imageUrl = await uploadDataUrl(await composeStoryboardSnapshotDataUrl(dataUrl), `${cleanFileBase(sourceUrl)}-panorama-control`);
       const view = sanitizePanoramaViewAngles(viewRef.current);
       const snapshot = buildPanoramaSceneSnapshot({
         sourceUrl,
@@ -3160,7 +3182,7 @@ const Panorama3DNode = (p: NodeProps) => {
       update({ status: 'error', panoramaError: msg });
       setError(msg);
     }
-  }, [avatarKeyframes, avatars, compositionGuide, d.panoramaSceneSnapshot?.snapshotUrl, effectiveShotCamera, keyframeSequenceCount, occlusionMasks, p.id, promptFinal, ratioId, renderControlSnapshotDataUrl, sourceUrl, textureStatus, update]);
+  }, [avatarKeyframes, avatars, composeStoryboardSnapshotDataUrl, compositionGuide, d.panoramaSceneSnapshot?.snapshotUrl, effectiveShotCamera, keyframeSequenceCount, occlusionMasks, p.id, promptFinal, ratioId, renderControlSnapshotDataUrl, sourceUrl, textureStatus, update]);
 
   const selectAvatarAtIndex = useCallback((index: number) => {
     const avatar = avatars[index];
@@ -3580,6 +3602,35 @@ const Panorama3DNode = (p: NodeProps) => {
     : quality?.level === 'unknown'
     ? 'border-slate-400/25 bg-slate-400/10 text-[var(--t8-text-muted)]'
     : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-100';
+
+  const renderStoryboardPromptPreview = () => {
+    const previewUrl = outputUrl
+      || (typeof d.panoramaSceneSnapshot?.snapshotUrl === 'string' ? d.panoramaSceneSnapshot.snapshotUrl : '')
+      || sourceUrl;
+    return (
+      <div className="overflow-hidden rounded-md border border-white/15 bg-black shadow-inner">
+        {previewUrl && (
+          <SmartImage
+            src={previewUrl}
+            alt="分镜提示板预览"
+            className="max-h-28 w-full bg-slate-950 object-contain"
+            draggable={false}
+            thumbSize={720}
+          />
+        )}
+        <div
+          className="space-y-1 bg-black px-3 py-2 font-bold leading-snug text-white"
+          style={{ fontSize: Math.max(11, Math.min(14, Math.round(storyboardPromptPreviewPanel.fontSize * 0.45))) }}
+        >
+          {storyboardPromptPreviewPanel.lines.map((line, index) => (
+            <div key={`${line}-${index}`} className="whitespace-pre-wrap break-words">
+              {line || '\u00a0'}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const renderActionPlannerPanel = (director = false) => (
     <section className={`space-y-2 rounded-md border border-[var(--t8-border)] bg-[var(--t8-bg-panel)] p-2 ${director ? '' : 'min-w-0'}`}>
@@ -4761,6 +4812,44 @@ const Panorama3DNode = (p: NodeProps) => {
                     </div>
                   )}
                 </div>
+              </section>
+              <section className="rounded-md border border-zinc-300/30 bg-black/10 p-2">
+                <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-[var(--t8-text-main)]">
+                  <span className="flex items-center gap-1">
+                    <FileJson size={12} />
+                    分镜提示板
+                  </span>
+                  <button
+                    type="button"
+                    className={`t8-btn h-7 px-2 text-[10px] ${storyboardPromptEnabled ? 't8-btn-primary' : ''}`}
+                    onClick={() => update({
+                      panoramaStoryboardPromptEnabled: !storyboardPromptEnabled,
+                      panoramaStoryboardPromptText: storyboardPromptText || PANORAMA_STORYBOARD_PROMPT_DEFAULT,
+                    })}
+                    title="在快照图下方拼接黑底白字的分镜提示词框"
+                  >
+                    {storyboardPromptEnabled ? '已开启' : '关闭'}
+                  </button>
+                </div>
+                {storyboardPromptEnabled ? (
+                  <div className="mt-2 space-y-2">
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] font-bold text-[var(--t8-text-muted)]">场景</span>
+                      <textarea
+                        value={storyboardPromptText}
+                        onChange={(event) => update({ panoramaStoryboardPromptText: event.target.value })}
+                        rows={Math.min(10, Math.max(3, storyboardPromptPreviewPanel.lines.length + 1))}
+                        className="nodrag nowheel w-full resize-y rounded-md border border-[var(--t8-border)] bg-[var(--t8-bg-panel)] px-2 py-1.5 text-xs leading-relaxed text-[var(--t8-text-main)] outline-none"
+                        placeholder={PANORAMA_STORYBOARD_PROMPT_DEFAULT}
+                      />
+                    </label>
+                    {renderStoryboardPromptPreview()}
+                  </div>
+                ) : (
+                  <div className="mt-2 rounded-md border border-dashed border-[var(--t8-border)] bg-[var(--t8-bg-panel)] px-2 py-2 text-[10px] leading-relaxed text-[var(--t8-text-muted)]">
+                    默认关闭；开启后，导出当前画面、场景快照或控制快照时，会把多行分镜文字拼接在图片下方。
+                  </div>
+                )}
               </section>
               {layoutIoState && <div className="rounded-md bg-sky-400/10 px-2 py-1 text-[10px] font-bold text-sky-100">{layoutIoState}</div>}
 

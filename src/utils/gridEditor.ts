@@ -34,6 +34,15 @@ export interface GridComposeRequest extends GridEditorConfig {
   cells: Array<GridComposeCell | null>;
 }
 
+export type GridEditorSlotOrder = Array<string | null>;
+
+export interface GridEditorSlotPlacement {
+  slotOrder: GridEditorSlotOrder;
+  order: string[];
+  replacedIds: string[];
+  placedIds: string[];
+}
+
 export const GRID_EDITOR_PRESETS = [
   { label: '2×2', rows: 2, cols: 2 },
   { label: '3×3', rows: 3, cols: 3 },
@@ -123,11 +132,56 @@ export function buildGridEditorItems(
   return sorted;
 }
 
-export function createGridEditorSlots(items: GridEditorItem[], config: Pick<GridEditorConfig, 'rows' | 'cols'>): Array<GridEditorItem | null> {
+const normalizeSlotOrder = (slotOrder: unknown, total: number): GridEditorSlotOrder => {
+  if (!Array.isArray(slotOrder) || total <= 0) return [];
+  return Array.from({ length: total }, (_, index) => {
+    const raw = slotOrder[index];
+    const id = typeof raw === 'string' ? raw.trim() : '';
+    return id || null;
+  });
+};
+
+const compactUniqueIds = (ids: Array<string | null | undefined>): string[] => {
+  const used = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    if (!id || used.has(id)) continue;
+    used.add(id);
+    out.push(id);
+  }
+  return out;
+};
+
+export function createGridEditorSlots(
+  items: GridEditorItem[],
+  config: Pick<GridEditorConfig, 'rows' | 'cols'>,
+  slotOrder: GridEditorSlotOrder = [],
+): Array<GridEditorItem | null> {
   const rows = clampInt(config.rows, 1, 12, 3);
   const cols = clampInt(config.cols, 1, 12, 3);
   const total = rows * cols;
-  return Array.from({ length: total }, (_, index) => items[index] || null);
+  if (!slotOrder.length) return Array.from({ length: total }, (_, index) => items[index] || null);
+
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const used = new Set<string>();
+  const normalizedSlotOrder = normalizeSlotOrder(slotOrder, total);
+  const slots: Array<GridEditorItem | null> = normalizedSlotOrder.map((itemId) => {
+    if (!itemId || used.has(itemId)) return null;
+    const item = byId.get(itemId);
+    if (!item) return null;
+    used.add(itemId);
+    return item;
+  });
+
+  let fillIndex = 0;
+  for (const item of items) {
+    if (!item?.id || used.has(item.id)) continue;
+    while (fillIndex < total && slots[fillIndex]) fillIndex += 1;
+    if (fillIndex >= total) break;
+    slots[fillIndex] = item;
+    used.add(item.id);
+  }
+  return slots;
 }
 
 export function moveGridEditorItem(order: string[], activeId: string, overId: string): string[] {
@@ -141,9 +195,74 @@ export function moveGridEditorItem(order: string[], activeId: string, overId: st
   return next;
 }
 
-export function buildGridComposeRequest(items: GridEditorItem[], config: GridEditorConfig): GridComposeRequest {
+export function gridEditorCellDropTargetId(nodeId: string, index: number): string {
+  const safeNodeId = String(nodeId || '').trim();
+  const safeIndex = Math.max(0, Math.trunc(Number(index) || 0));
+  return `${safeNodeId}::grid-cell::${safeIndex}`;
+}
+
+export function parseGridEditorCellDropTargetId(targetId: unknown, nodeId: string): number | null {
+  const raw = typeof targetId === 'string' ? targetId : '';
+  const prefix = `${String(nodeId || '').trim()}::grid-cell::`;
+  if (!raw.startsWith(prefix)) return null;
+  const parsed = Number.parseInt(raw.slice(prefix.length), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export function placeGridEditorItemsAtSlot(
+  items: GridEditorItem[],
+  config: Pick<GridEditorConfig, 'rows' | 'cols'>,
+  slotOrder: GridEditorSlotOrder = [],
+  incomingItems: GridEditorItem[] = [],
+  startIndex = 0,
+): GridEditorSlotPlacement {
+  const rows = clampInt(config.rows, 1, 12, 3);
+  const cols = clampInt(config.cols, 1, 12, 3);
+  const total = rows * cols;
+  const slots = createGridEditorSlots(items, { rows, cols }, slotOrder);
+  const nextSlotOrder: GridEditorSlotOrder = slots.map((slot) => slot?.id || null);
+  const incoming = incomingItems.filter((item) => item?.id && item.url);
+  const incomingIds = new Set(incoming.map((item) => item.id));
+  const replacedIds = new Set<string>();
+  const placedIds: string[] = [];
+  const firstIndex = Math.max(0, Math.min(total - 1, Math.trunc(Number(startIndex) || 0)));
+
+  for (let index = 0; index < nextSlotOrder.length; index += 1) {
+    const id = nextSlotOrder[index];
+    if (id && incomingIds.has(id)) nextSlotOrder[index] = null;
+  }
+
+  for (let offset = 0; offset < incoming.length; offset += 1) {
+    const slotIndex = firstIndex + offset;
+    if (slotIndex >= total) break;
+    const previousId = nextSlotOrder[slotIndex];
+    if (previousId && !incomingIds.has(previousId)) replacedIds.add(previousId);
+    nextSlotOrder[slotIndex] = incoming[offset].id;
+    placedIds.push(incoming[offset].id);
+  }
+
+  const slottedIds = compactUniqueIds(nextSlotOrder);
+  const remainingIds = compactUniqueIds(
+    items
+      .map((item) => item.id)
+      .filter((itemId) => itemId && !replacedIds.has(itemId) && !slottedIds.includes(itemId)),
+  );
+
+  return {
+    slotOrder: nextSlotOrder,
+    order: [...slottedIds, ...remainingIds],
+    replacedIds: Array.from(replacedIds),
+    placedIds,
+  };
+}
+
+export function buildGridComposeRequest(
+  items: GridEditorItem[],
+  config: GridEditorConfig,
+  slotOrder: GridEditorSlotOrder = [],
+): GridComposeRequest {
   const normalized = normalizeGridEditorConfig(config);
-  const slots = createGridEditorSlots(items, normalized);
+  const slots = createGridEditorSlots(items, normalized, slotOrder);
   return {
     ...normalized,
     cells: slots.map((slot) => {

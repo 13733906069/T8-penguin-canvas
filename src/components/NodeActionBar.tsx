@@ -79,6 +79,7 @@ const NodeActionBar = () => {
   const isYyhVisual = visualStyle === 'yyh' || isYyhDomVisual;
 
   const currentRunId = useRunBusStore((s) => s.currentRunId);
+  const runningIds = useRunBusStore((s) => s.runningIds);
   const triggerRun = useRunBusStore((s) => s.triggerRun);
   const cancelAll = useRunBusStore((s) => s.cancelAll);
   const rhDuckUploadIds = useHiddenFeatureStore((s) => s.rhDuckUploadIds);
@@ -166,7 +167,9 @@ const NodeActionBar = () => {
   const rightX = nodeScreenX + nodeW * zoom;
   const topY = nodeScreenY - BAR_GAP_PX * zoom;
 
-  const isRunning = currentRunId === selectedExe.id;
+  const selectedStatus = String(selectedData?.status || '');
+  const selectedNodeBusy = selectedStatus === 'submitting' || selectedStatus === 'polling';
+  const isRunning = currentRunId === selectedExe.id || runningIds.includes(selectedExe.id) || selectedNodeBusy;
 
   // === 主题派生样式 ===
   // 科技风: 深色玻璃面板 + 圆角  /  像素风: 硬边 + 硬阴影

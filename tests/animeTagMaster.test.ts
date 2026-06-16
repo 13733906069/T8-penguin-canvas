@@ -546,5 +546,10 @@ test('anime tag master frontend keeps compact scrolling, lightbox and theme hook
   assert.match(styles, /anime-tag-master-grid button[\s\S]*min-width:\s*0/);
   assert.match(styles, /\[data-theme-mode="dark"\][\s\S]*anime-tag-master-node/);
   assert.match(styles, /\[data-theme-mode="light"\][\s\S]*anime-tag-master-node/);
+  assert.match(styles, /html\[data-theme-visual\] \.anime-tag-master-node/);
+  assert.match(styles, /--atm-bg:\s*var\(--t8-bg-node/);
+  assert.match(styles, /--atm-panel:\s*var\(--t8-bg-panel/);
+  assert.match(styles, /--atm-accent:\s*var\(--t8-accent/);
+  assert.match(styles, /--atm-border:\s*var\(--t8-border-strong/);
   assert.match(styles, /color:\s*var\(--atm-text\)/);
 });

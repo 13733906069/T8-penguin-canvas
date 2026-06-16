@@ -154,6 +154,23 @@ export function createUploadReplacementData(kind: MediaKind, items: MediaItem[])
   };
 }
 
+export function createUploadMediaRemovalData(
+  data: any,
+  kind: MediaKind,
+  index: number,
+  emptyUploadType: MediaKind | null = null,
+): Record<string, any> {
+  const items = getMediaItemsFromData(data, kind);
+  const nextItems = items.filter((_, i) => i !== index);
+  if (nextItems.length === 0) {
+    return {
+      ...createEmptyUploadMediaData(),
+      uploadType: emptyUploadType,
+    };
+  }
+  return createUploadReplacementData(kind, nextItems);
+}
+
 export function createOutputDataFromItems(kind: MediaKind, items: MediaItem[]): Record<string, any> {
   const meta = MEDIA_KIND_META[kind];
   const clean = items.filter((item) => item.kind === kind && item.url);
@@ -176,6 +193,69 @@ export function createOutputDataFromItems(kind: MediaKind, items: MediaItem[]): 
 
 export function createOutputDataFromItem(item: MediaItem): Record<string, any> {
   return createOutputDataFromItems(item.kind, [item]);
+}
+
+function asStringArray(value: any): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+    : [];
+}
+
+function withoutUrl(value: any, url: string): string[] {
+  const target = url.trim();
+  return asStringArray(value).filter((item) => item !== target);
+}
+
+function hiddenMaterialUrlPatch(data: any, kind: MediaKind, url: string): Record<MediaKind, string[]> {
+  const current = data?.hiddenMaterialUrls && typeof data.hiddenMaterialUrls === 'object'
+    ? data.hiddenMaterialUrls
+    : {};
+  const next: Record<MediaKind, string[]> = {
+    image: asStringArray(current.image),
+    video: asStringArray(current.video),
+    audio: asStringArray(current.audio),
+    model3d: asStringArray(current.model3d),
+  };
+  const target = url.trim();
+  if (target && !next[kind].includes(target)) {
+    next[kind] = [...next[kind], target];
+  }
+  return next;
+}
+
+export function isMaterialUrlHidden(data: any, kind: MediaKind, url: string): boolean {
+  const current = data?.hiddenMaterialUrls && typeof data.hiddenMaterialUrls === 'object'
+    ? data.hiddenMaterialUrls
+    : {};
+  return asStringArray(current[kind]).includes(url.trim());
+}
+
+export function createOutputMediaRemovalData(data: any, kind: MediaKind, url: string): Record<string, any> {
+  const meta = MEDIA_KIND_META[kind];
+  const nextArray = withoutUrl(data?.[meta.arrayField], url);
+  const nextDirectArray = withoutUrl(data?.[meta.directArrayField], url);
+  const target = url.trim();
+  const patch: Record<string, any> = {
+    [meta.arrayField]: nextArray,
+    [meta.directArrayField]: nextDirectArray,
+    hiddenMaterialUrls: hiddenMaterialUrlPatch(data, kind, target),
+  };
+
+  const currentSingle = typeof data?.[meta.singleField] === 'string' ? data[meta.singleField].trim() : '';
+  const currentDirectSingle = typeof data?.[meta.directSingleField] === 'string' ? data[meta.directSingleField].trim() : '';
+  patch[meta.singleField] = currentSingle === target ? nextArray[0] : data?.[meta.singleField];
+  patch[meta.directSingleField] = currentDirectSingle === target ? nextDirectArray[0] : data?.[meta.directSingleField];
+
+  if (kind === 'image') {
+    patch.urls = withoutUrl(data?.urls, target);
+    patch.generatedImages = withoutUrl(data?.generatedImages, target);
+  }
+  if (kind === 'audio') {
+    const currentSecondAudio = typeof data?.audioUrl_1 === 'string' ? data.audioUrl_1.trim() : '';
+    patch.audioUrl_1 = currentSecondAudio === target ? '' : data?.audioUrl_1;
+  }
+
+  return patch;
 }
 
 export function sameMediaUrls(a: MediaItem[], b: MediaItem[]): boolean {

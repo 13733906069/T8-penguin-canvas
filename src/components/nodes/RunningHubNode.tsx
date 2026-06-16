@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useNodeConnections, useNodesData, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Loader2, Workflow, Wallet, Sparkles, Square, Search, RefreshCw } from 'lucide-react';
-import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
+import { submitRh, queryRh, cancelRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -15,6 +15,7 @@ import PromptTextarea from '../PromptTextarea';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
+import { useRunBusStore } from '../../stores/runBus';
 import {
   countExcludedMaterials,
   excludeMaterialId,
@@ -152,6 +153,14 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   const instanceType: string = d?.instanceType || '';
   const status: 'idle' | 'submitting' | 'polling' | 'success' | 'error' = d?.status || 'idle';
   const taskId: string | undefined = d?.taskId;
+  const activeTaskIdRef = useRef<string>(taskId ? String(taskId) : '');
+  const stopRequestedRef = useRef(false);
+  const cancelInFlightRef = useRef(false);
+  const [cancelling, setCancelling] = useState(false);
+  const pollRejectRef = useRef<((error?: Error) => void) | null>(null);
+  const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
+  const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
+  const lastRunCancelSeqRef = useRef(runCancelSeq);
   const urls: string[] = d?.urls || [];
   const appInfo: any = d?.appInfo;
   // paramValues: 在节点内为每个 nodeInfoList 条目保存的当前编辑值
@@ -160,13 +169,21 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   const paramMentions: Record<string, MediaMention[]> =
     d?.paramMentions && typeof d.paramMentions === 'object' ? d.paramMentions : {};
 
-  const stopPoll = () => {
+  const stopPoll = (reason?: Error) => {
     if (pollTimer.current) {
       window.clearInterval(pollTimer.current);
       pollTimer.current = null;
     }
+    if (reason && pollRejectRef.current) {
+      const reject = pollRejectRef.current;
+      pollRejectRef.current = null;
+      reject(reason);
+    }
   };
-  useEffect(() => () => stopPoll(), []);
+  useEffect(() => () => stopPoll(new Error('已取消')), []);
+  useEffect(() => {
+    if (taskId) activeTaskIdRef.current = String(taskId);
+  }, [taskId]);
 
   // ========== 上游节点（响应式订阅）==========
   // 之前用 useReactFlow().getEdges/getNodes 是非响应式的，上游 data 变化（例如上传图像节点上传完产出 imageUrl）
@@ -471,18 +488,31 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   //   修复: 轮询完成才 resolve，handleRun await 它，markDone 时机=任务真正结束。
   //   同样适用于 RH 钱包应用节点 (runninghubWallet)，同一个组件复用。
   const startPolling = (tid: string): Promise<void> => {
-    stopPoll();
+    stopPoll(new Error('已取消'));
     return new Promise<void>((resolve, reject) => {
       let elapsed = 0;
+      let settled = false;
       const POLL_INT = 5000;
       const MAX = 480;
+      const finish = (ok: boolean, error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (pollTimer.current) {
+          window.clearInterval(pollTimer.current);
+          pollTimer.current = null;
+        }
+        pollRejectRef.current = null;
+        if (activeTaskIdRef.current === tid) activeTaskIdRef.current = '';
+        if (ok) resolve();
+        else reject(error || new Error('RH 轮询失败'));
+      };
+      pollRejectRef.current = (error?: Error) => finish(false, error || new Error('已取消'));
       pollTimer.current = window.setInterval(async () => {
         elapsed += 1;
         if (elapsed > MAX) {
-          stopPoll();
           update({ status: 'error', error: '轮询超时' });
           setError('轮询超时');
-          reject(new Error('轮询超时'));
+          finish(false, new Error('轮询超时'));
           return;
         }
         try {
@@ -493,7 +523,6 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
             logBus.debug(`[${elapsed * 5}s] status=${r.status} code=${r.code} urls=${r.urls?.length || 0}`, src);
           }
           if (r.status === 'SUCCESS') {
-            stopPoll();
             // 按后缀分流到 imageUrl/videoUrl/audioUrl，避免视频 url 被填到 imageUrl 导致
             // OutputNode 当图片渲染而空白。
             const list: string[] = Array.isArray(r.urls) ? r.urls : [];
@@ -512,9 +541,8 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
             console.log('[RH/done] taskId=', tid, 'urls=', list);
             logBus.success(`任务完成 · ${list.length} 个输出 → ${list[0] || ''}`, src);
             update(patch);
-            resolve();
+            finish(true);
           } else if (r.status === 'FAILED') {
-            stopPoll();
             // failReason 可能是 ComfyUI 报错对象(含 traceback/exception_type 等)，
             // 需序列化为字符串避免 React JSX 直接渲染 object 崩溃
             let reason: string;
@@ -533,7 +561,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
             update({ status: 'error', error: reason });
             setError(reason);
             logBus.error(`生成失败: ${reason}`, src);
-            reject(new Error(reason));
+            finish(false, new Error(reason));
           } else {
             update({ status: 'polling', rhCode: r.code });
           }
@@ -609,6 +637,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   }, [webappId, upstreamNodes, appInfo]);
 
   const handleRun = async () => {
+    stopRequestedRef.current = false;
     setError(null);
     if (!webappId) {
       setError('请先填写 webappId');
@@ -648,12 +677,37 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
         nodeInfoList,
         instanceType: instanceType || undefined,
       });
+      activeTaskIdRef.current = r.taskId;
       console.log('[RH/submit] taskId=', r.taskId);
+      if (stopRequestedRef.current) {
+        logBus.warn(`停止请求已收到，提交返回后立即取消 RH 后台任务 taskId=${r.taskId}`, src);
+        try {
+          setCancelling(true);
+          await cancelRh(r.taskId);
+          logBus.success(`已请求取消 RH 后台任务 taskId=${r.taskId}`, src);
+          stopPoll(new Error('已取消'));
+          stopRequestedRef.current = false;
+          activeTaskIdRef.current = '';
+          update({ status: 'idle', taskId: '', error: null });
+          return;
+        } catch (cancelError: any) {
+          logBus.error(`取消 RH 后台任务失败: ${cancelError?.message || cancelError}`, src);
+          stopRequestedRef.current = false;
+          update({ status: 'polling', taskId: r.taskId, error: `取消 RH 后台任务失败：${cancelError?.message || cancelError}` });
+        } finally {
+          setCancelling(false);
+        }
+      }
       logBus.success(`异步任务已提交 taskId=${r.taskId} 进入轮询…`, src);
       update({ status: 'polling', taskId: r.taskId });
       // v1.2.9.12: await 让 useRunTrigger 等到任务真正完成才 markDone，循环器才能拿到 urls
       await startPolling(r.taskId);
     } catch (e: any) {
+      if (stopRequestedRef.current || e?.message === '已取消') {
+        logBus.warn('任务已停止', src);
+        update({ status: 'idle', taskId: '' });
+        return;
+      }
       console.error('[RH/submit] error:', e);
       logBus.error(`提交失败: ${e?.message || e}`, src);
       setError(e?.message || '提交失败');
@@ -667,13 +721,49 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
     await handleRun();
   });
 
-  const handleStop = () => {
-    stopPoll();
-    update({ status: 'idle' });
-    logBus.warn('用户主动停止', src);
+  const handleStop = async () => {
+    stopRequestedRef.current = true;
+    const tid = String(activeTaskIdRef.current || taskId || '').trim();
+    if (!tid) {
+      logBus.warn('用户主动停止：等待 RH 返回 taskId 后再取消后台任务', src);
+      update({ error: '正在等待 RH taskId，拿到后会立即取消后台任务' });
+      return;
+    }
+    if (cancelInFlightRef.current) return;
+    cancelInFlightRef.current = true;
+    setCancelling(true);
+    logBus.warn(`用户主动停止，正在请求取消 RH 后台任务 taskId=${tid}`, src);
+    update({ taskId: tid, error: '正在请求取消 RH 后台任务...' });
+    try {
+      await cancelRh(tid);
+      logBus.success(`已请求取消 RH 后台任务 taskId=${tid}`, src);
+      stopPoll(new Error('已取消'));
+      stopRequestedRef.current = false;
+      activeTaskIdRef.current = '';
+      update({ status: 'idle', taskId: '', error: null });
+    } catch (error: any) {
+      logBus.error(`取消 RH 后台任务失败: ${error?.message || error}`, src);
+      update({
+        status: status === 'submitting' ? 'submitting' : 'polling',
+        taskId: tid,
+        error: `取消 RH 后台任务失败：${error?.message || error}`,
+      });
+    } finally {
+      cancelInFlightRef.current = false;
+      setCancelling(false);
+    }
   };
 
-  const isBusy = status === 'submitting' || status === 'polling';
+  useEffect(() => {
+    if (runCancelSeq === lastRunCancelSeqRef.current) return;
+    lastRunCancelSeqRef.current = runCancelSeq;
+    if (!runCancelTargets.includes(id)) return;
+    if (status !== 'submitting' && status !== 'polling' && !taskId && !activeTaskIdRef.current) return;
+    handleStop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runCancelSeq, runCancelTargets, id, status, taskId]);
+
+  const isBusy = status === 'submitting' || status === 'polling' || cancelling;
   const nodeInfoList: any[] = appInfo?.nodeInfoList || [];
 
   return (
@@ -980,14 +1070,14 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
             onClick={handleStop}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-200 text-xs font-medium transition-colors"
           >
-            <Square size={11} /> 停止
+            <Square size={11} /> {cancelling ? '取消中...' : '停止'}
           </button>
         )}
 
         {isBusy && (
           <div className={`flex items-center gap-1 text-[10px] ${accent.spin}`}>
             <Loader2 size={11} className="animate-spin" />
-            {status === 'submitting' ? '提交任务...' : '轮询中'}
+            {cancelling ? '正在取消 RH 后台任务...' : status === 'submitting' ? '提交任务...' : '轮询中'}
             {taskId && <span className="ml-auto text-white/30">{String(taskId).slice(0, 10)}…</span>}
           </div>
         )}

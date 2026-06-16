@@ -280,6 +280,12 @@ const MAX_MESSAGES = 120;
 const MAX_ARTIFACTS = 80;
 const MAX_VERSIONS = 80;
 const MAX_DELETED_ARTIFACT_KEYS = 600;
+const CODEX_MESSAGE_STORAGE_CHAR_LIMIT = 8000;
+const CODEX_TOOL_MESSAGE_STORAGE_CHAR_LIMIT = 1200;
+const CODEX_ARTIFACT_TEXT_STORAGE_CHAR_LIMIT = 12000;
+const CODEX_STUDIO_SESSION_STORAGE_LIMIT = 8;
+const CODEX_STUDIO_SESSION_MESSAGE_LIMIT = 24;
+const CODEX_STUDIO_SESSION_ARTIFACT_LIMIT = 24;
 const CODEX_STUDIO_CONTEXT_DEFAULT_LIMIT = 30;
 const CODEX_STUDIO_CONTEXT_MAX_LIMIT = 80;
 const CODEX_STUDIO_CONTEXT_SUMMARY_MAX_CHARS = 3600;
@@ -564,6 +570,16 @@ function isCreatorFacingSkill(skill: CodexSkill) {
   return /image|visual|design|figma|layout|poster|logo|mood|scene|shot|prompt|story|script|presentation|document|copy|creative|canva/.test(joined);
 }
 
+function trimCodexStorageText(value: any, max = CODEX_MESSAGE_STORAGE_CHAR_LIMIT) {
+  const text = String(value || '');
+  if (text.length <= max) return text;
+  const marker = `\n\n...[已为画布流畅度折叠 ${Math.max(0, text.length - max)} 字符]...\n\n`;
+  if (max <= marker.length + 24) return `${text.slice(0, Math.max(0, max - marker.length))}${marker.trim()}`;
+  const headLength = Math.max(0, Math.floor((max - marker.length) * 0.6));
+  const tailLength = Math.max(0, max - marker.length - headLength);
+  return `${text.slice(0, headLength).trimEnd()}${marker}${text.slice(-tailLength).trimStart()}`;
+}
+
 function sanitizeMessages(value: any): CodexAgentMessage[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -576,7 +592,7 @@ function sanitizeMessages(value: any): CodexAgentMessage[] {
         id: String(item?.id || makeId('codex-msg')),
         turnId: item?.turnId ? String(item.turnId) : undefined,
         role,
-        content,
+        content: trimCodexStorageText(content, role === 'tool' ? CODEX_TOOL_MESSAGE_STORAGE_CHAR_LIMIT : CODEX_MESSAGE_STORAGE_CHAR_LIMIT),
         mode: item?.mode,
         status: item?.status,
         createdAt: Number(item?.createdAt) || Date.now(),
@@ -600,7 +616,8 @@ function normalizeArtifact(value: any, fallbackTurnId?: string): CodexAgentArtif
     kind,
     turnId: value.turnId || fallbackTurnId,
     title: String(value.title || artifactKindLabel(kind)),
-    text,
+    text: trimCodexStorageText(text, CODEX_ARTIFACT_TEXT_STORAGE_CHAR_LIMIT),
+    content: kind === 'text' ? trimCodexStorageText(text, CODEX_ARTIFACT_TEXT_STORAGE_CHAR_LIMIT) : value.content,
     url,
     urls: urls.length ? urls : (url ? [url] : []),
     status: value.status || 'completed',
@@ -700,6 +717,42 @@ function deriveSessionTitle(messages: CodexAgentMessage[], fallback = '新会话
   return textPreview(user.content, 24) || fallback;
 }
 
+function compactCodexStudioSessionForCanvas(session: CodexStudioSession): CodexStudioSession {
+  const messages = sanitizeMessages(session.messages).slice(-CODEX_STUDIO_SESSION_MESSAGE_LIMIT);
+  const artifacts = sanitizeArtifacts(session.artifacts).slice(-CODEX_STUDIO_SESSION_ARTIFACT_LIMIT);
+  const artifactIds = new Set(artifacts.map((artifact) => artifact.id));
+  const versions = sanitizeVersions(session.versions)
+    .filter((version) => artifactIds.has(version.artifactId))
+    .slice(-MAX_VERSIONS);
+  const contextSummary = trimCodexStorageText(session.contextSummary || '', CODEX_STUDIO_CONTEXT_SUMMARY_MAX_CHARS);
+  return {
+    ...session,
+    id: String(session.id || makeId('codex-session')),
+    title: String(session.title || deriveSessionTitle(messages, '新会话')).trim() || '新会话',
+    updatedAt: Number(session.updatedAt) || Date.now(),
+    messageCount: Number(session.messageCount) || messages.length,
+    artifactCount: Number(session.artifactCount) || artifacts.length,
+    messages,
+    artifacts,
+    versions,
+    contextSummary,
+    contextCompressedCount: clampInteger(session.contextCompressedCount, 0, 0, MAX_MESSAGES),
+    contextLimit: clampInteger(session.contextLimit, CODEX_STUDIO_CONTEXT_DEFAULT_LIMIT, 0, CODEX_STUDIO_CONTEXT_MAX_LIMIT),
+  };
+}
+
+function compactCodexStudioSessionsForCanvas(sessions: CodexStudioSession[]): CodexStudioSession[] {
+  const seen = new Set<string>();
+  return sessions
+    .map((session) => compactCodexStudioSessionForCanvas(session))
+    .filter((session) => {
+      if (!session.id || seen.has(session.id)) return false;
+      seen.add(session.id);
+      return true;
+    })
+    .slice(0, CODEX_STUDIO_SESSION_STORAGE_LIMIT);
+}
+
 function sanitizeStudioSessions(value: any, fallbackId = 'session'): CodexStudioSession[] {
   const items = Array.isArray(value) ? value : [];
   const out = items
@@ -709,7 +762,6 @@ function sanitizeStudioSessions(value: any, fallbackId = 'session'): CodexStudio
       const messages = sanitizeMessages(item?.messages);
       const artifacts = sanitizeArtifacts(item?.artifacts);
       const versions = sanitizeVersions(item?.versions);
-      const contextSummary = String(item?.contextSummary || '').trim();
       return {
         id,
         title: String(item?.title || deriveSessionTitle(messages, '新会话')).trim() || '新会话',
@@ -719,15 +771,15 @@ function sanitizeStudioSessions(value: any, fallbackId = 'session'): CodexStudio
         messages,
         artifacts,
         versions,
-        contextSummary,
+        contextSummary: String(item?.contextSummary || '').trim(),
         contextCompressedCount: clampInteger(item?.contextCompressedCount, 0, 0, MAX_MESSAGES),
         contextLimit: clampInteger(item?.contextLimit, CODEX_STUDIO_CONTEXT_DEFAULT_LIMIT, 0, CODEX_STUDIO_CONTEXT_MAX_LIMIT),
       };
     })
-    .filter((item): item is CodexStudioSession => !!item)
-    .slice(0, 24);
-  if (out.length > 0) return out;
-  return [{
+    .filter((item): item is CodexStudioSession => !!item);
+  const compacted = compactCodexStudioSessionsForCanvas(out);
+  if (compacted.length > 0) return compacted;
+  return [compactCodexStudioSessionForCanvas({
     id: fallbackId,
     title: '当前会话',
     updatedAt: Date.now(),
@@ -739,7 +791,7 @@ function sanitizeStudioSessions(value: any, fallbackId = 'session'): CodexStudio
     contextSummary: '',
     contextCompressedCount: 0,
     contextLimit: CODEX_STUDIO_CONTEXT_DEFAULT_LIMIT,
-  }];
+  })];
 }
 
 function artifactKindLabel(kind: CodexArtifactKind | string) {
@@ -1253,7 +1305,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
       contextLimit: codexContextLimit,
     };
     const next = [current, ...codexStudioSessions.filter((item) => item.id !== activeStudioSessionId)];
-    return next.slice(0, 24);
+    return compactCodexStudioSessionsForCanvas(next);
   }, [activeStudioSessionId, artifacts, codexContextCompressedCount, codexContextLimit, codexContextSummary, codexStudioSessions, messages, versions]);
   const messagesRef = useRef<CodexAgentMessage[]>(messages);
   const artifactsRef = useRef<CodexAgentArtifact[]>(artifacts);
@@ -1507,13 +1559,13 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
   );
 
   const setMessages = useCallback((next: CodexAgentMessage[], extra: Record<string, any> = {}) => {
-    const capped = next.slice(-MAX_MESSAGES);
+    const capped = sanitizeMessages(next);
     messagesRef.current = capped;
     update({ codexMessages: capped, ...extra });
   }, [update]);
 
   const setArtifacts = useCallback((next: CodexAgentArtifact[], extra: Record<string, any> = {}) => {
-    const capped = filterDeletedArtifacts(next, deletedArtifactKeysRef.current).slice(-MAX_ARTIFACTS);
+    const capped = filterDeletedArtifacts(sanitizeArtifacts(next), deletedArtifactKeysRef.current).slice(-MAX_ARTIFACTS);
     artifactsRef.current = capped;
     update({ codexArtifacts: capped, ...extra });
   }, [update]);
@@ -1876,19 +1928,22 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     }
   }, [d.codexWorkspaceDir, id, projectSkills, sessionId, update]);
 
-  const snapshotActiveStudioSession = useCallback((): CodexStudioSession => ({
-    id: activeStudioSessionId,
-    title: deriveSessionTitle(messagesRef.current, '当前会话'),
-    updatedAt: Date.now(),
-    messageCount: messagesRef.current.length,
-    artifactCount: artifactsRef.current.length,
-    messages: messagesRef.current,
-    artifacts: artifactsRef.current,
-    versions: versionsRef.current,
-    contextSummary: codexContextSummaryRef.current,
-    contextCompressedCount: codexContextCompressedCountRef.current,
-    contextLimit: codexContextLimitRef.current,
-  }), [activeStudioSessionId]);
+  const snapshotActiveStudioSession = useCallback((): CodexStudioSession => {
+    const current: CodexStudioSession = {
+      id: activeStudioSessionId,
+      title: deriveSessionTitle(messagesRef.current, '当前会话'),
+      updatedAt: Date.now(),
+      messageCount: messagesRef.current.length,
+      artifactCount: artifactsRef.current.length,
+      messages: messagesRef.current,
+      artifacts: artifactsRef.current,
+      versions: versionsRef.current,
+      contextSummary: codexContextSummaryRef.current,
+      contextCompressedCount: codexContextCompressedCountRef.current,
+      contextLimit: codexContextLimitRef.current,
+    };
+    return compactCodexStudioSessionForCanvas(current);
+  }, [activeStudioSessionId]);
 
   const newCodexStudioSession = useCallback(() => {
     const current = snapshotActiveStudioSession();
@@ -1912,7 +1967,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     codexContextSummaryRef.current = '';
     codexContextCompressedCountRef.current = 0;
     update({
-      codexStudioSessions: [current, nextSession, ...codexStudioSessions.filter((item) => item.id !== current.id)].slice(0, 24),
+      codexStudioSessions: compactCodexStudioSessionsForCanvas([current, nextSession, ...codexStudioSessions.filter((item) => item.id !== current.id)]),
       codexActiveStudioSessionId: nextId,
       codexMessages: [],
       codexArtifacts: [],
@@ -1943,7 +1998,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     const current = snapshotActiveStudioSession();
     const archivedCount = Math.max(0, codexStudioSessions.length - 1);
     update({
-      codexStudioSessions: [current],
+      codexStudioSessions: [compactCodexStudioSessionForCanvas(current)],
       codexActiveStudioSessionId: current.id,
       codexArchivedSessionCount: Number(d.codexArchivedSessionCount || 0) + archivedCount,
       codexLastRunSummary: archivedCount > 0 ? `已归档 ${archivedCount} 个旧会话` : '没有需要归档的旧会话',
@@ -1954,7 +2009,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     const targetId = String(sessionIdToOpen || '').trim();
     if (!targetId || targetId === activeStudioSessionId) return;
     const current = snapshotActiveStudioSession();
-    const savedSessions = [current, ...codexStudioSessions.filter((item) => item.id !== current.id)];
+    const savedSessions = compactCodexStudioSessionsForCanvas([current, ...codexStudioSessions.filter((item) => item.id !== current.id)]);
     const target = savedSessions.find((item) => item.id === targetId);
     if (!target) return;
     const nextMessages = sanitizeMessages(target.messages);
@@ -1971,9 +2026,9 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     codexContextCompressedCountRef.current = nextContextCompressedCount;
     codexContextLimitRef.current = nextContextLimit;
     update({
-      codexStudioSessions: savedSessions.map((item) => item.id === targetId
+      codexStudioSessions: compactCodexStudioSessionsForCanvas(savedSessions.map((item) => item.id === targetId
         ? { ...target, messages: nextMessages, artifacts: nextArtifacts, versions: nextVersions, contextSummary: nextContextSummary, contextCompressedCount: nextContextCompressedCount, contextLimit: nextContextLimit }
-        : item).slice(0, 24),
+        : item)),
       codexActiveStudioSessionId: targetId,
       codexMessages: nextMessages,
       codexArtifacts: nextArtifacts,
@@ -2152,7 +2207,6 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
         signal: controller.signal,
         onDelta: (delta) => {
           streamedText += delta;
-          replaceAssistant(streamedText, 'running');
           setStreamingReply(streamedText);
         },
         onEvent: (event: CodexStreamEvent) => {
@@ -2502,7 +2556,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     const nextVersions = versionsRef.current
       .filter((version) => !targetIds.has(version.artifactId) && nextArtifactIds.has(version.artifactId))
       .slice(-MAX_VERSIONS);
-    const nextSessions = studioSessionList.map((session) => {
+    const nextSessions = compactCodexStudioSessionsForCanvas(studioSessionList.map((session) => {
       const sessionArtifacts = filterDeletedArtifacts(
         sanitizeArtifacts(session.id === activeStudioSessionId ? nextArtifacts : session.artifacts),
         nextDeletedKeys,
@@ -2520,7 +2574,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
         messageCount: sessionMessages.length,
         updatedAt: session.id === activeStudioSessionId ? Date.now() : session.updatedAt,
       };
-    }).slice(0, 24);
+    }));
     artifactsRef.current = nextArtifacts;
     versionsRef.current = nextVersions;
     setHoverZoomArtifact((current) => current && targetIds.has(current.id) ? null : current);
@@ -3665,6 +3719,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
                 )}
                 {messages.map((msg) => {
                   const roleLabel = msg.role === 'user' ? 'USER' : msg.role === 'tool' ? 'TOOL' : 'CODEX';
+                  const messageContent = msg.content || (msg.status === 'running' && msg.role === 'assistant' ? streamingReply : '') || (msg.status === 'running' ? 'Codex 正在生成...' : '');
                   if (msg.role === 'tool') {
                     return (
                       <div key={msg.id} data-codex-message-role="tool" className="group flex items-start gap-2 text-[11px]" style={{ color: subText }}>
@@ -3705,7 +3760,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
                             type="button"
                             className="nodrag rounded-md border px-1 py-0.5 opacity-70 transition hover:opacity-100"
                             style={{ borderColor: border, background: surface, color: text }}
-                            onClick={() => copyCodexMessage(msg.content)}
+                            onClick={() => copyCodexMessage(messageContent)}
                             title="复制这条消息"
                           >
                             <Copy size={10} />
@@ -3723,7 +3778,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
                           onMouseDown={(event) => event.stopPropagation()}
                           onPointerDown={(event) => event.stopPropagation()}
                         >
-                          {msg.content || (msg.status === 'running' ? 'Codex 正在生成...' : '')}
+                          {messageContent}
                         </div>
                       </div>
                     </div>

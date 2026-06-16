@@ -314,6 +314,37 @@ test('panorama 3d node exposes built-in generation and resource actions', () => 
   assert.match(canvas, /'panorama-3d':\s*\{[\s\S]*panoramaShotCamera:\s*\{/);
 });
 
+test('panorama storyboard prompt board defaults closed and stitches text below snapshots', async () => {
+  const source = readFileSync(new URL('../src/components/nodes/Panorama3DNode.tsx', import.meta.url), 'utf8');
+  const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
+  const utils = await import('../src/utils/panorama3d.ts');
+
+  assert.equal(
+    (utils as any).PANORAMA_STORYBOARD_PROMPT_DEFAULT,
+    '｛［人物］是@在做［动作］，｝',
+  );
+  assert.equal(typeof (utils as any).normalizePanoramaStoryboardPrompt, 'function');
+  assert.equal(typeof (utils as any).measurePanoramaStoryboardPromptPanel, 'function');
+  assert.equal(typeof (utils as any).composePanoramaStoryboardPromptDataUrl, 'function');
+
+  const normalize = (utils as any).normalizePanoramaStoryboardPrompt as (value: unknown) => string;
+  const measure = (utils as any).measurePanoramaStoryboardPromptPanel as (value: string, width: number) => { lines: string[]; panelHeight: number };
+  assert.equal(normalize('   '), '｛［人物］是@在做［动作］，｝');
+  const single = measure('角色走进庭院', 1280);
+  const multi = measure('第一行\n第二行\n第三行\n第四行', 1280);
+  const wrapped = measure('这是一段非常长的分镜提示词，用来确认黑底白字提示词框会根据内容自动换行并增加高度，避免最终合成图被截断。', 420);
+  assert.ok(multi.panelHeight > single.panelHeight);
+  assert.ok(wrapped.lines.length > 1);
+
+  assert.match(canvas, /panoramaStoryboardPromptEnabled:\s*false/);
+  assert.match(canvas, /panoramaStoryboardPromptText:\s*'｛［人物］是@在做［动作］，｝'/);
+  assert.match(source, /分镜提示板/);
+  assert.match(source, /panoramaStoryboardPromptEnabled/);
+  assert.match(source, /panoramaStoryboardPromptText/);
+  assert.match(source, /composePanoramaStoryboardPromptDataUrl/);
+  assert.match(source, /renderStoryboardPromptPreview/);
+});
+
 test('panorama seam score classification gives actionable labels', () => {
   assert.deepEqual(classifyPanoramaSeamScore(96), {
     level: 'excellent',

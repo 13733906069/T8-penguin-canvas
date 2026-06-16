@@ -54,6 +54,107 @@ export interface PanoramaGenerationHistoryItem {
   createdAt: string;
 }
 
+export const PANORAMA_STORYBOARD_PROMPT_DEFAULT = '｛［人物］是@在做［动作］，｝';
+
+export interface PanoramaStoryboardPromptPanel {
+  text: string;
+  lines: string[];
+  panelHeight: number;
+  fontSize: number;
+  lineHeight: number;
+  paddingX: number;
+  paddingY: number;
+}
+
+function clampStoryboardNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+export function normalizePanoramaStoryboardPrompt(value: unknown) {
+  const text = typeof value === 'string' ? value.replace(/\r\n/g, '\n').trim() : '';
+  return text || PANORAMA_STORYBOARD_PROMPT_DEFAULT;
+}
+
+function splitStoryboardLine(line: string, maxChars: number) {
+  const chars = Array.from(line);
+  if (chars.length <= maxChars) return [line];
+  const out: string[] = [];
+  let buffer = '';
+  let bufferChars = 0;
+  const softBreakAt = Math.max(6, Math.floor(maxChars * 0.72));
+  for (const char of chars) {
+    buffer += char;
+    bufferChars += 1;
+    if (bufferChars >= maxChars || (bufferChars >= softBreakAt && /[，。！？、,.!?;；:：]\s*$/.test(buffer))) {
+      out.push(buffer.trimEnd());
+      buffer = '';
+      bufferChars = 0;
+    }
+  }
+  if (buffer) out.push(buffer.trimEnd());
+  return out.filter((item) => item.length > 0);
+}
+
+export function measurePanoramaStoryboardPromptPanel(value: string, width: number): PanoramaStoryboardPromptPanel {
+  const safeWidth = Math.max(160, Math.round(width || 0));
+  const text = normalizePanoramaStoryboardPrompt(value);
+  const fontSize = Math.round(clampStoryboardNumber(safeWidth * 0.026, 20, 42));
+  const lineHeight = Math.ceil(fontSize * 1.45);
+  const paddingX = Math.round(clampStoryboardNumber(safeWidth * 0.036, 28, 64));
+  const paddingY = Math.round(clampStoryboardNumber(safeWidth * 0.028, 24, 56));
+  const maxChars = Math.max(8, Math.floor((safeWidth - paddingX * 2) / Math.max(10, fontSize * 0.62)));
+  const lines = text
+    .split('\n')
+    .flatMap((line) => {
+      const trimmed = line.trim();
+      return trimmed ? splitStoryboardLine(trimmed, maxChars) : [''];
+    });
+  const finalLines = lines.length > 0 ? lines : [PANORAMA_STORYBOARD_PROMPT_DEFAULT];
+  return {
+    text,
+    lines: finalLines,
+    panelHeight: Math.ceil(paddingY * 2 + finalLines.length * lineHeight),
+    fontSize,
+    lineHeight,
+    paddingX,
+    paddingY,
+  };
+}
+
+function loadStoryboardPromptImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('分镜提示板原图加载失败'));
+    if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
+    img.src = src;
+  });
+}
+
+export async function composePanoramaStoryboardPromptDataUrl(sourceDataUrl: string, prompt: string): Promise<string> {
+  const img = await loadStoryboardPromptImage(sourceDataUrl);
+  const width = Math.max(1, img.naturalWidth || img.width);
+  const height = Math.max(1, img.naturalHeight || img.height);
+  const panel = measurePanoramaStoryboardPromptPanel(prompt, width);
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = height + panel.panelHeight;
+  const ctx = out.getContext('2d');
+  if (!ctx) return sourceDataUrl;
+  ctx.drawImage(img, 0, 0, width, height);
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, height, width, panel.panelHeight);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 ${panel.fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  ctx.textBaseline = 'top';
+  panel.lines.forEach((line, index) => {
+    const y = height + panel.paddingY + index * panel.lineHeight;
+    ctx.fillText(line || ' ', panel.paddingX, y, width - panel.paddingX * 2);
+  });
+  return out.toDataURL('image/png');
+}
+
 export interface PanoramaCameraView {
   id: string;
   name: string;

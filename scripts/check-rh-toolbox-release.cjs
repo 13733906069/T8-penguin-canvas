@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const MANIFEST_PATH = path.join(ROOT, 'src', 'data', 'rhToolboxManifest.ts');
 const REQUIRED_TOOL_IDS = [
   'image-cutout-v1',
+  'image-upscale-4k',
   'tuantiquv10',
   'bernini1',
   'berninituxiangbianji',
@@ -24,6 +25,7 @@ const REQUIRED_CATEGORY_IDS = [
 const VALID_MEDIA_KINDS = new Set(['text', 'image', 'video', 'audio']);
 const VALID_PARAM_KINDS = new Set(['text', 'number', 'select', 'boolean']);
 const VALID_PARENT_IDS = new Set(['image', 'video', 'audio', 'model3d', 'text']);
+const RH_TOOLBOX_MIN_RUNTIME_MS = 60 * 60 * 1000;
 const FORBIDDEN_MANIFEST_PATTERNS = [
   [/RHToolboxMakerNode/, 'dev maker component name'],
   [/rh-toolbox-maker/, 'dev maker node type'],
@@ -197,6 +199,11 @@ function validateManifest(source, manifest) {
     }
     if (runtime.maxPolls != null && Number(runtime.maxPolls) < 1) {
       fail(`tool ${id} runtime.maxPolls must be >= 1`, failures);
+    }
+    const pollIntervalMs = Number(runtime.pollIntervalMs || 5000);
+    const maxPolls = Number(runtime.maxPolls || Math.ceil(RH_TOOLBOX_MIN_RUNTIME_MS / Math.max(1, pollIntervalMs)));
+    if (enabled && pollIntervalMs * maxPolls < RH_TOOLBOX_MIN_RUNTIME_MS) {
+      fail(`tool ${id} runtime must allow at least 60 minutes of polling`, failures);
     }
   }
 

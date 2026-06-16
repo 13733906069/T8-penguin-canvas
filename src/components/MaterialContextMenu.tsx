@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BookmarkPlus, CloudUpload, FolderPlus, Library, Palette, Plus, Save, Tags, WandSparkles, X } from 'lucide-react';
+import { BookmarkPlus, CloudUpload, Copy, FolderPlus, Library, Palette, Plus, Save, Tags, WandSparkles, X } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useCanvasStore } from '../stores/canvas';
 import { trackAchievementEvent } from '../stores/achievements';
@@ -30,6 +30,7 @@ import {
   normalizeAnimeTagLibrary,
   upsertAnimeTagInLibrary,
 } from '../utils/animeTagMaster';
+import { copyImageUrlToClipboard } from '../utils/imageClipboard';
 import SmartImage from './SmartImage';
 
 interface MenuState {
@@ -106,6 +107,7 @@ export default function MaterialContextMenu() {
   const [cloudResult, setCloudResult] = useState<api.CloudUploadAssetResult | null>(null);
   const [artistStyleDraft, setArtistStyleDraft] = useState<ArtistStyleDraft | null>(null);
   const [animeTagDraft, setAnimeTagDraft] = useState<AnimeTagDraft | null>(null);
+  const [copyingImage, setCopyingImage] = useState(false);
 
   const close = useCallback(() => {
     setMenu(null);
@@ -115,6 +117,7 @@ export default function MaterialContextMenu() {
     setPromptCategoryId('');
     setArtistStyleDraft(null);
     setAnimeTagDraft(null);
+    setCopyingImage(false);
   }, []);
 
   const loadCategories = useCallback(async (kind: ResourceKind) => {
@@ -164,6 +167,7 @@ export default function MaterialContextMenu() {
       setCloudResult(null);
       setArtistStyleDraft(null);
       setAnimeTagDraft(null);
+      setCopyingImage(false);
       loadCategories(kind);
       loadCloudTargets();
     };
@@ -186,6 +190,7 @@ export default function MaterialContextMenu() {
       setCloudResult(null);
       setArtistStyleDraft(null);
       setAnimeTagDraft(null);
+      setCopyingImage(false);
       loadCategories('set');
     };
     document.addEventListener('contextmenu', onContext, true);
@@ -484,6 +489,20 @@ export default function MaterialContextMenu() {
     }
   };
 
+  const copyImageToClipboard = async () => {
+    if (!menu || menu.kind !== 'image' || !menu.url) return;
+    setCopyingImage(true);
+    setMessage('正在复制图片到剪切板...');
+    try {
+      await copyImageUrlToClipboard(menu.url);
+      setMessage('图片已复制到剪切板');
+    } catch (error: any) {
+      setMessage(error?.message || '复制图片到剪切板失败');
+    } finally {
+      setCopyingImage(false);
+    }
+  };
+
   if (!menu) return null;
 
   const itemCls = isPixel
@@ -538,6 +557,12 @@ export default function MaterialContextMenu() {
             borderBottom: isPixel ? '2px solid #1A1410' : `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
           }}
         >
+          {menu.kind === 'image' && (
+            <button className={`${itemCls} !px-1`} onClick={copyImageToClipboard} disabled={copyingImage}>
+              <Copy size={12} />
+              <span className="truncate">{copyingImage ? '正在复制图片...' : '复制图片到剪切板'}</span>
+            </button>
+          )}
           <div className="flex items-center gap-1.5">
             <select
               value={selectedPromptCategoryId}

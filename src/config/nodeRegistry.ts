@@ -27,6 +27,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'image', label: '图像', category: 'core', description: 'GPT Image 2 / Nano Banana Pro / Nano Banana 2 (多 TAB 模型切换)', icon: 'Image', color: 'amber' },
   { type: 'video', label: '视频', category: 'core', description: 'Veo / Grok Video', icon: 'Video', color: 'rose' },
   { type: 'seedance', label: 'SD2.0', category: 'core', description: 'Seedance 2.0 视频分镜', icon: 'Film', color: 'fuchsia' },
+  { type: 'director-storyboard', label: '导演分镜台', category: 'core', description: '秒级长片分镜台：多镜头提示词、参考素材和 Seedance2.0 无限并发生成', icon: 'Clapperboard', color: 'fuchsia' },
   { type: 'audio', label: '音频', category: 'core', description: 'Suno V5.5 全模式(生成/翻唱/续写)', icon: 'Music', color: 'violet' },
   { type: 'llm', label: 'LLM', category: 'core', description: 'GPT-5 / Claude 4.5 / Gemini 2.5(独立 Key)', icon: 'Brain', color: 'emerald' },
 

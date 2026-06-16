@@ -9,6 +9,7 @@ import {
   FileVideo,
   Music,
   RotateCcw,
+  Trash2,
   Upload as UploadIcon,
   X,
 } from 'lucide-react';
@@ -19,13 +20,14 @@ import { useHiddenFeatureStore, isRhDuckUploadEnabled } from '../../stores/hidde
 import { PORT_COLOR } from '../../config/portTypes';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
+import { logBus } from '../../stores/logs';
 import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
 import ResizableCorners from './ResizableCorners';
 import CollectionSplitButton from '../CollectionSplitButton';
 import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
-import RhImageCapabilityButton from '../RhImageCapabilityButton';
+import RhImageCapabilityRail from '../RhImageCapabilityRail';
 import SmartImage from '../SmartImage';
 import { decodeDuckFiles, type DuckDecodeFileItem } from '../../services/api';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
@@ -34,6 +36,7 @@ import {
   createOutputDataFromItems,
   createUploadDataFromItem,
   createUploadDataFromItems,
+  createUploadMediaRemovalData,
   formatMediaSize,
   getMediaItemsFromData,
   sameMediaUrls,
@@ -42,6 +45,8 @@ import {
 } from '../../utils/mediaCollection';
 // v1.2.10.5: 节点落点防重叠
 import { placeSingleNode, placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
+
+type UploadProduceMeta = ImageEditProduceMeta | { type: 'rh-capability'; label?: string };
 
 /**
  * UploadNode - 通用上传素材节点
@@ -146,6 +151,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const rf = useReactFlow();
 
   const [error, setError] = useState<string | null>(null);
+  const [rhCapabilityBusy, setRhCapabilityBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   // 图像编辑弹窗 src URL（与 OutputNode 双击逻辑保持一致）
@@ -330,6 +336,18 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     setError(null);
   };
 
+  const handleRemoveUploadItem = (index: number) => {
+    if (!uploadType) return;
+    const emptyUploadType = lockedUploadType ?? (rhDuckMode ? 'image' : null);
+    update({
+      ...createUploadMediaRemovalData(d, uploadType, index, emptyUploadType),
+      lockedUploadType: lockedUploadType === 'model3d' ? 'model3d' : undefined,
+      ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
+    });
+    setError(null);
+    if (editingUrl === mediaItems[index]?.url) setEditingUrl(null);
+  };
+
   const uploadSingleFile = async (file: File, kind: UploadKind): Promise<MediaItem> => {
     const fd = new FormData();
     fd.append('file', file);
@@ -423,8 +441,14 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     if (e) e.stopPropagation();
     if (canEditImage) setEditingUrl(imageSourceUrls[0]);
   };
-  const handleProduce = (urls: string[], _meta?: ImageEditProduceMeta) => {
-    if (!urls || urls.length === 0) return;
+  const handleProduce = (urls: string[], _meta?: UploadProduceMeta) => {
+    const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
+    const isRhCapabilityOutput = _meta?.type === 'rh-capability';
+    const logSource = `rh-image-output:${id}`;
+    if (cleanUrls.length === 0) {
+      if (isRhCapabilityOutput) logBus.warn(`${_meta.label || 'RH 图像能力'}完成但没有可创建的图像 URL`, logSource);
+      return;
+    }
     const me = rf.getNode(id);
     const myW = (me as any)?.measured?.width || (me as any)?.width || 260;
     const myH = (me as any)?.measured?.height || (me as any)?.height || 360;
@@ -436,13 +460,16 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     const ts = Date.now();
     // v1.2.10.5: 整组防重叠 —— 先算 3 列宫格, 再求公共偏移
     const _sz = defaultSizeOf('output');
-    const _desired: PlacementRect[] = urls.map((_, i) => ({
+    if (isRhCapabilityOutput) {
+      logBus.info(`${_meta.label || 'RH 图像能力'}准备创建 ${cleanUrls.length} 个输出素材节点`, logSource);
+    }
+    const _desired: PlacementRect[] = cleanUrls.map((_, i) => ({
       x: baseX + (i % COLS) * COL_W,
       y: baseY + Math.floor(i / COLS) * ROW_H,
       w: _sz.w, h: _sz.h,
     }));
     const _off = placeBatchNodes(_desired, rf.getNodes(), { source: `placement:upload-produce:${id}` });
-    const newNodes: Node[] = urls.map((u, i) => {
+    const newNodes: Node[] = cleanUrls.map((u, i) => {
       const newId = `output-auto-edit-${id}-${ts}-${i}-${Math.random()
         .toString(36)
         .slice(2, 6)}`;
@@ -457,9 +484,28 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
           directImageUrl: u,
           imageUrl: u,
         },
+        selected: isRhCapabilityOutput,
       } as Node;
     });
-    rf.addNodes(newNodes);
+    if (isRhCapabilityOutput) {
+      rf.setNodes((prev) => [...prev.map((node) => ({ ...node, selected: false })), ...newNodes]);
+      const first = newNodes[0];
+      if (first) {
+        window.setTimeout(() => {
+          try {
+            rf.setCenter(first.position.x + _sz.w / 2, first.position.y + _sz.h / 2, {
+              zoom: Math.max(0.7, Math.min(1.2, rf.getZoom())),
+              duration: 320,
+            });
+          } catch {
+            /* 视野定位失败不影响节点创建 */
+          }
+        }, 0);
+      }
+      logBus.success(`${_meta.label || 'RH 图像能力'}已创建 ${newNodes.length} 个输出素材节点`, logSource);
+    } else {
+      rf.addNodes(newNodes);
+    }
   };
 
   const splitUploadCollection = () => {
@@ -527,7 +573,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
         accent={effectiveHandleColor}
         onResize={(_e, p) => setSize({ w: p.width, h: p.height })}
       />
-      {/* 选中时浮动图像操作按钮 — Edit 保持本地编辑, 抠图走 RH 工具箱能力层 */}
+      {/* 选中时浮动图像操作按钮 — Edit 保持本地编辑，RH 图像能力走左侧轨道 */}
       {selected && canEditImage && (
         <div
           className="nodrag nopan"
@@ -571,15 +617,18 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
             <Edit3 size={12} />
             <span>Edit</span>
           </button>
-          <RhImageCapabilityButton
-            sourceUrls={imageSourceUrls}
-            accent={effectiveHandleColor}
-            isDark={isDark}
-            isPixel={isPixel}
-            onComplete={(result) => handleProduce(result.imageUrls)}
-            onError={setError}
-          />
         </div>
+      )}
+      {(selected || rhCapabilityBusy) && canEditImage && (
+        <RhImageCapabilityRail
+          sourceUrls={imageSourceUrls}
+          accent={effectiveHandleColor}
+          isDark={isDark}
+          isPixel={isPixel}
+          onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
+          onError={setError}
+          onRunningChange={setRhCapabilityBusy}
+        />
       )}
       {/* 仅有 source handle(上传节点不接收输入) */}
       <Handle
@@ -718,6 +767,28 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                         alt={item.name || `图像 ${i + 1}`}
                         buttonClassName="absolute right-1.5 top-1.5 z-10 h-7 w-7 p-0 opacity-0 shadow-md transition group-hover/upload-image:opacity-100 focus:opacity-100"
                       />
+                      <button
+                        type="button"
+                        className="nodrag nopan t8-btn t8-mini-icon-button t8-material-delete-button absolute right-1.5 top-10 z-10 h-7 w-7 p-0 opacity-0 shadow-md transition group-hover/upload-image:opacity-100 focus:opacity-100"
+                        title={`删除素材 ${i + 1}`}
+                        aria-label={`删除素材 ${i + 1}`}
+                        style={{ color: 'var(--t8-danger, #ef4444)' }}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRemoveUploadItem(i);
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                     <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
                       <span className="truncate flex-1" title={item.name}>{item.name || `图像 ${i + 1}`}</span>
@@ -752,6 +823,21 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                       <span className="truncate flex-1" title={item.name}>{item.name || `视频 ${i + 1}`}</span>
                       <MediaMetadataBadge kind="video" url={item.url} />
                       {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
+                      <button
+                        type="button"
+                        className={`nodrag nopan p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
+                        title={`删除素材 ${i + 1}`}
+                        aria-label={`删除素材 ${i + 1}`}
+                        style={{ color: 'var(--t8-danger, #ef4444)' }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRemoveUploadItem(i);
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -779,6 +865,21 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                       <span className="truncate flex-1" title={item.name}>{item.name || `音频 ${i + 1}`}</span>
                       <MediaMetadataBadge kind="audio" url={item.url} />
                       {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
+                      <button
+                        type="button"
+                        className={`nodrag nopan p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
+                        title={`删除素材 ${i + 1}`}
+                        aria-label={`删除素材 ${i + 1}`}
+                        style={{ color: 'var(--t8-danger, #ef4444)' }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRemoveUploadItem(i);
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -821,6 +922,23 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                       >
                         <Download size={10} /> 下载
                       </a>
+                      <button
+                        type="button"
+                        className={`nodrag nopan inline-flex items-center justify-center rounded px-1.5 py-1 text-[10px] ${
+                          isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'
+                        }`}
+                        title={`删除素材 ${i + 1}`}
+                        aria-label={`删除素材 ${i + 1}`}
+                        style={{ color: 'var(--t8-danger, #ef4444)' }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRemoveUploadItem(i);
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   </div>
                 ))}

@@ -27,7 +27,7 @@ import {
   Sparkles, Search, Plus, Pencil, AlertCircle, Loader2,
   Square, RefreshCw, ArrowLeft, Download, Upload,
 } from 'lucide-react';
-import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
+import { submitRh, queryRh, cancelRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -42,6 +42,7 @@ import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { useRHToolsSafe } from '../../providers/RHToolsProvider';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
+import { useRunBusStore } from '../../stores/runBus';
 import { fuzzyMatch } from '../../utils/pinyinMatch';
 import {
   countExcludedMaterials,
@@ -130,6 +131,7 @@ const paramKey = rhParamKey;
 type RHToolsPollEntry = {
   timer: number;
   promise: Promise<void>;
+  reject: (error?: Error) => void;
 };
 
 const activeRHToolsPolls = new Map<string, RHToolsPollEntry>();
@@ -197,6 +199,13 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
   const hasAutoOutput = useHasAutoOutput(id);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const activeTaskIdRef = useRef<string>(taskId ? String(taskId) : '');
+  const stopRequestedRef = useRef(false);
+  const cancelInFlightRef = useRef(false);
+  const [cancelling, setCancelling] = useState(false);
+  const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
+  const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
+  const lastRunCancelSeqRef = useRef(runCancelSeq);
   const currentPollKeyRef = useRef<string | null>(taskId ? rhToolsPollKey(id, taskId) : null);
   const [fetchingInfo, setFetchingInfo] = useState(false);
 
@@ -204,15 +213,18 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
     if (mountedRef.current) setError(message);
   };
 
-  const stopPoll = (tid?: string) => {
+  const stopPoll = (tid?: string, reason?: Error) => {
     const key = tid
       ? rhToolsPollKey(id, tid)
       : currentPollKeyRef.current || (taskId ? rhToolsPollKey(id, taskId) : null);
     if (!key) return;
     const entry = activeRHToolsPolls.get(key);
     if (entry) {
-      window.clearInterval(entry.timer);
-      activeRHToolsPolls.delete(key);
+      if (reason) entry.reject(reason);
+      else {
+        window.clearInterval(entry.timer);
+        activeRHToolsPolls.delete(key);
+      }
     }
     if (currentPollKeyRef.current === key) {
       currentPollKeyRef.current = null;
@@ -222,8 +234,12 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      stopPoll(undefined, new Error('已取消'));
     };
   }, []);
+  useEffect(() => {
+    if (taskId) activeTaskIdRef.current = String(taskId);
+  }, [taskId]);
 
   // 上游连接（响应式）
   const conns = useNodeConnections({ id, handleType: 'target' });
@@ -527,14 +543,18 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
       currentPollKeyRef.current = key;
       return existing.promise;
     }
-    stopPoll();
+    stopPoll(undefined, new Error('已取消'));
     currentPollKeyRef.current = key;
     let timer: number | null = null;
+    let rejectPoll: (error?: Error) => void = () => undefined;
     const promise = new Promise<void>((resolve, reject) => {
       let elapsed = 0;
+      let settled = false;
       const POLL_INT = 5000;
       const MAX = 480;
       const finish = (ok: boolean, error?: Error) => {
+        if (settled) return;
+        settled = true;
         if (timer != null) {
           window.clearInterval(timer);
         }
@@ -544,9 +564,13 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
         if (currentPollKeyRef.current === key) {
           currentPollKeyRef.current = null;
         }
+        if (activeTaskIdRef.current === tid) {
+          activeTaskIdRef.current = '';
+        }
         if (ok) resolve();
         else reject(error || new Error('RH 轮询失败'));
       };
+      rejectPoll = (error?: Error) => finish(false, error || new Error('已取消'));
       timer = window.setInterval(async () => {
         elapsed += 1;
         if (elapsed > MAX) {
@@ -603,7 +627,7 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
       }, POLL_INT);
     });
     if (timer != null) {
-      activeRHToolsPolls.set(key, { timer, promise });
+      activeRHToolsPolls.set(key, { timer, promise, reject: rejectPoll });
     }
     return promise;
   };
@@ -672,6 +696,7 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
   }, [status, taskId, activeAppId, webappId]);
 
   const handleRun = async () => {
+    stopRequestedRef.current = false;
     setVisibleError(null);
     if (!webappId) {
       setVisibleError('请先选择应用');
@@ -703,10 +728,35 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
         nodeInfoList,
         instanceType: instanceType || undefined,
       });
+      activeTaskIdRef.current = r.taskId;
+      if (stopRequestedRef.current) {
+        logBus.warn(`停止请求已收到，提交返回后立即取消 RH 后台任务 taskId=${r.taskId}`, src);
+        try {
+          setCancelling(true);
+          await cancelRh(r.taskId);
+          logBus.success(`已请求取消 RH 后台任务 taskId=${r.taskId}`, src);
+          stopPoll(r.taskId, new Error('已取消'));
+          stopRequestedRef.current = false;
+          activeTaskIdRef.current = '';
+          update({ status: 'idle', taskId: '', error: null });
+          return;
+        } catch (cancelError: any) {
+          logBus.error(`取消 RH 后台任务失败: ${cancelError?.message || cancelError}`, src);
+          stopRequestedRef.current = false;
+          update({ status: 'polling', taskId: r.taskId, error: `取消 RH 后台任务失败：${cancelError?.message || cancelError}` });
+        } finally {
+          setCancelling(false);
+        }
+      }
       logBus.success(`异步任务已提交 taskId=${r.taskId} 进入轮询…`, src);
       update({ status: 'polling', taskId: r.taskId });
       await startPolling(r.taskId);
     } catch (e: any) {
+      if (stopRequestedRef.current || e?.message === '已取消') {
+        logBus.warn('任务已停止', src);
+        update({ status: 'idle', taskId: '' });
+        return;
+      }
       logBus.error(`提交失败: ${e?.message || e}`, src);
       setVisibleError(e?.message || '提交失败');
       update({ status: 'error', error: e?.message });
@@ -720,13 +770,49 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
     await handleRun();
   });
 
-  const handleStop = () => {
-    stopPoll();
-    update({ status: 'idle' });
-    logBus.warn('用户主动停止', src);
+  const handleStop = async () => {
+    stopRequestedRef.current = true;
+    const tid = String(activeTaskIdRef.current || taskId || '').trim();
+    if (!tid) {
+      logBus.warn('用户主动停止：等待 RH 返回 taskId 后再取消后台任务', src);
+      update({ error: '正在等待 RH taskId，拿到后会立即取消后台任务' });
+      return;
+    }
+    if (cancelInFlightRef.current) return;
+    cancelInFlightRef.current = true;
+    setCancelling(true);
+    logBus.warn(`用户主动停止，正在请求取消 RH 后台任务 taskId=${tid}`, src);
+    update({ taskId: tid, error: '正在请求取消 RH 后台任务...' });
+    try {
+      await cancelRh(tid);
+      logBus.success(`已请求取消 RH 后台任务 taskId=${tid}`, src);
+      stopPoll(tid, new Error('已取消'));
+      stopRequestedRef.current = false;
+      activeTaskIdRef.current = '';
+      update({ status: 'idle', taskId: '', error: null });
+    } catch (error: any) {
+      logBus.error(`取消 RH 后台任务失败: ${error?.message || error}`, src);
+      update({
+        status: status === 'submitting' ? 'submitting' : 'polling',
+        taskId: tid,
+        error: `取消 RH 后台任务失败：${error?.message || error}`,
+      });
+    } finally {
+      cancelInFlightRef.current = false;
+      setCancelling(false);
+    }
   };
 
-  const isBusy = status === 'submitting' || status === 'polling';
+  useEffect(() => {
+    if (runCancelSeq === lastRunCancelSeqRef.current) return;
+    lastRunCancelSeqRef.current = runCancelSeq;
+    if (!runCancelTargets.includes(id)) return;
+    if (status !== 'submitting' && status !== 'polling' && !taskId && !activeTaskIdRef.current) return;
+    handleStop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runCancelSeq, runCancelTargets, id, status, taskId]);
+
+  const isBusy = status === 'submitting' || status === 'polling' || cancelling;
   const nodeInfoList: any[] = appInfo?.nodeInfoList || [];
 
   // 启动器：过滤后的工具列表
@@ -1143,14 +1229,14 @@ const RHToolsNode = ({ id, data, selected }: NodeProps) => {
               className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium nodrag"
               style={{ background: surface, color: text, border: `1px solid ${border}` }}
             >
-              <Square size={11} /> 停止
+              <Square size={11} /> {cancelling ? '取消中...' : '停止'}
             </button>
           )}
 
           {isBusy && (
             <div className="flex items-center gap-1 text-[10px]" style={{ color: accent }}>
               <Loader2 size={11} className="animate-spin" />
-              {status === 'submitting' ? '提交任务...' : '轮询中'}
+              {cancelling ? '正在取消 RH 后台任务...' : status === 'submitting' ? '提交任务...' : '轮询中'}
               {taskId && <span className="ml-auto" style={{ color: subText }}>{String(taskId).slice(0, 10)}…</span>}
             </div>
           )}

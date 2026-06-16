@@ -9,6 +9,7 @@ import {
   type RunRhToolboxProgress,
   type RunRhToolboxToolResult,
 } from './rhToolbox';
+import type { RhToolboxManifest } from '../utils/rhToolbox';
 
 export interface RunRhImageCapabilityOptions {
   capability: string;
@@ -59,6 +60,19 @@ export interface RunRhImageCapabilityBatchResult {
     attempts: number;
   }>;
   cancelled: boolean;
+}
+
+const RH_TOOLBOX_DEVELOPER_MODULE = '../utils/rhToolboxDeveloper';
+
+async function getRhToolboxCapabilityManifest(): Promise<RhToolboxManifest> {
+  const base = getRhToolboxManifest();
+  if (!import.meta.env.DEV) return base;
+  try {
+    const { mergeRhToolboxManifestWithDeveloperDrafts } = await import(/* @vite-ignore */ RH_TOOLBOX_DEVELOPER_MODULE);
+    return mergeRhToolboxManifestWithDeveloperDrafts(base);
+  } catch {
+    return base;
+  }
 }
 
 function imageOutputsFromResult(result: RunRhToolboxToolResult): string[] {
@@ -112,7 +126,7 @@ function delayBeforeRetry(ms: number, signal?: AbortSignal): Promise<void> {
 export async function runRhImageCapability(
   options: RunRhImageCapabilityOptions,
 ): Promise<RunRhImageCapabilityResult> {
-  const manifest = getRhToolboxManifest();
+  const manifest = await getRhToolboxCapabilityManifest();
   const tool = resolveRhToolboxCapability(manifest, {
     surface: 'image',
     capability: options.capability,

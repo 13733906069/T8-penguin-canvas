@@ -19,6 +19,7 @@ export interface RhToolboxCapabilityRequest {
 export interface RhImageCapabilityPreset {
   id: string;
   label: string;
+  shortLabel?: string;
   capability: string;
   title: string;
   preferredToolId?: string;
@@ -29,6 +30,7 @@ export const RH_IMAGE_CAPABILITY_PRESETS = {
   cutout: {
     id: 'cutout',
     label: '抠图',
+    shortLabel: '抠图',
     title: '调用 RH工具箱 高清抠图，并把结果输出为新素材节点',
     capability: 'image.cutout',
     preferredToolId: 'image-cutout-v1',
@@ -36,14 +38,17 @@ export const RH_IMAGE_CAPABILITY_PRESETS = {
   },
   upscale: {
     id: 'upscale',
-    label: '高清化',
-    title: '调用 RH工具箱 图像高清化，并把结果输出为新素材节点',
+    label: '4K放大',
+    shortLabel: '4K',
+    title: '调用 RH工具箱 高清放大4K，并把结果输出为新素材节点',
     capability: 'image.upscale',
+    preferredToolId: 'image-upscale-4k',
     icon: 'sparkles',
   },
   expand: {
     id: 'expand',
     label: '扩图',
+    shortLabel: '扩图',
     title: '调用 RH工具箱 扩图能力，并把结果输出为新素材节点',
     capability: 'image.expand',
     icon: 'expand',
@@ -51,6 +56,8 @@ export const RH_IMAGE_CAPABILITY_PRESETS = {
 } as const satisfies Record<string, RhImageCapabilityPreset>;
 
 export type RhImageCapabilityPresetId = keyof typeof RH_IMAGE_CAPABILITY_PRESETS;
+
+export const RH_IMAGE_NODE_CAPABILITY_PRESETS: RhImageCapabilityPresetId[] = ['cutout', 'upscale'];
 
 const SURFACE_UI_FLAGS: Record<RhToolboxQuickSurface, keyof NonNullable<RhToolboxTool['ui']>> = {
   image: 'showInImageEditor',

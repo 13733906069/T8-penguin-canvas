@@ -61,6 +61,15 @@ test('resource library shortcut conflicts with canvas-visible shortcuts', () => 
   assert.equal(conflicts[0].actionId, 'canvas.nearest-node');
 });
 
+test('sidebar toggle defaults to H and stays in the canvas window group', () => {
+  const action = DEFAULT_SHORTCUTS.find((item) => item.id === 'global.sidebar-toggle');
+
+  assert.ok(action);
+  assert.equal(action.group, '窗口');
+  assert.equal(action.label, '隐藏/显示侧边栏');
+  assert.equal(getDefaultShortcutMap()['global.sidebar-toggle']?.[0]?.key, 'H');
+});
+
 test('reset helpers restore one action or the whole shortcut map to defaults', () => {
   const current = {
     ...getDefaultShortcutMap(),

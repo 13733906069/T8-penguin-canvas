@@ -265,7 +265,20 @@ async function generateChat(provider, input = {}, options = {}) {
     if (!text) {
       return { ok: false, code: 'empty_text', providerId: provider.id, protocol: provider.protocol, error: '扩展 LLM 没有返回文本。', raw };
     }
-    return { ok: true, kind: 'llm', code: 'completed', providerId: provider.id, protocol: provider.protocol, model, text, raw };
+    const data = unwrapOpenAIResponse(raw);
+    const finishReason = data?.choices?.[0]?.finish_reason || data?.choices?.[0]?.finishReason || '';
+    return {
+      ok: true,
+      kind: 'llm',
+      code: 'completed',
+      providerId: provider.id,
+      protocol: provider.protocol,
+      model,
+      text,
+      finishReason,
+      truncated: ['length', 'max_tokens', 'content_length'].includes(String(finishReason || '').toLowerCase()),
+      raw,
+    };
   } catch (e) {
     return {
       ok: false,

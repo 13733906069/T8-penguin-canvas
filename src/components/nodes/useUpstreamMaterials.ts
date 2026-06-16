@@ -3,6 +3,7 @@ import { useEdges, useNodeConnections, useNodesData } from '@xyflow/react';
 import { collectMaterialSetBucketsFromData, valueOfMaterialSetItem } from '../../utils/materialSet';
 import { fileNameFromUrl } from '../../utils/mediaCollection';
 import { normalizeRhNodeId } from '../../utils/rhTextBinding';
+import { dedupeUpstreamMaterialBuckets } from '../../utils/upstreamMaterialBuckets';
 
 /**
  * useUpstreamMaterials - 通用「上游素材聚合」hook
@@ -382,7 +383,7 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       fixedImages.push(m);
     }
 
-    return { texts, images: fixedImages, videos, audios };
+    return dedupeUpstreamMaterialBuckets({ texts, images: fixedImages, videos, audios });
   }, [upstreamNodes, handleMap]);
 }
 

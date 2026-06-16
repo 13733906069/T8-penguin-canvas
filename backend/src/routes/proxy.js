@@ -50,10 +50,139 @@ function extFromContentType(contentType) {
   return map[ct] || '';
 }
 
+async function parseJsonResponse(response, label) {
+  const text = await response.text();
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    const contentType = response.headers?.get?.('content-type') || 'unknown';
+    const preview = trimmed.replace(/\s+/g, ' ').slice(0, 240);
+    const err = new Error(`${label} 返回非 JSON：HTTP ${response.status} ${contentType} · ${preview}`);
+    err.status = response.status;
+    err.contentType = contentType;
+    err.preview = preview;
+    throw err;
+  }
+}
+
 function inferRemoteOutputExt(url, contentType) {
   const tail = String(url || '').split(/[?#]/)[0];
   const m = tail.match(/\.([a-z0-9]{2,8})$/i);
   return safeOutputExt(m ? m[1] : extFromContentType(contentType), 'png');
+}
+
+function isRunningHubOutputUrl(value) {
+  return /^(https?:\/\/|data:(image|video|audio)\/|\/files\/|\/output\/|\/input\/)/i.test(String(value || '').trim());
+}
+
+const RUNNINGHUB_OUTPUT_URL_KEYS = [
+  'fileUrl',
+  'file_url',
+  'url',
+  'src',
+  'href',
+  'downloadUrl',
+  'download_url',
+  'resultUrl',
+  'result_url',
+  'outputUrl',
+  'output_url',
+  'imageUrl',
+  'image_url',
+  'videoUrl',
+  'video_url',
+  'audioUrl',
+  'audio_url',
+  'ossUrl',
+  'oss_url',
+  'signedUrl',
+  'signed_url',
+  'publicUrl',
+  'public_url',
+  'originUrl',
+  'origin_url',
+  'originalUrl',
+  'original_url',
+  'previewUrl',
+  'preview_url',
+  'thumbnailUrl',
+  'thumbnail_url',
+  'thumbUrl',
+  'thumb_url',
+  'largeImageUrl',
+  'large_image_url',
+  'file',
+  'path',
+  'fileName',
+  'file_name',
+  'filename',
+];
+
+function collectRunningHubOutputItems(value, out = [], seen = new Set()) {
+  const pushRemote = (remote, source = {}) => {
+    const text = String(remote || '').trim();
+    if (!text || !isRunningHubOutputUrl(text) || seen.has(text)) return;
+    seen.add(text);
+    out.push({
+      ...source,
+      fileUrl: text,
+      url: text,
+      fileType: source.fileType || source.file_type || source.type || '',
+    });
+  };
+  if (value == null) return out;
+  if (typeof value === 'string') {
+    pushRemote(value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectRunningHubOutputItems(item, out, seen);
+    return out;
+  }
+  if (typeof value !== 'object') return out;
+
+  for (const key of RUNNINGHUB_OUTPUT_URL_KEYS) {
+    if (typeof value[key] === 'string') pushRemote(value[key], value);
+  }
+
+  for (const child of Object.values(value)) {
+    collectRunningHubOutputItems(child, out, seen);
+  }
+  return out;
+}
+
+function summarizeRunningHubOutputShape(value, depth = 0, seen = new WeakSet()) {
+  if (value == null) return value;
+  const type = typeof value;
+  if (type !== 'object') {
+    if (type === 'string') {
+      const text = value.trim();
+      return isRunningHubOutputUrl(text) ? `url(${text.slice(0, 48)})` : `string(${text.length})`;
+    }
+    return type;
+  }
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
+  if (depth >= 3) {
+    return Array.isArray(value)
+      ? { type: 'array', length: value.length }
+      : { type: 'object', keys: Object.keys(value).slice(0, 30) };
+  }
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      sample: value.slice(0, 3).map((item) => summarizeRunningHubOutputShape(item, depth + 1, seen)),
+    };
+  }
+  const keys = Object.keys(value);
+  const sample = {};
+  for (const key of keys.slice(0, 24)) {
+    sample[key] = summarizeRunningHubOutputShape(value[key], depth + 1, seen);
+  }
+  return { type: 'object', keys: keys.slice(0, 60), sample };
 }
 
 // ========== 工具:加载 Settings 明文 ==========
@@ -1347,7 +1476,7 @@ router.post('/llm', async (req, res) => {
     model,
     messages: normalizedMessages,
     temperature: temperature ?? 0.7,
-    max_tokens: max_tokens ?? 4096,
+    max_tokens: max_tokens ?? 16384,
     stream: !!stream && !inputHadVideos,
   };
 
@@ -1424,9 +1553,17 @@ router.post('/llm', async (req, res) => {
         else if (d?.b64_json) imageUrls.push('data:image/png;base64,' + d.b64_json);
       });
     }
+    const finishReason = choice?.finish_reason || choice?.finishReason || '';
     res.json({
       success: true,
-      data: { content, imageUrls, raw: data, model },
+      data: {
+        content,
+        imageUrls,
+        raw: data,
+        model,
+        finishReason,
+        truncated: ['length', 'max_tokens', 'content_length'].includes(String(finishReason || '').toLowerCase()),
+      },
     });
   } catch (e) {
     console.error('proxy/llm 错误:', e);
@@ -3089,8 +3226,11 @@ router.post('/runninghub/submit', async (req, res) => {
     const data = await r.json();
     if (data.code === 0) {
       const taskId = data?.data?.taskId;
+      rememberTaskKey(taskId, apiKey, { provider: 'runninghub', webappId, instanceType: instanceType || '' });
+      console.log(`[RH/submit] webappId=${webappId} fields=${Array.isArray(nodeInfoList) ? nodeInfoList.length : 0} instance=${instanceType || 'default'} taskId=${taskId || ''}`);
       return res.json({ success: true, data: { taskId, raw: data } });
     }
+    console.warn(`[RH/submit] failed webappId=${webappId} code=${data.code} msg=${data.msg || ''}`);
     return res.status(400).json({ success: false, error: data.msg || `RH 提交失败 code=${data.code}` });
   } catch (e) {
     console.error('proxy/rh/submit 错误:', e);
@@ -3100,10 +3240,10 @@ router.post('/runninghub/submit', async (req, res) => {
 
 router.get('/runninghub/query', async (req, res) => {
   const settings = loadRawSettings();
-  const apiKey = pickRhApiKey(settings);
-  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
   const taskId = String(req.query.taskId || '').trim();
   if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
+  const apiKey = recallTaskKey(taskId) || pickRhApiKey(settings);
+  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
   try {
     const r = await fetch(`${config.RH_BASE_URL}/task/openapi/outputs`, {
       method: 'POST',
@@ -3121,19 +3261,15 @@ router.get('/runninghub/query', async (req, res) => {
       //   ② data: { outputs: [...] }                            // 包一层的变体
       //   ③ data: { fileUrl, fileType }                         // 单产物对象
       //   ④ data: { results: [...] } / { files: [...] }         // 边缘变体
-      let arr = [];
-      const dd = data.data;
-      if (Array.isArray(dd)) arr = dd;
-      else if (dd && typeof dd === 'object') {
-        if (Array.isArray(dd.outputs)) arr = dd.outputs;
-        else if (Array.isArray(dd.results)) arr = dd.results;
-        else if (Array.isArray(dd.files)) arr = dd.files;
-        else if (dd.fileUrl || dd.url) arr = [dd];
+      //   ⑤ data: { data/output/images/... }                    // 应用市场嵌套变体
+      const arr = collectRunningHubOutputItems(data.data);
+      if (arr.length === 0) {
+        const shape = JSON.stringify(summarizeRunningHubOutputShape(data.data)).slice(0, 1800);
+        console.warn(`[RH/query] taskId=${taskId} code=0 but no output urls. shape=${shape}`);
       }
-      console.log('[RH/query]', taskId, '产物数:', arr.length, '原始 code:', data.code);
       // 转存所有产物到本地
       for (const it of arr) {
-        const remote = it?.fileUrl || it?.url;
+        const remote = it?.fileUrl || it?.file_url || it?.downloadUrl || it?.download_url || it?.resultUrl || it?.result_url || it?.outputUrl || it?.output_url || it?.signedUrl || it?.signed_url || it?.publicUrl || it?.public_url || it?.previewUrl || it?.preview_url || it?.url;
         if (!remote) continue;
         try {
           const fr = await fetch(remote);
@@ -3160,7 +3296,8 @@ router.get('/runninghub/query', async (req, res) => {
           } else {
             urls.push(remote);
           }
-        } catch {
+        } catch (downloadError) {
+          console.warn(`[RH/query] save output failed taskId=${taskId} url=${String(remote).slice(0, 140)} error=${downloadError?.message || downloadError}`);
           urls.push(remote);
         }
       }
@@ -3181,6 +3318,7 @@ router.get('/runninghub/query', async (req, res) => {
         failReasonStr = String(failReasonRaw);
       }
     }
+    console.log(`[RH/query] taskId=${taskId} status=${status} code=${data.code} urls=${urls.length}${failReasonStr ? ` fail=${String(failReasonStr).slice(0, 160)}` : ''}`);
     res.json({
       success: true,
       data: {
@@ -3194,6 +3332,45 @@ router.get('/runninghub/query', async (req, res) => {
   } catch (e) {
     console.error('proxy/rh/query 错误:', e);
     res.status(500).json({ success: false, error: e.message || '请求失败' });
+  }
+});
+
+router.post('/runninghub/cancel', async (req, res) => {
+  const settings = loadRawSettings();
+  const taskId = String(req.body?.taskId || '').trim();
+  if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
+  const apiKey = recallTaskKey(taskId) || pickRhApiKey(settings);
+  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
+  try {
+    const cancelUrl = `${config.RH_BASE_URL}/task/openapi/cancel`;
+    const r = await fetch(cancelUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ apiKey, taskId }),
+    });
+    const data = await parseJsonResponse(r, 'RH 取消接口');
+    console.log(`[RH/cancel] taskId=${taskId} http=${r.status} code=${data?.code} msg=${data?.msg || ''}`);
+    if (String(data?.code) === '0') {
+      return res.json({ success: true, data: { taskId, raw: data } });
+    }
+    try {
+      console.warn(`[RH/cancel] failed taskId=${taskId} raw=${JSON.stringify(data).slice(0, 500)}`);
+    } catch {}
+    return res.status(400).json({ success: false, error: data?.msg || `RH 取消失败 code=${data?.code}` });
+  } catch (e) {
+    console.error('proxy/rh/cancel 错误:', e);
+    res.status(502).json({
+      success: false,
+      error: e.message || '请求失败',
+      data: {
+        taskId,
+        contentType: e.contentType || '',
+        preview: e.preview || '',
+      },
+    });
   }
 });
 

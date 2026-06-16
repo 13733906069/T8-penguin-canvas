@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const loadRhToolboxUtils = async () => import('../src/utils/rhToolbox.ts');
 const loadRhToolboxCapabilities = async () => import('../src/utils/rhToolboxCapabilities.ts');
+const loadRhToolboxDeveloper = async () => import('../src/utils/rhToolboxDeveloper.ts');
 const loadRhToolboxManifest = async () => import('../src/data/rhToolboxManifest.ts');
 
 test('RH toolbox node is registered as a visible executable RH node', () => {
@@ -41,7 +42,7 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
   const manifest = normalizeRhToolboxManifest(RH_TOOLBOX_MANIFEST);
 
   assert.equal(manifest.schema, 't8-rh-toolbox-manifest');
-  assert.equal(manifest.updatedAt, '2026-06-14');
+  assert.equal(manifest.updatedAt, '2026-06-15');
   assert.equal(manifest.categories.length, 5);
   const categories = new Map(manifest.categories.map((category) => [category.id, category]));
   assert.deepEqual(
@@ -55,12 +56,20 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       ['image-category-e78o2', '电商', 'image'],
     ],
   );
-  assert.equal(listRhToolboxTools(manifest).length, 5);
+  assert.equal(listRhToolboxTools(manifest).length, 6);
   assert.deepEqual(
     listRhToolboxTools(manifest).map((tool) => tool.id),
-    ['image-cutout-v1', 'tuantiquv10', 'bernini1', 'berninituxiangbianji', 'bernini2'],
+    ['image-cutout-v1', 'image-upscale-4k', 'tuantiquv10', 'bernini1', 'berninituxiangbianji', 'bernini2'],
   );
-  assert.equal(listRhToolboxTools(manifest, { includeDisabled: true }).length, 5);
+  for (const tool of listRhToolboxTools(manifest)) {
+    const pollIntervalMs = tool.runtime?.pollIntervalMs || 5000;
+    const maxPolls = tool.runtime?.maxPolls || 720;
+    assert.ok(
+      pollIntervalMs * maxPolls >= 60 * 60 * 1000,
+      `${tool.id} should keep at least a 60 minute RH polling budget`,
+    );
+  }
+  assert.equal(listRhToolboxTools(manifest, { includeDisabled: true }).length, 6);
   assert.equal(isRhToolboxBuiltinCategoryId('image-tools'), true);
   assert.equal(isRhToolboxBuiltinCategoryId('custom-rh-tools'), false);
   assert.equal(getRhToolboxToolMajorCategory(manifest.tools[0], manifest.categories), 'image');
@@ -73,8 +82,12 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
     ['image-cutout-v1', 'tuantiquv10'],
   );
   assert.deepEqual(
+    filterRhToolboxTools(manifest, { capability: 'image.upscale' }).map((tool) => tool.id),
+    ['image-upscale-4k'],
+  );
+  assert.deepEqual(
     new Set(buildRhToolboxQuickActions(manifest, 'image').map((action) => action.toolId)),
-    new Set(['image-cutout-v1', 'tuantiquv10', 'berninituxiangbianji']),
+    new Set(['image-cutout-v1', 'image-upscale-4k', 'tuantiquv10', 'berninituxiangbianji']),
   );
   assert.deepEqual(
     new Set(buildRhToolboxQuickActions(manifest, 'video').map((action) => action.toolId)),
@@ -86,6 +99,20 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
   assert.equal(cutout?.webappId, '2066002530877927426');
   assert.equal(cutout?.inputSchema[0]?.rhNodeId, '46');
   assert.equal(cutout?.outputSchema[0]?.kind, 'image');
+
+  const upscale4k = findRhToolboxToolById(manifest, 'image-upscale-4k');
+  assert.equal(upscale4k?.title, '高清放大4K');
+  assert.equal(upscale4k?.webappId, '2066353965784199169');
+  assert.equal(upscale4k?.runtime?.instanceType, 'plus');
+  assert.equal(upscale4k?.inputSchema[0]?.rhNodeId, '5');
+  assert.deepEqual(
+    buildRhToolboxNodeInfoList(upscale4k, {
+      inputValues: { 'source-image': 'rh-uploaded-upscale.png' },
+    }).filter((item) => ['image', 'resolution', 'aspectRatio', 'prompt'].includes(item.fieldName)),
+    [
+      { nodeId: '5', fieldName: 'image', fieldValue: 'rh-uploaded-upscale.png', valueType: 'image' },
+    ],
+  );
 
   const tuantiqu = findRhToolboxToolById(manifest, 'tuantiquv10');
   assert.equal(tuantiqu?.webappId, '2034251740148666369');
@@ -150,6 +177,7 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   } = await loadRhToolboxCapabilities();
   const service = readFileSync(new URL('../src/services/rhToolboxCapabilities.ts', import.meta.url), 'utf8');
   const button = readFileSync(new URL('../src/components/RhImageCapabilityButton.tsx', import.meta.url), 'utf8');
+  const rail = readFileSync(new URL('../src/components/RhImageCapabilityRail.tsx', import.meta.url), 'utf8');
   const uploadNode = readFileSync(new URL('../src/components/nodes/UploadNode.tsx', import.meta.url), 'utf8');
   const outputNode = readFileSync(new URL('../src/components/nodes/OutputNode.tsx', import.meta.url), 'utf8');
   const roadmap = readFileSync(new URL('../roadmap.md', import.meta.url), 'utf8');
@@ -171,6 +199,7 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.cutout.capability, 'image.cutout');
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.cutout.preferredToolId, 'image-cutout-v1');
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.upscale.capability, 'image.upscale');
+  assert.equal(RH_IMAGE_CAPABILITY_PRESETS.upscale.preferredToolId, 'image-upscale-4k');
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.expand.capability, 'image.expand');
   assert.equal(resolveRhImageCapabilityPreset('cutout').label, '抠图');
 
@@ -178,11 +207,20 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.match(service, /runRhImageCutout/);
   assert.match(service, /runRhImageCutoutBatch/);
   assert.match(service, /preferredToolId:\s*'image-cutout-v1'/);
+  assert.match(service, /const RH_TOOLBOX_DEVELOPER_MODULE = '\.\.\/utils\/rhToolboxDeveloper'/);
+  assert.match(service, /mergeRhToolboxManifestWithDeveloperDrafts/);
+  assert.match(service, /@vite-ignore/);
   assert.match(service, /onItemProgress/);
   assert.match(service, /retryCount\?: number/);
   assert.match(service, /continueOnError\?: boolean/);
   assert.match(service, /failedItems/);
   assert.match(service, /cancelled/);
+  assert.match(button, /logBus/);
+  assert.match(button, /logRhImageCapabilityProgress/);
+  assert.match(button, /logBus\.info/);
+  assert.match(button, /logBus\.debug/);
+  assert.match(button, /logBus\.success/);
+  assert.match(button, /logBus\.error/);
   assert.match(button, /data-rh-capability=\{capability\}/);
   assert.match(button, /sourceUrls\?: string\[\]/);
   assert.match(button, /preset\?:/);
@@ -193,15 +231,46 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.doesNotMatch(button, /runRhImageCutoutBatch/);
   assert.match(button, /abortRef\.current\?\.abort\(\)/);
   assert.match(button, /data-rh-running=\{running \? 'true' : 'false'\}/);
+  assert.match(button, /variant\?: 'inline' \| 'rail'/);
+  assert.match(button, /rh-image-capability-button--rail/);
+  assert.match(button, /onRunningChange\?: \(running: boolean\) => void/);
+  assert.match(button, /onRunningChange\?\.\(true\)/);
+  assert.match(button, /onRunningChange\?\.\(false\)/);
   assert.match(button, /点击取消/);
   assert.match(button, /failedItems/);
-  assert.match(uploadNode, /RhImageCapabilityButton/);
-  assert.match(outputNode, /RhImageCapabilityButton/);
+  assert.match(rail, /data-rh-image-capability-rail/);
+  assert.match(rail, /RH_IMAGE_NODE_CAPABILITY_PRESETS/);
+  assert.match(rail, /variant="rail"/);
+  assert.match(rail, /onRunningChange\?: \(running: boolean\) => void/);
+  assert.match(rail, /runningPresetIds/);
+  assert.match(rail, /runningPresetIdsRef/);
+  assert.match(rail, /setPresetRunning/);
+  assert.match(rail, /onRunningChange\?\.\(runningPresetIds\.size > 0\)/);
+  assert.match(rail, /onRunningChange\?\.\(next\.size > 0\)/);
+  assert.match(rail, /maxHeight:\s*'calc\(100% - 58px\)'/);
+  assert.match(uploadNode, /RhImageCapabilityRail/);
+  assert.match(outputNode, /RhImageCapabilityRail/);
+  assert.match(uploadNode, /rhCapabilityBusy/);
+  assert.match(outputNode, /rhCapabilityBusy/);
+  assert.match(uploadNode, /\(selected \|\| rhCapabilityBusy\) && canEditImage/);
+  assert.match(outputNode, /showRhCapabilityRail = \(selected \|\| rhCapabilityBusy\) && hasEditableImages/);
   assert.match(uploadNode, /const imageSourceUrls = useMemo/);
   assert.match(uploadNode, /sourceUrls=\{imageSourceUrls\}/);
   assert.match(outputNode, /sourceUrls=\{collected\.images\}/);
-  assert.match(uploadNode, /onComplete=\{\(result\) => handleProduce\(result\.imageUrls\)\}/);
-  assert.match(outputNode, /onComplete=\{\(result\) => handleProduce\(result\.imageUrls\)\}/);
+  assert.match(uploadNode, /onRunningChange=\{setRhCapabilityBusy\}/);
+  assert.match(outputNode, /onRunningChange=\{setRhCapabilityBusy\}/);
+  assert.match(uploadNode, /logBus/);
+  assert.match(outputNode, /logBus/);
+  assert.match(uploadNode, /type:\s*'rh-capability'/);
+  assert.match(outputNode, /type:\s*'rh-capability'/);
+  assert.match(uploadNode, /rf\.setNodes\(\(prev\) => \[\.\.\.prev\.map/);
+  assert.match(outputNode, /rf\.setNodes\(\(prev\) => \[\.\.\.prev\.map/);
+  assert.match(uploadNode, /rf\.setCenter/);
+  assert.match(outputNode, /rf\.setCenter/);
+  assert.match(uploadNode, /已创建 \$\{newNodes\.length\} 个输出素材节点/);
+  assert.match(outputNode, /已创建 \$\{newNodes\.length\} 个输出素材节点/);
+  assert.match(uploadNode, /onComplete=\{\(result\) => handleProduce\(result\.imageUrls, \{ type: 'rh-capability', label: result\.tool\.title \}\)\}/);
+  assert.match(outputNode, /onComplete=\{\(result\) => handleProduce\(result\.imageUrls, \{ type: 'rh-capability', label: result\.tool\.title \}\)\}/);
   assert.match(roadmap, /RH 工具箱能力调度层/);
   assert.match(roadmap, /image\.cutout/);
   assert.match(roadmap, /多图串行队列/);
@@ -210,8 +279,10 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.match(roadmap, /重试/);
   assert.match(skill, /RH 图像能力复用规范/);
   assert.match(skill, /image\.upscale/);
+  assert.match(skill, /image-upscale-4k/);
   assert.match(skill, /image\.expand/);
   assert.match(skill, /RhImageCapabilityButton[\s\S]*preset/);
+  assert.match(skill, /RhImageCapabilityRail/);
   assert.match(skill, /runRhImageCapabilityBatch/);
 });
 
@@ -451,6 +522,9 @@ test('RH toolbox runtime can consume private maker events without shipping maker
   assert.match(node, /penguin:rh-toolbox-manifest-updated/);
   assert.match(node, /detail\?\.kind === 'tool-saved'/);
   assert.match(node, /mergeRhToolboxManifestWithDeveloperDrafts\(base, detail\?\.manifest\)/);
+  assert.match(node, /function dedupeRhToolboxDisplayTools/);
+  assert.match(node, /dedupeRhToolboxDisplayTools\(listRhToolboxTools\(manifest, \{ includeDisabled: true \}\)/);
+  assert.match(node, /dedupeRhToolboxDisplayTools\(filterRhToolboxTools\(manifest,/);
   assert.match(node, /window\.setInterval\(\(\) => refreshManifest\(\), 1500\)/);
   assert.match(node, /当前 manifest 有 \{allTools\.length\} 个工具/);
   assert.match(node, /rhToolboxSearchQuery:\s*''/);
@@ -539,6 +613,226 @@ test('RH toolbox developer save persists the selected custom category with each 
   assert.match(developer, /for \(const category of incoming\.categories\)/);
   assert.match(developer, /category\.id === normalizedTool\.categoryId/);
   assert.match(developer, /categoryMap\.set\(category\.id, category\)/);
+});
+
+test('RH toolbox developer drafts replace the edited released tool instead of duplicating by title', async () => {
+  const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
+  const { normalizeRhToolboxManifest } = await loadRhToolboxUtils();
+  const { mergeRhToolboxManifestWithDeveloperDrafts } = await loadRhToolboxDeveloper();
+  const base = normalizeRhToolboxManifest(RH_TOOLBOX_MANIFEST);
+  const imageCategory = base.categories.find((category) => category.id === 'image-category-d5zwl') || base.categories[0];
+  const developerDraft = normalizeRhToolboxManifest({
+    schema: 't8-rh-toolbox-manifest',
+    version: 1,
+    updatedAt: 'dev',
+    categories: [imageCategory],
+    tools: [
+      {
+        id: '4kupscale',
+        title: '高清放大4K',
+        description: '维护者把已发布 4K 工具切到 plus 实例',
+        categoryId: imageCategory.id,
+        webappId: '2066353965784199169',
+        enabled: true,
+        order: 15,
+        capabilities: ['image.upscale', 'image.edit'],
+        inputSchema: [
+          {
+            key: 'source-image',
+            label: 'image',
+            kind: 'image',
+            rhNodeId: '5',
+            fieldName: 'image',
+            required: true,
+            uploadAsset: true,
+            order: 0,
+          },
+        ],
+        outputSchema: [{ key: 'output-image', label: '输出图', kind: 'image', role: 'append-output' }],
+        fixedParams: [],
+        userParams: [],
+        runtime: { instanceType: 'plus', pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
+        ui: { icon: 'Maximize2', showInNode: true, showInImageEditor: true },
+      },
+    ],
+  });
+
+  const merged = mergeRhToolboxManifestWithDeveloperDrafts(base, developerDraft);
+  const upscaleTools = merged.tools.filter((tool) => tool.title === '高清放大4K');
+
+  assert.equal(upscaleTools.length, 1);
+  assert.equal(upscaleTools[0].id, '4kupscale');
+  assert.equal(upscaleTools[0].runtime?.instanceType, 'plus');
+  assert.equal(merged.tools.some((tool) => tool.id === 'image-upscale-4k'), false);
+});
+
+test('RH toolbox developer manifest normalizes old duplicate drafts before display', async () => {
+  const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
+  const { normalizeRhToolboxManifest } = await loadRhToolboxUtils();
+  const { mergeRhToolboxManifestWithDeveloperDrafts } = await loadRhToolboxDeveloper();
+  const base = normalizeRhToolboxManifest(RH_TOOLBOX_MANIFEST);
+  const imageCategory = base.categories.find((category) => category.id === 'image-category-d5zwl') || base.categories[0];
+  const duplicateDrafts = normalizeRhToolboxManifest({
+    schema: 't8-rh-toolbox-manifest',
+    version: 1,
+    updatedAt: 'dev',
+    categories: [imageCategory],
+    tools: [
+      {
+        id: 'old-4k-upscale',
+        title: ' 高清放大4K ',
+        description: '旧草稿',
+        categoryId: imageCategory.id,
+        webappId: '2054229362802741249',
+        enabled: true,
+        order: 15,
+        capabilities: ['image.upscale', 'image.edit'],
+        inputSchema: [{ key: 'source-image', label: 'image', kind: 'image', rhNodeId: '2', fieldName: 'image', required: true, uploadAsset: true }],
+        outputSchema: [{ key: 'output-image', label: '输出图', kind: 'image', role: 'append-output' }],
+        fixedParams: [],
+        userParams: [],
+        runtime: { instanceType: 'default', pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
+        ui: { icon: 'Maximize2', showInNode: true, showInImageEditor: true },
+      },
+      {
+        id: '4kupscale',
+        title: '高清放大4K\u200b',
+        description: '新草稿',
+        categoryId: imageCategory.id,
+        webappId: '2066353965784199169',
+        enabled: true,
+        order: 15,
+        capabilities: ['image.upscale', 'image.edit'],
+        inputSchema: [{ key: 'source-image', label: 'image', kind: 'image', rhNodeId: '5', fieldName: 'image', required: true, uploadAsset: true }],
+        outputSchema: [{ key: 'output-image', label: '输出图', kind: 'image', role: 'append-output' }],
+        fixedParams: [],
+        userParams: [],
+        runtime: { instanceType: 'plus', pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
+        ui: { icon: 'Maximize2', showInNode: true, showInImageEditor: true },
+      },
+    ],
+  });
+
+  const merged = mergeRhToolboxManifestWithDeveloperDrafts(base, duplicateDrafts);
+  const normalizedTitle = (value) => String(value || '').replace(/[\s\u200b-\u200f\ufeff]+/g, '').toLowerCase();
+  const upscaleTools = merged.tools.filter((tool) => normalizedTitle(tool.title) === normalizedTitle('高清放大4K'));
+
+  assert.equal(upscaleTools.length, 1);
+  assert.equal(upscaleTools[0].id, '4kupscale');
+  assert.equal(upscaleTools[0].webappId, '2066353965784199169');
+  assert.equal(upscaleTools[0].runtime?.instanceType, 'plus');
+});
+
+test('RH toolbox maker defaults use a 60 minute RH polling budget while theme copy stays decorative', () => {
+  const maker = readFileSync(new URL('../src/components/nodes/RHToolboxMakerNode.tsx', import.meta.url), 'utf8');
+  const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
+  const service = readFileSync(new URL('../src/services/rhToolbox.ts', import.meta.url), 'utf8');
+  const utils = readFileSync(new URL('../src/utils/rhToolbox.ts', import.meta.url), 'utf8');
+  const slamDunkTheme = readFileSync(new URL('../src/styles/theme-slamdunk.css', import.meta.url), 'utf8');
+
+  assert.match(utils, /RH_TOOLBOX_DEFAULT_POLL_TIMEOUT_MS\s*=\s*60\s*\*\s*60\s*\*\s*1000/);
+  assert.match(utils, /RH_TOOLBOX_DEFAULT_MAX_POLLS/);
+  assert.match(maker, /rhToolboxMakerMaxPolls:\s*tool\.runtime\?\.maxPolls \|\| RH_TOOLBOX_DEFAULT_MAX_POLLS/);
+  assert.match(maker, /maxPolls:\s*Number\(data\.rhToolboxMakerMaxPolls\) \|\| RH_TOOLBOX_DEFAULT_MAX_POLLS/);
+  assert.match(canvas, /rhToolboxMakerMaxPolls:\s*720/);
+  assert.match(service, /tool\.runtime\?\.maxPolls \|\| RH_TOOLBOX_DEFAULT_MAX_POLLS/);
+  assert.match(slamDunkTheme, /content:\s*"TIME OUT"/);
+});
+
+test('RH toolbox proxy extracts nested RunningHub output urls and logs every task state', () => {
+  const proxy = readFileSync(new URL('../backend/src/routes/proxy.js', import.meta.url), 'utf8');
+
+  assert.match(proxy, /function collectRunningHubOutputItems/);
+  assert.match(proxy, /downloadUrl/);
+  assert.match(proxy, /image_url/);
+  assert.match(proxy, /resultUrl/);
+  assert.match(proxy, /signedUrl/);
+  assert.match(proxy, /preview_url/);
+  assert.match(proxy, /output_url/);
+  assert.match(proxy, /data:image\//);
+  assert.match(proxy, /summarizeRunningHubOutputShape/);
+  assert.match(proxy, /no output urls/);
+  assert.match(proxy, /const arr = collectRunningHubOutputItems\(data\.data\)/);
+  assert.match(proxy, /\[RH\/submit\]/);
+  assert.match(proxy, /\[RH\/query\]/);
+  assert.match(proxy, /status=\$\{status\}/);
+});
+
+test('RH stop buttons cancel the remote RunningHub task instead of only stopping local polling', () => {
+  const generation = readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8');
+  const service = readFileSync(new URL('../src/services/rhToolbox.ts', import.meta.url), 'utf8');
+  const button = readFileSync(new URL('../src/components/RhImageCapabilityButton.tsx', import.meta.url), 'utf8');
+  const runningHubNode = readFileSync(new URL('../src/components/nodes/RunningHubNode.tsx', import.meta.url), 'utf8');
+  const rhToolsNode = readFileSync(new URL('../src/components/nodes/RHToolsNode.tsx', import.meta.url), 'utf8');
+  const rhToolboxNode = readFileSync(new URL('../src/components/nodes/RHToolboxNode.tsx', import.meta.url), 'utf8');
+  const proxy = readFileSync(new URL('../backend/src/routes/proxy.js', import.meta.url), 'utf8');
+
+  assert.match(generation, /export async function cancelRh\(taskId: string\)/);
+  assert.match(generation, /\/api\/proxy\/runninghub\/cancel/);
+  assert.match(generation, /safeJsonResponse/);
+  assert.match(generation, /返回了非 JSON 响应/);
+  assert.match(proxy, /router\.post\('\/runninghub\/cancel'/);
+  assert.match(proxy, /\/task\/openapi\/cancel/);
+  assert.match(proxy, /Authorization:\s*`Bearer \$\{apiKey\}`/);
+  assert.match(proxy, /\[RH\/cancel\]/);
+  assert.match(proxy, /parseJsonResponse/);
+  assert.match(proxy, /parseJsonResponse\(r,\s*'RH 取消接口'\)/);
+  assert.match(proxy, /返回非 JSON/);
+  assert.match(proxy, /task\/openapi\/cancel/);
+  assert.match(proxy, /rememberTaskKey\(taskId,\s*apiKey,\s*\{\s*provider:\s*'runninghub'/);
+  assert.match(proxy, /const apiKey = recallTaskKey\(taskId\) \|\| pickRhApiKey\(settings\)/);
+  assert.match(service, /cancelRh/);
+  assert.match(service, /stage:\s*'cancel'/);
+  assert.match(service, /已提交 RH 任务/);
+  assert.match(service, /cancelTaskIfNeeded/);
+  assert.match(service, /cancelRh\(taskId\)/);
+  assert.match(button, /用户取消/);
+  assert.match(button, /AbortController/);
+  assert.match(button, /activeTaskIdsRef/);
+  assert.match(button, /await cancelActiveRunningHubTasks/);
+  assert.match(button, /正在请求取消 RH 后台任务/);
+  assert.match(runningHubNode, /cancelRh/);
+  assert.match(runningHubNode, /stopRequestedRef/);
+  assert.match(runningHubNode, /cancelInFlightRef/);
+  assert.match(runningHubNode, /await cancelRh\(tid\)/);
+  assert.match(runningHubNode, /提交返回后立即取消 RH 后台任务/);
+  assert.match(runningHubNode, /stopPoll\(new Error\('已取消'\)\)/);
+  assert.match(runningHubNode, /cancelling \? '取消中\.\.\.' : '停止'/);
+  assert.match(rhToolsNode, /cancelRh/);
+  assert.match(rhToolsNode, /stopRequestedRef/);
+  assert.match(rhToolsNode, /cancelInFlightRef/);
+  assert.match(rhToolsNode, /await cancelRh\(tid\)/);
+  assert.match(rhToolsNode, /提交返回后立即取消 RH 后台任务/);
+  assert.match(rhToolsNode, /reject:\s*\(error\?: Error\) => void/);
+  assert.match(rhToolsNode, /cancelling \? '取消中\.\.\.' : '停止'/);
+  assert.match(rhToolboxNode, /cancelRh/);
+  assert.match(rhToolboxNode, /cancelInFlightRef/);
+  assert.match(rhToolboxNode, /await cancelRh\(tid\)/);
+  assert.match(rhToolboxNode, /cancelling \? '取消中\.\.\.' : '停止'/);
+});
+
+test('global run cancellation is broadcast to RH nodes with the active task targets', () => {
+  const runBus = readFileSync(new URL('../src/stores/runBus.ts', import.meta.url), 'utf8');
+  const actionBar = readFileSync(new URL('../src/components/NodeActionBar.tsx', import.meta.url), 'utf8');
+  const runningHubNode = readFileSync(new URL('../src/components/nodes/RunningHubNode.tsx', import.meta.url), 'utf8');
+  const rhToolsNode = readFileSync(new URL('../src/components/nodes/RHToolsNode.tsx', import.meta.url), 'utf8');
+  const rhToolboxNode = readFileSync(new URL('../src/components/nodes/RHToolboxNode.tsx', import.meta.url), 'utf8');
+  const button = readFileSync(new URL('../src/components/RhImageCapabilityButton.tsx', import.meta.url), 'utf8');
+
+  assert.match(runBus, /cancelSeq:\s*number/);
+  assert.match(runBus, /cancelTargets:\s*string\[\]/);
+  assert.match(runBus, /cancelSeq:\s*s\.cancelSeq \+ 1/);
+  assert.match(runBus, /cancelTargets:\s*targets/);
+  assert.match(actionBar, /runningIds = useRunBusStore/);
+  assert.match(actionBar, /runningIds\.includes\(selectedExe\.id\)/);
+  for (const source of [runningHubNode, rhToolsNode, rhToolboxNode]) {
+    assert.match(source, /useRunBusStore/);
+    assert.match(source, /cancelSeq/);
+    assert.match(source, /cancelTargets/);
+    assert.match(source, /handleStop\(\)/);
+  }
+  assert.match(button, /activeTaskIdsRef/);
+  assert.match(button, /cancelRh\(taskId\)/);
 });
 
 test('RH toolbox developer helpers stay private and runtime uses guarded imports', () => {

@@ -8,9 +8,10 @@ import {
   type NodeProps,
   type Node,
 } from '@xyflow/react';
-import { Box, MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check, Edit3, GitCompare } from 'lucide-react';
+import { Box, MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check, Edit3, GitCompare, Trash2 } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useThemeStore } from '../../stores/theme';
+import { logBus } from '../../stores/logs';
 import { PORT_COLOR } from '../../config/portTypes';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
 import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
@@ -19,15 +20,17 @@ import CollectionSplitButton from '../CollectionSplitButton';
 import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
-import RhImageCapabilityButton from '../RhImageCapabilityButton';
+import RhImageCapabilityRail from '../RhImageCapabilityRail';
 import SmartImage from '../SmartImage';
 import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
 import ResizableCorners from './ResizableCorners';
 import { saveAssetToDisk } from '../../services/api';
 import {
+  createOutputMediaRemovalData,
   createOutputDataFromItem,
   fileNameFromUrl,
+  isMaterialUrlHidden,
   type MediaItem,
   type MediaKind,
 } from '../../utils/mediaCollection';
@@ -40,6 +43,8 @@ import {
 import { collectMaterialSetBucketsFromData, valueOfMaterialSetItem } from '../../utils/materialSet';
 // v1.2.10.5: 节点落点防重叠 —— 双击编辑产出 N 节点 3 列宫格整组避让
 import { placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
+
+type OutputProduceMeta = ImageEditProduceMeta | { type: 'rh-capability'; label?: string };
 
 /**
  * OutputNode - 通用输出素材节点 (中继展示型)
@@ -97,6 +102,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   const isDark = theme === 'dark';
   const d = (data as any) || {};
   const rf = useReactFlow();
+  const [rhCapabilityBusy, setRhCapabilityBusy] = useState(false);
   const activeTemplate = useMemo(
     () => resolveThemeTemplate(templateId, customTemplates),
     [templateId, customTemplates],
@@ -405,15 +411,23 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     //         里累积了 N 张, 但 Canvas autoOutput 早在第一轮就把它升级为 pickKind='image', pickIndex=0,
     //         finally 清除 __loopAccumulate 后 collected.images 顺序变成 [fresh_lastRound, direct_r1, direct_r2 dedup],
     //         pickIndex=0 把全集砍成 [fresh_lastRound] → 用户只看到最后一轮 (典型 ImageNode/VideoNode/AudioNode 覆盖症状)。
-    //   修复: 若 OutputNode 自身已有 direct*Urls / directOutputText 累积值 (>0 项),
+    //   修复: 若 OutputNode 自身已有 direct*Urls / directOutputText 累积多项,
     //         说明它是 LoopNode 累积模式的 OutputNode, 跳过 pickKind 切割, 全量展示 fresh+direct 去重结果。
+    //         注意: 输出素材持久化会给每个自动 OutputNode 写入单项 direct* 快照。
+    //         单项快照仍必须保留 pickKind/pickIndex, 否则宫格剪裁等多产物会退回“每个输出节点显示整组”。
     //         与 FramePair 行为对齐 (FramePair 走 autoOutput 专属路径不带 pickKind, 不受此 BUG 影响)。
+    const directTextSegments = Array.isArray(d.directTextSegments) ? d.directTextSegments : [];
+    const directOutputTextSegments =
+      typeof d.directOutputText === 'string' && d.directOutputText.trim()
+        ? d.directOutputText.split('\n\n').map((item: string) => item.trim()).filter(Boolean)
+        : [];
     const hasAnyDirectAccumulated =
-      (Array.isArray(d.directImageUrls) && d.directImageUrls.length > 0) ||
-      (Array.isArray(d.directVideoUrls) && d.directVideoUrls.length > 0) ||
-      (Array.isArray(d.directAudioUrls) && d.directAudioUrls.length > 0) ||
-      (Array.isArray(d.directModelUrls) && d.directModelUrls.length > 0) ||
-      (typeof d.directOutputText === 'string' && d.directOutputText.length > 0);
+      (Array.isArray(d.directImageUrls) && d.directImageUrls.length > 1) ||
+      (Array.isArray(d.directVideoUrls) && d.directVideoUrls.length > 1) ||
+      (Array.isArray(d.directAudioUrls) && d.directAudioUrls.length > 1) ||
+      (Array.isArray(d.directModelUrls) && d.directModelUrls.length > 1) ||
+      directTextSegments.length > 1 ||
+      directOutputTextSegments.length > 1;
     const pickKind: string | undefined = hasAnyDirectAccumulated ? undefined : d.pickKind;
     const pickIndex: number | undefined =
       typeof d.pickIndex === 'number' ? d.pickIndex : undefined;
@@ -448,8 +462,13 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       }
     }
 
+    out.images = out.images.filter((u) => !isMaterialUrlHidden(d, 'image', u));
+    out.videos = out.videos.filter((u) => !isMaterialUrlHidden(d, 'video', u));
+    out.audios = out.audios.filter((u) => !isMaterialUrlHidden(d, 'audio', u));
+    out.models = out.models.filter((u) => !isMaterialUrlHidden(d, 'model3d', u));
+
     return out;
-  }, [upstreamNodes, upstreamSig, handleMap, d.pickKind, d.pickIndex, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directVideoUrls, d.directAudioUrl, d.directAudioUrls, d.directModelUrl, d.directModelUrls, d.modelUrl, d.modelUrls, d.directOutputText, d.directTextSegments, d.rhDuckDecoded]);
+  }, [upstreamNodes, upstreamSig, handleMap, d.pickKind, d.pickIndex, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directVideoUrls, d.directAudioUrl, d.directAudioUrls, d.directModelUrl, d.directModelUrls, d.modelUrl, d.modelUrls, d.directOutputText, d.directTextSegments, d.hiddenMaterialUrls, d.rhDuckDecoded]);
 
   // 文本编辑
   const overrideText: string = typeof d.outputText === 'string' ? d.outputText : '';
@@ -601,6 +620,12 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     });
   };
 
+  const handleRemoveOutputMaterial = (kind: MediaKind, url: string) => {
+    update(createOutputMediaRemovalData(d, kind, url));
+    if (editingUrl === url) setEditingUrl(null);
+    if (compareState?.resultUrl === url) setCompareState(null);
+  };
+
   const splitOutputCollection = (kind: MediaKind, urls: string[]) => {
     if (!urls || urls.length <= 1) return;
     const me = rf.getNode(id);
@@ -636,8 +661,14 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     rf.addNodes(newNodes);
   };
 
-  const handleProduce = (urls: string[], _meta?: ImageEditProduceMeta) => {
-    if (!urls || urls.length === 0) return;
+  const handleProduce = (urls: string[], _meta?: OutputProduceMeta) => {
+    const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
+    const isRhCapabilityOutput = _meta?.type === 'rh-capability';
+    const logSource = `rh-image-output:${id}`;
+    if (cleanUrls.length === 0) {
+      if (isRhCapabilityOutput) logBus.warn(`${_meta.label || 'RH 图像能力'}完成但没有可创建的图像 URL`, logSource);
+      return;
+    }
     const me = rf.getNode(id);
     const myW = (me as any)?.measured?.width || (me as any)?.width || 320;
     const myH = (me as any)?.measured?.height || (me as any)?.height || 360;
@@ -649,13 +680,16 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     const ts = Date.now();
     // v1.2.10.5: 整组防重叠 —— 先算期望 3 列宫格, 再求公共偏移
     const _sz = defaultSizeOf('output');
-    const _desired: PlacementRect[] = urls.map((_, i) => ({
+    if (isRhCapabilityOutput) {
+      logBus.info(`${_meta.label || 'RH 图像能力'}准备创建 ${cleanUrls.length} 个输出素材节点`, logSource);
+    }
+    const _desired: PlacementRect[] = cleanUrls.map((_, i) => ({
       x: baseX + (i % COLS) * COL_W,
       y: baseY + Math.floor(i / COLS) * ROW_H,
       w: _sz.w, h: _sz.h,
     }));
     const _off = placeBatchNodes(_desired, rf.getNodes(), { source: `placement:produce:${id}` });
-    const newNodes: Node[] = urls.map((u, i) => {
+    const newNodes: Node[] = cleanUrls.map((u, i) => {
       const newId = `output-auto-edit-${id}-${ts}-${i}-${Math.random()
         .toString(36)
         .slice(2, 6)}`;
@@ -671,9 +705,28 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           // 便于下游节点从 data 读取 (与现有 effect 透传不冲突)
           imageUrl: u,
         },
+        selected: isRhCapabilityOutput,
       } as Node;
     });
-    rf.addNodes(newNodes);
+    if (isRhCapabilityOutput) {
+      rf.setNodes((prev) => [...prev.map((node) => ({ ...node, selected: false })), ...newNodes]);
+      const first = newNodes[0];
+      if (first) {
+        window.setTimeout(() => {
+          try {
+            rf.setCenter(first.position.x + _sz.w / 2, first.position.y + _sz.h / 2, {
+              zoom: Math.max(0.7, Math.min(1.2, rf.getZoom())),
+              duration: 320,
+            });
+          } catch {
+            /* 视野定位失败不影响节点创建 */
+          }
+        }, 0);
+      }
+      logBus.success(`${_meta.label || 'RH 图像能力'}已创建 ${newNodes.length} 个输出素材节点`, logSource);
+    } else {
+      rf.addNodes(newNodes);
+    }
   };
 
   // === 跨节点拖拽: source (从 collected.* 拖出) ===
@@ -806,7 +859,9 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   // === 选中节点上方浮动「Edit」按钮 ===
   // 仅当节点被选中且至少存在一张图像时出现，等价于双击图像触发
   // ImageEditModal（裁剪 / 宫格切分），多图时编辑第一张。
-  const canEditImage = selected && collected.images.length > 0;
+  const hasEditableImages = collected.images.length > 0;
+  const canEditImage = selected && hasEditableImages;
+  const showRhCapabilityRail = (selected || rhCapabilityBusy) && hasEditableImages;
   const onClickEditTopBtn = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (collected.images.length > 0) setEditingUrl(collected.images[0]);
@@ -828,7 +883,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         accent={effectiveAccent}
         onResize={(_e, p) => setSize({ w: p.width, h: p.height })}
       />
-      {/* 选中时浮动图像操作按钮 — Edit 保持本地编辑, 抠图走 RH 工具箱能力层 */}
+      {/* 选中时浮动图像操作按钮 — Edit 保持本地编辑，RH 图像能力走左侧轨道 */}
       {canEditImage && (
         <div
           className="nodrag nopan"
@@ -868,13 +923,16 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
             <Edit3 size={12} />
             <span>Edit</span>
           </button>
-          <RhImageCapabilityButton
-            sourceUrls={collected.images}
-            accent={effectiveAccent}
-            isDark={isDark}
-            onComplete={(result) => handleProduce(result.imageUrls)}
-          />
         </div>
+      )}
+      {showRhCapabilityRail && (
+        <RhImageCapabilityRail
+          sourceUrls={collected.images}
+          accent={effectiveAccent}
+          isDark={isDark}
+          onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
+          onRunningChange={setRhCapabilityBusy}
+        />
       )}
       {/* target handle (左侧) - 上游任意类型可连入 */}
       <Handle
@@ -1068,26 +1126,83 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
                 className="opacity-100 transition sm:opacity-0 sm:group-hover/output-images:opacity-100 sm:focus-within:opacity-100"
               />
             </div>
-            {/* 单张：全宽大图预览；多张：3 列网格（一行最多 3 张，超过自动换行） */}
+            {/* 单张：全宽大图预览；多张：2 列原比例预览，操作按钮放在图片上方，避免遮挡下载。 */}
             <div
               className={
                 collected.images.length >= 2
-                  ? 'grid grid-cols-3 gap-1.5'
+                  ? 'grid grid-cols-2 gap-1.5'
                   : 'space-y-1'
               }
             >
               {collected.images.map((u, i) => (
                 <div key={i} className="group group/output-image-card space-y-0.5">
                   <div className="relative">
+                    <div
+                      className={
+                        collected.images.length >= 2
+                          ? 't8-output-image-action-stack t8-output-image-action-stack--compact t8-output-image-action-stack--above z-10 mb-1 flex flex-row justify-end gap-1 opacity-100'
+                          : 't8-output-image-action-stack absolute right-1.5 top-1.5 z-10 flex flex-col gap-1 opacity-100 transition sm:opacity-0 sm:group-hover/output-image-card:opacity-100 sm:focus-within:opacity-100'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="nodrag nopan t8-btn t8-mini-icon-button t8-image-compare-button t8-material-action-button p-0 shadow-md transition"
+                        title="对比输入图与结果图"
+                        aria-label="对比输入图与结果图"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openImageCompare(u);
+                        }}
+                      >
+                        <GitCompare size={collected.images.length >= 2 ? 10 : 13} />
+                      </button>
+                      <ImageHoverPreview
+                        src={u}
+                        alt={`图像 ${i + 1}`}
+                        iconSize={collected.images.length >= 2 ? 10 : 14}
+                        buttonClassName="t8-material-action-button p-0 shadow-md transition"
+                      />
+                      <button
+                        type="button"
+                        className="nodrag nopan t8-btn t8-mini-icon-button t8-material-delete-button t8-material-action-button p-0 shadow-md transition"
+                        title={`删除素材 ${i + 1}`}
+                        aria-label={`删除素材 ${i + 1}`}
+                        style={{ color: 'var(--t8-danger, #ef4444)' }}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRemoveOutputMaterial('image', u);
+                        }}
+                      >
+                        <Trash2 size={collected.images.length >= 2 ? 10 : 13} />
+                      </button>
+                    </div>
                     <SmartImage
                       src={u}
                       alt={`图像 ${i + 1}`}
-                      className="w-full h-auto rounded block cursor-zoom-in"
-                      thumbSize={collected.images.length >= 2 ? 360 : 720}
+                      className={`t8-output-image-media${collected.images.length >= 2 ? ' t8-output-image-media--grid' : ''} w-full rounded block cursor-zoom-in`}
+                      thumbSize={collected.images.length >= 2 ? 420 : 720}
                       style={{
                         background: '#0008',
                         objectFit: 'contain',
-                        maxHeight: collected.images.length >= 2 ? 140 : 480,
+                        maxHeight: collected.images.length >= 2 ? 180 : 480,
                       }}
                       data-drag-source
                       data-drag-kind="image"
@@ -1107,32 +1222,6 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
                         setEditingUrl(u);
                       }}
                       title="双击编辑 (裁剪 / 宫格切分) · Ctrl+拖拽可送到其他节点"
-                    />
-                    <button
-                      type="button"
-                      className="nodrag nopan t8-btn t8-mini-icon-button t8-image-compare-button absolute right-1.5 top-1.5 z-10 h-7 w-7 p-0 opacity-100 shadow-md transition sm:opacity-0 sm:group-hover/output-image-card:opacity-100 sm:focus:opacity-100"
-                      title="对比输入图与结果图"
-                      aria-label="对比输入图与结果图"
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openImageCompare(u);
-                      }}
-                    >
-                      <GitCompare size={13} />
-                    </button>
-                    <ImageHoverPreview
-                      src={u}
-                      alt={`图像 ${i + 1}`}
-                      buttonClassName="absolute right-1.5 top-10 z-10 h-7 w-7 p-0 opacity-0 shadow-md transition group-hover/output-image-card:opacity-100 focus:opacity-100"
                     />
                   </div>
                   <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/40' : 'text-zinc-400'}`}>
@@ -1204,6 +1293,21 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
                   >
                     <Download size={10} /> 下载
                   </a>
+                  <button
+                    type="button"
+                    className={`nodrag nopan p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
+                    title={`删除素材 ${i + 1}`}
+                    aria-label={`删除素材 ${i + 1}`}
+                    style={{ color: 'var(--t8-danger, #ef4444)' }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRemoveOutputMaterial('video', u);
+                    }}
+                  >
+                    <Trash2 size={11} />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1256,6 +1360,21 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
                   >
                     <Download size={10} /> 下载
                   </a>
+                  <button
+                    type="button"
+                    className={`nodrag nopan p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
+                    title={`删除素材 ${i + 1}`}
+                    aria-label={`删除素材 ${i + 1}`}
+                    style={{ color: 'var(--t8-danger, #ef4444)' }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRemoveOutputMaterial('audio', u);
+                    }}
+                  >
+                    <Trash2 size={11} />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1310,6 +1429,23 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
                     >
                       <Download size={10} /> 下载
                     </a>
+                    <button
+                      type="button"
+                      className={`nodrag nopan inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] ${
+                        isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'
+                      }`}
+                      title={`删除素材 ${i + 1}`}
+                      aria-label={`删除素材 ${i + 1}`}
+                      style={{ color: 'var(--t8-danger, #ef4444)' }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleRemoveOutputMaterial('model3d', u);
+                      }}
+                    >
+                      <Trash2 size={11} />
+                    </button>
                   </div>
                 </div>
               ))}

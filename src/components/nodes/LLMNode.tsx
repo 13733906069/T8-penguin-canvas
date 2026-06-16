@@ -116,6 +116,21 @@ function attachWheelBlock(el: HTMLElement | null) {
 
 const LLM_REPLY_BLOCK_RE = /^\s*(?:#{1,6}\s+|[-*]\s+|>\s*)?(?:\*\*)?(?:宫格|镜头|分镜|场景|画面|提示词|方案|Scene|Shot)\s*(?:第\s*)?(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]+)?\s*(?:[:：、.)）\-—]\s*)?/i;
 const LLM_REPLY_NUMBER_RE = /^\s*(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]+)\s*[.、)）:：\-—]\s+\S/;
+const LLM_TRUNCATION_FINISH_REASONS = new Set(['length', 'max_tokens', 'content_length']);
+
+function isLlmReplyTruncated(result: any): boolean {
+  const finishReason =
+    result?.finishReason ||
+    result?.finish_reason ||
+    result?.raw?.choices?.[0]?.finish_reason ||
+    result?.raw?.choices?.[0]?.finishReason ||
+    '';
+  return result?.truncated === true || LLM_TRUNCATION_FINISH_REASONS.has(String(finishReason || '').toLowerCase());
+}
+
+function llmTokenLimitWarning(maxTokens: number): string {
+  return `回答可能因为 maxTok=${maxTokens} 达到输出上限而被截断，请调大 maxTok 后重试。`;
+}
 
 function splitAssistantReplyForScatter(input: string): string[] {
   const text = String(input || '').replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n').trim();
@@ -153,6 +168,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const { getEdges, getNodes, getNode, addNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
   const [presetMap, setPresetMap] = useState<Record<string, string>>(() => loadPresets());
   const [pickedFiles, setPickedFiles] = useState<{ name: string; dataUrl: string }[]>([]);
@@ -195,7 +211,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   const userPromptMentions: MediaMention[] = Array.isArray(d?.userPromptMentions) ? d.userPromptMentions : [];
   const systemPrompt: string = d?.system ?? '你是一个提示词专家，将用户的提示词优化';
   const temperature: number = typeof d?.temperature === 'number' ? d.temperature : 0.7;
-  const maxTokens: number = typeof d?.maxTokens === 'number' ? d.maxTokens : 4096;
+  const maxTokens: number = typeof d?.maxTokens === 'number' ? d.maxTokens : 16384;
   const useStream: boolean = d?.stream !== false; // 默认开
   const llmVideoMode: 'frames' | 'native-base64' | 'url' =
     d?.llmVideoMode === 'url'
@@ -373,6 +389,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
 
   const handleSend = async () => {
     setError(null);
+    setWarning(null);
     setStreamingText('');
     const upstream = collectUpstream();
     const resolvedLocalPrompt = resolveMediaMentions(localPrompt, userPromptMentions, orderedImages);
@@ -411,7 +428,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
         // ====== 流式 ======
         const ctrl = new AbortController();
         abortRef.current = ctrl;
-        const { content } = await generateLlmStream(
+        const streamResult = await generateLlmStream(
           { model, messages, temperature, max_tokens: maxTokens, ...llmVideoOptions },
           {
             onDelta: (chunk) => setStreamingText((s) => s + chunk),
@@ -419,7 +436,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           }
         );
         abortRef.current = null;
-        const replyText = content || '';
+        const replyText = streamResult.content || '';
+        const truncationWarning = isLlmReplyTruncated(streamResult) ? llmTokenLimitWarning(maxTokens) : '';
         const finalHistory: ChatTurn[] = [...nextHistory, { role: 'assistant', text: replyText }];
         update({
           status: 'success',
@@ -433,6 +451,10 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
         setStreamingText('');
         setPickedFiles([]);
         setPickedVideos([]);
+        if (truncationWarning) {
+          setWarning(truncationWarning);
+          logBus.warn(truncationWarning, src);
+        }
         logBus.success(`完成 · ${replyText.length} 字`, src);
         taskCompletionSound.notifyComplete(id, 'llm');
       } else {
@@ -451,6 +473,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           : await generateLlm({ model, messages, temperature, max_tokens: maxTokens, ...llmVideoOptions });
         const replyText = res.content || '';
         const imgs = res.imageUrls || [];
+        const truncationWarning = isLlmReplyTruncated(res) ? llmTokenLimitWarning(maxTokens) : '';
         const finalHistory: ChatTurn[] = [
           ...nextHistory,
           { role: 'assistant', text: replyText, images: imgs.length ? imgs : undefined },
@@ -467,6 +490,10 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
         });
         setPickedFiles([]);
         setPickedVideos([]);
+        if (truncationWarning) {
+          setWarning(truncationWarning);
+          logBus.warn(truncationWarning, src);
+        }
         if (imgs.length) logBus.success(`完成 · ${replyText.length} 字 + ${imgs.length} 图`, src);
         else logBus.success(`完成 · ${replyText.length} 字`, src);
         taskCompletionSound.notifyComplete(id, 'llm');
@@ -804,7 +831,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
               max={128000}
               step={100}
               value={maxTokens}
-              onChange={(e) => update({ maxTokens: Math.max(100, Math.min(128000, Number(e.target.value) || 4096)) })}
+              onChange={(e) => update({ maxTokens: Math.max(100, Math.min(128000, Number(e.target.value) || 16384)) })}
               className="w-full rounded bg-white/5 border border-white/10 px-1.5 py-1 text-[11px] text-white outline-none focus:border-white/30"
             />
           </div>
@@ -1076,6 +1103,12 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           <div className="flex items-start gap-1 text-[10px] text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
             <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />
             <span className="break-all">{error}</span>
+          </div>
+        )}
+        {warning && (
+          <div className="flex items-start gap-1 text-[10px] text-amber-200 bg-amber-500/10 border border-amber-400/25 rounded px-2 py-1">
+            <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />
+            <span className="break-all">{warning}</span>
           </div>
         )}
       </div>

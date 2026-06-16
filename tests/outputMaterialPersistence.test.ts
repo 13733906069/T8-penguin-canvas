@@ -42,3 +42,18 @@ test('auto output persistence snapshots generated items without changing the def
   assert.match(canvas, /shouldPreserveAutoOutputMaterialNode\(nodeById\.get\(o\.id\),\s*outputMaterialPersistenceEnabled\)/);
   assert.match(canvas, /\}, \[nodes, edges, loaded, assignActiveNodeSerials, registerPlacementShelfNodes, outputMaterialPersistenceEnabled\]\)/);
 });
+
+test('persisted single auto-output snapshots still honor pickKind filtering', () => {
+  const outputNode = read('../src/components/nodes/OutputNode.tsx');
+
+  assert.match(outputNode, /hasAnyDirectAccumulated/);
+  assert.doesNotMatch(
+    outputNode,
+    /Array\.isArray\(d\.directImageUrls\)\s*&&\s*d\.directImageUrls\.length\s*>\s*0/,
+  );
+  assert.match(
+    outputNode,
+    /Array\.isArray\(d\.directImageUrls\)\s*&&\s*d\.directImageUrls\.length\s*>\s*1/,
+  );
+  assert.match(outputNode, /const pickKind:\s*string \| undefined = hasAnyDirectAccumulated \? undefined : d\.pickKind/);
+});

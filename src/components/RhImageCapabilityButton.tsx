@@ -4,12 +4,14 @@ import {
   runRhImageCapabilityBatch,
   type RunRhImageCapabilityBatchResult,
 } from '../services/rhToolboxCapabilities';
+import { cancelRh } from '../services/generation';
 import {
   RH_IMAGE_CAPABILITY_PRESETS,
   resolveRhImageCapabilityPreset,
   type RhImageCapabilityPreset,
   type RhImageCapabilityPresetId,
 } from '../utils/rhToolboxCapabilities';
+import { logBus } from '../stores/logs';
 
 interface RhImageCapabilityButtonProps {
   sourceUrl?: string;
@@ -21,21 +23,53 @@ interface RhImageCapabilityButtonProps {
   capability?: string;
   preferredToolId?: string;
   label?: string;
+  shortLabel?: string;
   title?: string;
+  variant?: 'inline' | 'rail';
   retryCount?: number;
   retryDelayMs?: number;
   continueOnError?: boolean;
   onComplete: (result: RunRhImageCapabilityBatchResult) => void;
   onError?: (message: string) => void;
+  onRunningChange?: (running: boolean) => void;
   style?: CSSProperties;
 }
 
-const BUTTON_HEIGHT = 26;
+const INLINE_BUTTON_HEIGHT = 26;
+const RAIL_BUTTON_SIZE = 36;
 
 const formatError = (error: unknown): string => {
   if (error instanceof Error) return error.message;
   return String(error || 'RH 工具箱处理失败');
 };
+
+function logRhImageCapabilityProgress(
+  source: string,
+  label: string,
+  progress: { stage?: string; message?: string; taskId?: string; pollCount?: number },
+  lastPollLogRef: { current: number },
+) {
+  const message = String(progress.message || '').trim();
+  if (!message) return;
+  const taskText = progress.taskId ? ` · taskId=${progress.taskId}` : '';
+  if (progress.stage === 'poll') {
+    const pollCount = Number(progress.pollCount || 0);
+    if (pollCount > 1 && pollCount % 12 !== 0) return;
+    if (pollCount && pollCount === lastPollLogRef.current) return;
+    if (pollCount) lastPollLogRef.current = pollCount;
+    logBus.debug(`${label}: ${message}${taskText}`, source);
+    return;
+  }
+  if (progress.stage === 'success') {
+    logBus.success(`${label}: ${message}${taskText}`, source);
+    return;
+  }
+  if (progress.stage === 'error') {
+    logBus.error(`${label}: ${message}${taskText}`, source);
+    return;
+  }
+  logBus.info(`${label}: ${message}${taskText}`, source);
+}
 
 export default function RhImageCapabilityButton({
   sourceUrl,
@@ -47,18 +81,23 @@ export default function RhImageCapabilityButton({
   capability: capabilityOverride,
   preferredToolId,
   label,
+  shortLabel,
   title,
+  variant = 'inline',
   retryCount = 2,
   retryDelayMs = 1200,
   continueOnError = true,
   onComplete,
   onError,
+  onRunningChange,
   style,
 }: RhImageCapabilityButtonProps) {
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
+  const activeTaskIdsRef = useRef<Set<string>>(new Set());
+  const lastPollLogRef = useRef(0);
   const cleanSourceUrls = useMemo(() => {
     const seen = new Set<string>();
     const urls = [...(sourceUrls || []), sourceUrl].filter(Boolean) as string[];
@@ -74,25 +113,74 @@ export default function RhImageCapabilityButton({
   const capability = capabilityOverride || resolvedPreset.capability || RH_IMAGE_CAPABILITY_PRESETS.cutout.capability;
   const resolvedPreferredToolId = preferredToolId || resolvedPreset.preferredToolId;
   const buttonLabel = label || resolvedPreset.label || RH_IMAGE_CAPABILITY_PRESETS.cutout.label;
+  const compactLabel = shortLabel || resolvedPreset.shortLabel || buttonLabel;
   const idleTitle = title || resolvedPreset.title || `调用 RH工具箱 ${buttonLabel}，并把结果输出为新素材节点`;
   const iconName = resolvedPreset.icon;
   const IdleIcon = iconName === 'sparkles' ? Sparkles : iconName === 'expand' ? Maximize2 : Scissors;
+  const isRail = variant === 'rail';
+  const variantClassName = isRail ? 'rh-image-capability-button--rail' : 'rh-image-capability-button--inline';
+  const visibleLabel = running ? (isRail ? '停' : '取消') : (isRail ? compactLabel : buttonLabel);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  const cancelActiveRunningHubTasks = async () => {
+    const taskIds = Array.from(activeTaskIdsRef.current);
+    if (taskIds.length === 0) return false;
+    const results = await Promise.allSettled(taskIds.map((taskId) => cancelRh(taskId)));
+    const failed: string[] = [];
+    for (let i = 0; i < taskIds.length; i += 1) {
+      const taskId = taskIds[i];
+      const result = results[i];
+      if (result.status === 'fulfilled') {
+        logBus.success(`${buttonLabel}: 已请求取消 RH 后台任务 taskId=${taskId}`, `rh-image:${compactLabel}`);
+      } else {
+        const reason = result.reason?.message || result.reason;
+        failed.push(`${taskId}: ${reason}`);
+        logBus.error(`${buttonLabel}: 取消 RH 后台任务失败 taskId=${taskId} · ${reason}`, `rh-image:${compactLabel}`);
+      }
+    }
+    if (failed.length > 0) throw new Error(failed.join('；'));
+    return true;
+  };
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    void cancelActiveRunningHubTasks().catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const runCapability = async (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
     if (running) {
+      logBus.warn(`${buttonLabel}: 用户取消`, `rh-image:${compactLabel}`);
+      if (activeTaskIdsRef.current.size > 0) {
+        setMessage('正在请求取消 RH 后台任务...');
+        try {
+          await cancelActiveRunningHubTasks();
+        } catch (cancelError) {
+          const nextError = `取消 RH 后台任务失败：${formatError(cancelError)}`;
+          setError(nextError);
+          setMessage(nextError);
+          onError?.(nextError);
+          return;
+        }
+      } else {
+        setMessage('等待 RH taskId，拿到后会立即取消后台任务');
+      }
       abortRef.current?.abort();
-      setMessage('正在取消');
       return;
     }
     if (cleanSourceUrls.length === 0) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setRunning(true);
+    onRunningChange?.(true);
     setError('');
+    activeTaskIdsRef.current.clear();
+    lastPollLogRef.current = 0;
+    logBus.info(
+      `${buttonLabel}: 开始处理 ${cleanSourceUrls.length} 张图像${resolvedPreferredToolId ? ` · tool=${resolvedPreferredToolId}` : ''}`,
+      `rh-image:${compactLabel}`,
+    );
     setMessage(cleanSourceUrls.length > 1 ? `准备批量${buttonLabel} 1/${cleanSourceUrls.length}` : `提交 RH ${buttonLabel}`);
     try {
       const result = await runRhImageCapabilityBatch({
@@ -103,49 +191,68 @@ export default function RhImageCapabilityButton({
         retryCount,
         retryDelayMs,
         continueOnError,
-        onProgress: (progress) => setMessage(progress.message),
+        onProgress: (progress) => {
+          if (progress.taskId) activeTaskIdsRef.current.add(progress.taskId);
+          setMessage(progress.message);
+          logRhImageCapabilityProgress(`rh-image:${compactLabel}`, buttonLabel, progress, lastPollLogRef);
+        },
         onItemProgress: ({ index, total, attempt, maxAttempts, status, error: itemError }) => {
           const retryText = maxAttempts > 1 ? ` · 第 ${attempt}/${maxAttempts} 次` : '';
           if (status === 'retry') {
             setMessage(`第 ${index + 1}/${total} 张重试中${retryText}`);
+            logBus.warn(`${buttonLabel}: 第 ${index + 1}/${total} 张失败后重试${retryText} · ${itemError || '未知错误'}`, `rh-image:${compactLabel}`);
           } else if (status === 'error') {
             setMessage(`第 ${index + 1}/${total} 张失败：${itemError || '未知错误'}`);
+            logBus.error(`${buttonLabel}: 第 ${index + 1}/${total} 张失败 · ${itemError || '未知错误'}`, `rh-image:${compactLabel}`);
           } else if (status === 'success') {
             setMessage(`第 ${index + 1}/${total} 张完成`);
+            logBus.success(`${buttonLabel}: 第 ${index + 1}/${total} 张完成`, `rh-image:${compactLabel}`);
           } else {
             setMessage(`准备第 ${index + 1}/${total} 张${retryText}`);
+            logBus.info(`${buttonLabel}: 准备第 ${index + 1}/${total} 张${retryText}`, `rh-image:${compactLabel}`);
           }
         },
       });
       onComplete(result);
       if (result.cancelled) {
         setMessage(`已取消，保留 ${result.imageUrls.length} 张结果`);
+        logBus.warn(`${buttonLabel}: 已取消，保留 ${result.imageUrls.length} 张结果`, `rh-image:${compactLabel}`);
       } else if (result.failedItems.length > 0) {
         const warning = `${result.failedItems.length} 张失败，已输出 ${result.imageUrls.length} 张`;
         setMessage(warning);
         setError(warning);
+        logBus.warn(`${buttonLabel}: ${warning}`, `rh-image:${compactLabel}`);
         onError?.(warning);
       } else {
         setMessage(result.imageUrls.length > 1 ? `已输出 ${result.imageUrls.length} 张` : '已输出');
+        logBus.success(
+          `${buttonLabel}: 已输出 ${result.imageUrls.length} 张${result.taskIds.length ? ` · taskId=${result.taskIds.join(',')}` : ''}`,
+          `rh-image:${compactLabel}`,
+        );
       }
     } catch (err) {
-      if (controller.signal.aborted) {
+      const nextError = formatError(err);
+      if (controller.signal.aborted && !/取消 RH 后台任务失败/.test(nextError)) {
         setMessage('已取消');
+        logBus.warn(`${buttonLabel}: 已取消`, `rh-image:${compactLabel}`);
         return;
       }
-      const nextError = formatError(err);
       setError(nextError);
+      logBus.error(`${buttonLabel}: ${nextError}`, `rh-image:${compactLabel}`);
       onError?.(nextError);
     } finally {
       abortRef.current = null;
+      activeTaskIdsRef.current.clear();
       setRunning(false);
+      onRunningChange?.(false);
     }
   };
 
   return (
     <button
       type="button"
-      className="nodrag nopan"
+      className={`nodrag nopan rh-image-capability-button ${variantClassName}`}
+      aria-label={running ? `取消 ${buttonLabel}` : buttonLabel}
       data-rh-capability={capability}
       data-rh-running={running ? 'true' : 'false'}
       onClick={runCapability}
@@ -155,9 +262,13 @@ export default function RhImageCapabilityButton({
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
-        padding: '4px 10px',
-        height: BUTTON_HEIGHT,
+        justifyContent: 'center',
+        flexDirection: isRail ? 'column' : 'row',
+        gap: isRail ? 1 : 4,
+        padding: isRail ? '4px 2px' : '4px 10px',
+        width: isRail ? RAIL_BUTTON_SIZE : undefined,
+        minWidth: isRail ? RAIL_BUTTON_SIZE : undefined,
+        height: isRail ? RAIL_BUTTON_SIZE : INLINE_BUTTON_HEIGHT,
         background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
         color: accent,
         border: `1px solid ${accent}66`,
@@ -168,14 +279,25 @@ export default function RhImageCapabilityButton({
             ? '0 6px 24px rgba(0,0,0,0.4)'
             : '0 6px 24px rgba(0,0,0,0.12)',
         cursor: cleanSourceUrls.length === 0 ? 'not-allowed' : 'pointer',
-        fontSize: 12,
+        fontSize: isRail ? 10 : 12,
         fontWeight: 600,
+        lineHeight: 1,
+        whiteSpace: 'nowrap',
         opacity: cleanSourceUrls.length === 0 ? 0.56 : running ? 0.82 : 1,
         ...style,
       }}
     >
       {running ? <Loader2 size={12} className="animate-spin" /> : <IdleIcon size={12} />}
-      <span>{running ? '取消' : buttonLabel}</span>
+      <span
+        style={{
+          display: 'block',
+          maxWidth: isRail ? RAIL_BUTTON_SIZE - 4 : undefined,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {visibleLabel}
+      </span>
     </button>
   );
 }

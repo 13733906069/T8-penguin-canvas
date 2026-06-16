@@ -10,6 +10,7 @@ export type NodeType =
   | 'image'
   | 'video'
   | 'seedance'
+  | 'director-storyboard'
   | 'audio'
   | 'llm'
   | 'runninghub'
@@ -264,7 +265,62 @@ export type CreativeDeskFrameId =
   | 'glass-card'
   | 'sticker'
   | 'polaroid'
-  | 'comic-panel';
+  | 'comic-panel'
+  | 'matte-gallery'
+  | 'torn-paper'
+  | 'kraft-tape'
+  | 'washi-corners'
+  | 'scrapbook-tabs'
+  | 'linen-mat'
+  | 'walnut-frame'
+  | 'brass-gallery'
+  | 'silver-bevel'
+  | 'black-archive'
+  | 'neon-tube'
+  | 'holographic'
+  | 'film-strip'
+  | 'slide-mount'
+  | 'contact-sheet'
+  | 'blueprint'
+  | 'manga-speed'
+  | 'ink-brush'
+  | 'dotted-stitch'
+  | 'sewing-thread'
+  | 'lace-paper'
+  | 'ticket-stub'
+  | 'stamp-postage'
+  | 'label-maker'
+  | 'memo-pin'
+  | 'cork-board'
+  | 'magnetic-board'
+  | 'acrylic-block'
+  | 'frosted-panel'
+  | 'shadow-float'
+  | 'soft-vignette'
+  | 'double-line'
+  | 'triple-rule'
+  | 'corner-brackets'
+  | 'ruler-grid'
+  | 'studio-slate'
+  | 'photo-booth'
+  | 'album-sleeve'
+  | 'arcade-marquee'
+  | 'safety-stripe'
+  | 'cosmic-rim'
+  | 'aurora-glow'
+  | 'sakura-washi'
+  | 'ocean-glass'
+  | 'sunset-ticket';
+
+export type CreativeDeskFrameColorId =
+  | 'cream'
+  | 'white'
+  | 'black'
+  | 'rose'
+  | 'amber'
+  | 'mint'
+  | 'cyan'
+  | 'violet';
 
 export interface CreativeDeskItem {
   id: string;
@@ -280,6 +336,7 @@ export interface CreativeDeskItem {
   rotation: number;
   opacity: number;
   frameId: CreativeDeskFrameId | string;
+  frameColorId?: CreativeDeskFrameColorId | string;
   zIndex: number;
   locked?: boolean;
   visible?: boolean;
@@ -288,6 +345,7 @@ export interface CreativeDeskItem {
 
 export interface CreativeDeskState {
   version: 1;
+  coordinateMode?: 'viewport' | 'flow';
   defaultOpacity?: number;
   items: CreativeDeskItem[];
 }

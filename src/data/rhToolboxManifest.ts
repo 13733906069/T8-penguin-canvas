@@ -11,7 +11,7 @@ import type { RhToolboxManifest } from '../utils/rhToolbox';
 export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
   schema: 't8-rh-toolbox-manifest',
   version: 1,
-  updatedAt: '2026-06-14',
+  updatedAt: '2026-06-15',
   categories: [
     {
       id: 'custom-rh-tools',
@@ -87,9 +87,48 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
       ],
       fixedParams: [],
       userParams: [],
-      runtime: { pollIntervalMs: 5000, maxPolls: 480, fetchAppInfo: true },
+      runtime: { pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
       ui: {
         icon: 'Scissors',
+        showInNode: true,
+        showInImageEditor: true,
+      },
+    },
+    {
+      id: 'image-upscale-4k',
+      title: '高清放大4K',
+      description: '调用 RH 高清放大4K 能力，保持原图比例输出 4K 高清图',
+      categoryId: 'image-category-d5zwl',
+      webappId: '2066353965784199169',
+      enabled: true,
+      order: 15,
+      capabilities: ['image.upscale', 'image.edit'],
+      inputSchema: [
+        {
+          key: 'source-image',
+          label: 'image',
+          kind: 'image',
+          rhNodeId: '5',
+          fieldName: 'image',
+          required: true,
+          multiple: false,
+          uploadAsset: true,
+          order: 0,
+        },
+      ],
+      outputSchema: [
+        {
+          key: 'output-image',
+          label: '输出图',
+          kind: 'image',
+          role: 'append-output',
+        },
+      ],
+      fixedParams: [],
+      userParams: [],
+      runtime: { instanceType: 'plus', pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
+      ui: {
+        icon: 'Maximize2',
         showInNode: true,
         showInImageEditor: true,
       },
@@ -171,7 +210,7 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
           defaultValue: 878536407901947,
         },
       ],
-      runtime: { pollIntervalMs: 5000, maxPolls: 480, fetchAppInfo: true },
+      runtime: { pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
       ui: {
         icon: 'Wand2',
         showInNode: true,
@@ -238,7 +277,7 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
           defaultValue: 1280,
         },
       ],
-      runtime: { pollIntervalMs: 5000, maxPolls: 480, fetchAppInfo: true },
+      runtime: { pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
       ui: {
         icon: 'Video',
         showInNode: true,
@@ -297,7 +336,7 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
           defaultValue: 1280,
         },
       ],
-      runtime: { pollIntervalMs: 5000, maxPolls: 480, fetchAppInfo: true },
+      runtime: { pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
       ui: {
         icon: 'Image',
         showInNode: true,
@@ -361,7 +400,7 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
           defaultValue: 720,
         },
       ],
-      runtime: { pollIntervalMs: 5000, maxPolls: 480, fetchAppInfo: true },
+      runtime: { pollIntervalMs: 5000, maxPolls: 720, fetchAppInfo: true },
       ui: {
         icon: 'Video',
         showInNode: true,

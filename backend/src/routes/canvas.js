@@ -153,17 +153,22 @@ function sanitizeCreativeDeskState(value) {
       rotation: clampNumber(item?.rotation, 0, -720, 720),
       opacity: clampNumber(item?.opacity, 0.42, 0, 1),
       frameId: sanitizeCreativeDeskText(item?.frameId, 40) || 'poster-card',
+      frameColorId: sanitizeCreativeDeskText(item?.frameColorId, 40) || 'cream',
       zIndex: Math.round(clampNumber(item?.zIndex, sanitizedItems.length + 1, 0, 9999)),
       locked: item?.locked === true,
       visible: item?.visible !== false,
       createdAt: Math.round(clampNumber(item?.createdAt, Date.now(), 1, 9999999999999)),
     });
   }
-  return {
+  const state = {
     version: 1,
     defaultOpacity: clampNumber(value?.defaultOpacity, 0.42, 0, 1),
     items: sanitizedItems,
   };
+  if (value?.coordinateMode === 'viewport' || value?.coordinateMode === 'flow') {
+    state.coordinateMode = value.coordinateMode;
+  }
+  return state;
 }
 
 // GET /api/canvas — 获取画布列表

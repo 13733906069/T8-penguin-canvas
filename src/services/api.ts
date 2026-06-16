@@ -456,6 +456,8 @@ export interface ResourceItem {
   thumbUrl?: string;
   mime?: string;
   size: number;
+  width?: number;
+  height?: number;
   sha256?: string;
   tags: string[];
   favorite: boolean;
