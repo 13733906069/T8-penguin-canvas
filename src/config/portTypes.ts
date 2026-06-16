@@ -100,6 +100,10 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   // 动漫标签大师：可接收文本/图像语境，运行时输出标签提示词或标签参考图。
   'anime-tag-master': { inputs: ['text', 'image'], outputs: ['text', 'image'] },
 
+  // ========== 国漫角色制作 ==========
+  // 清风-国漫角色文生图：左侧可接 text/image 上游，右侧输出 image
+  'guoman-char-1': { inputs: ['text', 'image'], outputs: ['image'] },
+
   // ========== ComfyUI ==========
   // ComfyUI超市：本地 workflow 应用运行器，可按 manifest 消费/输出四类素材。
   'comfyui-store': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },

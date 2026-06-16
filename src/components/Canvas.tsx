@@ -650,6 +650,18 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     outputText: '',
     error: '',
   },
+  // 国漫角色文生图节点：固定 webappId，自定义参数表单
+  'guoman-char-1': {
+    appInfo: null,
+    paramValues: {},
+    instanceType: 'plus',
+    status: 'idle',
+    taskId: '',
+    urls: [],
+    error: '',
+    rhCode: 0,
+    imageUrl: '',
+  },
   'codex-cli-agent': {
     codexMode: 'chat',
     codexPreset: '提示词增强',

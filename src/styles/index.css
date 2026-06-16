@@ -4317,6 +4317,8 @@ html[data-theme-style="pixel"] .t8-achievement-review__grid > div {
   to {
     transform: translateX(0);
     opacity: 1;
+  }
+}
 
 [data-codex-studio-copyable],
 [data-codex-studio-copyable] *,
