@@ -9,12 +9,15 @@ import {
   type RunRhToolboxProgress,
   type RunRhToolboxToolResult,
 } from './rhToolbox';
+import { getRhToolboxPersistentManifest } from './api';
 import type { RhToolboxManifest } from '../utils/rhToolbox';
+import { mergeRhToolboxManifests } from '../utils/rhToolbox';
 
 export interface RunRhImageCapabilityOptions {
   capability: string;
   imageUrl: string;
   preferredToolId?: string;
+  userParams?: Record<string, string | number | boolean>;
   signal?: AbortSignal;
   onProgress?: (progress: RunRhToolboxProgress) => void;
 }
@@ -66,12 +69,16 @@ const RH_TOOLBOX_DEVELOPER_MODULE = '../utils/rhToolboxDeveloper';
 
 async function getRhToolboxCapabilityManifest(): Promise<RhToolboxManifest> {
   const base = getRhToolboxManifest();
-  if (!import.meta.env.DEV) return base;
+  const persisted = await getRhToolboxPersistentManifest();
+  const baseWithPersistent = persisted.success && persisted.data?.manifest
+    ? mergeRhToolboxManifests(base, persisted.data.manifest)
+    : base;
+  if (!import.meta.env.DEV) return baseWithPersistent;
   try {
     const { mergeRhToolboxManifestWithDeveloperDrafts } = await import(/* @vite-ignore */ RH_TOOLBOX_DEVELOPER_MODULE);
-    return mergeRhToolboxManifestWithDeveloperDrafts(base);
+    return mergeRhToolboxManifestWithDeveloperDrafts(baseWithPersistent);
   } catch {
-    return base;
+    return baseWithPersistent;
   }
 }
 
@@ -139,6 +146,7 @@ export async function runRhImageCapability(
     toolId: tool.id,
     manifest,
     inputValues,
+    userParams: options.userParams,
     signal: options.signal,
     onProgress: options.onProgress,
   });
@@ -188,6 +196,7 @@ export async function runRhImageCapabilityBatch(
           capability: options.capability,
           imageUrl,
           preferredToolId: options.preferredToolId,
+          userParams: options.userParams,
           signal: options.signal,
           onProgress: (progress) => {
             const attemptText = maxAttempts > 1 ? ` · 尝试 ${attempt}/${maxAttempts}` : '';

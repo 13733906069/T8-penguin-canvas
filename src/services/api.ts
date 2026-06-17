@@ -5,6 +5,7 @@
 import type { AdvancedProviderConfig, ApiSettings, CanvasData, CanvasListItem, CloudUploadSummary, CloudUploadTargetConfig } from '../types/canvas';
 import type { ThemeTemplate } from '../theme/types';
 import type { MediaKind } from '../utils/mediaCollection';
+import type { RhToolboxManifest } from '../utils/rhToolbox';
 
 const BASE = '/api';
 
@@ -361,6 +362,24 @@ async function safeRequest<T>(url: string, init?: RequestInit): Promise<Result<T
   } catch (e: any) {
     return { success: false, error: e?.message || '网络错误' };
   }
+}
+
+export interface RhToolboxManifestPersistenceResult {
+  manifest: RhToolboxManifest;
+  path?: string;
+  categoryCount: number;
+  toolCount: number;
+}
+
+export function getRhToolboxPersistentManifest() {
+  return safeRequest<RhToolboxManifestPersistenceResult>(`${BASE}/settings/rh-toolbox/manifest`);
+}
+
+export function saveRhToolboxPersistentManifest(manifest: RhToolboxManifest, source = 'maker') {
+  return safeRequest<RhToolboxManifestPersistenceResult>(`${BASE}/settings/rh-toolbox/manifest`, {
+    method: 'PUT',
+    body: JSON.stringify({ manifest, source }),
+  });
 }
 
 // ----- 分类 -----

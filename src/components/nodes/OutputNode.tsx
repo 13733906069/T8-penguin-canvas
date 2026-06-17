@@ -253,7 +253,8 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       else pushUnique(out.images, url);
     };
 
-    const directOnlyOutput = Boolean(d.rhDuckDecoded);
+    const directSnapshotOnly = d.directOutputSingleSnapshot === true;
+    const directOnlyOutput = Boolean(d.rhDuckDecoded) || directSnapshotOnly;
     if (!directOnlyOutput) {
       const list = Array.isArray(upstreamNodes) ? upstreamNodes : [];
       for (const n of list) {
@@ -428,7 +429,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       (Array.isArray(d.directModelUrls) && d.directModelUrls.length > 1) ||
       directTextSegments.length > 1 ||
       directOutputTextSegments.length > 1;
-    const pickKind: string | undefined = hasAnyDirectAccumulated ? undefined : d.pickKind;
+    const pickKind: string | undefined = (hasAnyDirectAccumulated || directSnapshotOnly) ? undefined : d.pickKind;
     const pickIndex: number | undefined =
       typeof d.pickIndex === 'number' ? d.pickIndex : undefined;
     if (pickKind && typeof pickIndex === 'number') {
@@ -445,7 +446,9 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         out.models = [];
         // 图像项模式下还保留文本 (提示词) 以便下游可读
       } else if (pickKind === 'video') {
+        const pairedText = out.texts[pickIndex] || (out.texts.length === 1 ? out.texts[0] : '');
         out.videos = out.videos[pickIndex] ? [out.videos[pickIndex]] : [];
+        out.texts = pairedText ? [pairedText] : [];
         out.images = [];
         out.audios = [];
         out.models = [];
@@ -468,7 +471,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     out.models = out.models.filter((u) => !isMaterialUrlHidden(d, 'model3d', u));
 
     return out;
-  }, [upstreamNodes, upstreamSig, handleMap, d.pickKind, d.pickIndex, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directVideoUrls, d.directAudioUrl, d.directAudioUrls, d.directModelUrl, d.directModelUrls, d.modelUrl, d.modelUrls, d.directOutputText, d.directTextSegments, d.hiddenMaterialUrls, d.rhDuckDecoded]);
+  }, [upstreamNodes, upstreamSig, handleMap, d.pickKind, d.pickIndex, d.directOutputSingleSnapshot, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directVideoUrls, d.directAudioUrl, d.directAudioUrls, d.directModelUrl, d.directModelUrls, d.modelUrl, d.modelUrls, d.directOutputText, d.directTextSegments, d.hiddenMaterialUrls, d.rhDuckDecoded]);
 
   // 文本编辑
   const overrideText: string = typeof d.outputText === 'string' ? d.outputText : '';

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
-import { Loader2, Maximize2, Scissors, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type MouseEvent } from 'react';
+import { Eraser, Loader2, Maximize2, Scissors, Sparkles } from 'lucide-react';
 import {
   runRhImageCapabilityBatch,
   type RunRhImageCapabilityBatchResult,
@@ -22,6 +22,7 @@ interface RhImageCapabilityButtonProps {
   preset?: RhImageCapabilityPresetId | RhImageCapabilityPreset | string;
   capability?: string;
   preferredToolId?: string;
+  userParams?: Record<string, string | number | boolean>;
   label?: string;
   shortLabel?: string;
   title?: string;
@@ -80,6 +81,7 @@ export default function RhImageCapabilityButton({
   preset = 'cutout',
   capability: capabilityOverride,
   preferredToolId,
+  userParams,
   label,
   shortLabel,
   title,
@@ -95,9 +97,11 @@ export default function RhImageCapabilityButton({
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [paramPickerOpen, setParamPickerOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const activeTaskIdsRef = useRef<Set<string>>(new Set());
   const lastPollLogRef = useRef(0);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const cleanSourceUrls = useMemo(() => {
     const seen = new Set<string>();
     const urls = [...(sourceUrls || []), sourceUrl].filter(Boolean) as string[];
@@ -110,16 +114,63 @@ export default function RhImageCapabilityButton({
       });
   }, [sourceUrl, sourceUrls]);
   const resolvedPreset = useMemo(() => resolveRhImageCapabilityPreset(preset), [preset]);
+  const paramPresets = resolvedPreset.paramPresets || [];
+  const defaultParamPresetId = resolvedPreset.defaultParamPresetId || paramPresets[0]?.id || '';
+  const [selectedParamPresetId, setSelectedParamPresetId] = useState(defaultParamPresetId);
   const capability = capabilityOverride || resolvedPreset.capability || RH_IMAGE_CAPABILITY_PRESETS.cutout.capability;
   const resolvedPreferredToolId = preferredToolId || resolvedPreset.preferredToolId;
   const buttonLabel = label || resolvedPreset.label || RH_IMAGE_CAPABILITY_PRESETS.cutout.label;
   const compactLabel = shortLabel || resolvedPreset.shortLabel || buttonLabel;
   const idleTitle = title || resolvedPreset.title || `调用 RH工具箱 ${buttonLabel}，并把结果输出为新素材节点`;
   const iconName = resolvedPreset.icon;
-  const IdleIcon = iconName === 'sparkles' ? Sparkles : iconName === 'expand' ? Maximize2 : Scissors;
+  const IdleIcon = iconName === 'sparkles' ? Sparkles : iconName === 'expand' ? Maximize2 : iconName === 'eraser' ? Eraser : Scissors;
   const isRail = variant === 'rail';
   const variantClassName = isRail ? 'rh-image-capability-button--rail' : 'rh-image-capability-button--inline';
   const visibleLabel = running ? (isRail ? '停' : '取消') : (isRail ? compactLabel : buttonLabel);
+  const selectedParamPreset = paramPresets.find((item) => item.id === selectedParamPresetId) || paramPresets[0];
+  const capabilityUserParams = useMemo(() => ({
+    ...(selectedParamPreset?.userParams || {}),
+    ...(userParams || {}),
+  }), [selectedParamPreset, userParams]);
+
+  useEffect(() => {
+    setSelectedParamPresetId(defaultParamPresetId);
+  }, [defaultParamPresetId]);
+
+  useEffect(() => {
+    if (!paramPickerOpen) return undefined;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && wrapperRef.current?.contains(target)) return;
+      setParamPickerOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setParamPickerOpen(false);
+    };
+    window.addEventListener('pointerdown', closeOnOutsidePointer, true);
+    window.addEventListener('keydown', closeOnEscape, true);
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutsidePointer, true);
+      window.removeEventListener('keydown', closeOnEscape, true);
+    };
+  }, [paramPickerOpen]);
+
+  useEffect(() => {
+    if (running) setParamPickerOpen(false);
+  }, [running]);
+
+  const handleParamPresetChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedParamPresetId(e.target.value);
+    setParamPickerOpen(false);
+  };
+
+  const openParamPicker = () => {
+    if (paramPresets.length > 0 && !running) {
+      setParamPickerOpen(true);
+    }
+  };
 
   const cancelActiveRunningHubTasks = async () => {
     const taskIds = Array.from(activeTaskIdsRef.current);
@@ -178,14 +229,15 @@ export default function RhImageCapabilityButton({
     activeTaskIdsRef.current.clear();
     lastPollLogRef.current = 0;
     logBus.info(
-      `${buttonLabel}: 开始处理 ${cleanSourceUrls.length} 张图像${resolvedPreferredToolId ? ` · tool=${resolvedPreferredToolId}` : ''}`,
+      `${buttonLabel}: 开始处理 ${cleanSourceUrls.length} 张图像${selectedParamPreset ? ` · ${selectedParamPreset.label}` : ''}${resolvedPreferredToolId ? ` · tool=${resolvedPreferredToolId}` : ''}`,
       `rh-image:${compactLabel}`,
     );
-    setMessage(cleanSourceUrls.length > 1 ? `准备批量${buttonLabel} 1/${cleanSourceUrls.length}` : `提交 RH ${buttonLabel}`);
+    setMessage(cleanSourceUrls.length > 1 ? `准备批量${buttonLabel} 1/${cleanSourceUrls.length}` : `提交 RH ${buttonLabel}${selectedParamPreset ? ` · ${selectedParamPreset.label}` : ''}`);
     try {
       const result = await runRhImageCapabilityBatch({
         capability,
         preferredToolId: resolvedPreferredToolId,
+        userParams: Object.keys(capabilityUserParams).length > 0 ? capabilityUserParams : undefined,
         imageUrls: cleanSourceUrls,
         signal: controller.signal,
         retryCount,
@@ -249,55 +301,103 @@ export default function RhImageCapabilityButton({
   };
 
   return (
-    <button
-      type="button"
-      className={`nodrag nopan rh-image-capability-button ${variantClassName}`}
-      aria-label={running ? `取消 ${buttonLabel}` : buttonLabel}
-      data-rh-capability={capability}
-      data-rh-running={running ? 'true' : 'false'}
-      onClick={runCapability}
+    <div
+      ref={wrapperRef}
+      className="nodrag nopan rh-image-capability-button-wrap"
+      data-rh-param-preset={selectedParamPreset?.id}
+      onMouseEnter={openParamPicker}
+      onFocusCapture={openParamPicker}
       onMouseDown={(e) => e.stopPropagation()}
-      disabled={cleanSourceUrls.length === 0}
-      title={error || message || (running ? 'RH 工具箱处理中，点击取消' : idleTitle)}
+      onClick={(e) => e.stopPropagation()}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        flexDirection: isRail ? 'column' : 'row',
-        gap: isRail ? 1 : 4,
-        padding: isRail ? '4px 2px' : '4px 10px',
-        width: isRail ? RAIL_BUTTON_SIZE : undefined,
-        minWidth: isRail ? RAIL_BUTTON_SIZE : undefined,
-        height: isRail ? RAIL_BUTTON_SIZE : INLINE_BUTTON_HEIGHT,
-        background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
-        color: accent,
-        border: `1px solid ${accent}66`,
-        borderRadius: isPixel ? 0 : 6,
-        boxShadow: isPixel
-          ? `2px 2px 0 ${accent}`
-          : isDark
-            ? '0 6px 24px rgba(0,0,0,0.4)'
-            : '0 6px 24px rgba(0,0,0,0.12)',
-        cursor: cleanSourceUrls.length === 0 ? 'not-allowed' : 'pointer',
-        fontSize: isRail ? 10 : 12,
-        fontWeight: 600,
-        lineHeight: 1,
-        whiteSpace: 'nowrap',
-        opacity: cleanSourceUrls.length === 0 ? 0.56 : running ? 0.82 : 1,
+        gap: paramPresets.length > 0 && paramPickerOpen ? 4 : 0,
         ...style,
       }}
     >
-      {running ? <Loader2 size={12} className="animate-spin" /> : <IdleIcon size={12} />}
-      <span
+      <button
+        type="button"
+        className={`nodrag nopan rh-image-capability-button ${variantClassName}`}
+        aria-label={running ? `取消 ${buttonLabel}` : buttonLabel}
+        data-rh-capability={capability}
+        data-rh-running={running ? 'true' : 'false'}
+        onClick={runCapability}
+        onMouseEnter={openParamPicker}
+        onFocus={openParamPicker}
+        onMouseDown={(e) => e.stopPropagation()}
+        disabled={cleanSourceUrls.length === 0}
+        title={error || message || (running ? 'RH 工具箱处理中，点击取消' : selectedParamPreset?.title || idleTitle)}
         style={{
-          display: 'block',
-          maxWidth: isRail ? RAIL_BUTTON_SIZE - 4 : undefined,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: isRail ? 'column' : 'row',
+          gap: isRail ? 1 : 4,
+          padding: isRail ? '4px 2px' : '4px 10px',
+          width: isRail ? RAIL_BUTTON_SIZE : undefined,
+          minWidth: isRail ? RAIL_BUTTON_SIZE : undefined,
+          height: isRail ? RAIL_BUTTON_SIZE : INLINE_BUTTON_HEIGHT,
+          background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
+          color: accent,
+          border: `1px solid ${accent}66`,
+          borderRadius: isPixel ? 0 : 6,
+          boxShadow: isPixel
+            ? `2px 2px 0 ${accent}`
+            : isDark
+              ? '0 6px 24px rgba(0,0,0,0.4)'
+              : '0 6px 24px rgba(0,0,0,0.12)',
+          cursor: cleanSourceUrls.length === 0 ? 'not-allowed' : 'pointer',
+          fontSize: isRail ? 10 : 12,
+          fontWeight: 600,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          opacity: cleanSourceUrls.length === 0 ? 0.56 : running ? 0.82 : 1,
         }}
       >
-        {visibleLabel}
-      </span>
-    </button>
+        {running ? <Loader2 size={12} className="animate-spin" /> : <IdleIcon size={12} />}
+        <span
+          style={{
+            display: 'block',
+            maxWidth: isRail ? RAIL_BUTTON_SIZE - 4 : undefined,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {visibleLabel}
+        </span>
+      </button>
+      {paramPresets.length > 0 && paramPickerOpen && (
+        <select
+          className="nodrag nopan rh-image-capability-param-select"
+          data-rh-param-select="resolution"
+          aria-label={`${buttonLabel}分辨率`}
+          value={selectedParamPreset?.id || ''}
+          disabled={running}
+          onChange={handleParamPresetChange}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          title="选择扩图输出分辨率"
+          style={{
+            width: isRail ? 126 : 144,
+            height: isRail ? 26 : INLINE_BUTTON_HEIGHT,
+            padding: '2px 6px',
+            background: isDark ? 'rgba(28,28,32,0.96)' : 'rgba(255,255,255,0.98)',
+            color: isDark ? '#f8fafc' : '#0f172a',
+            border: `1px solid ${accent}66`,
+            borderRadius: isPixel ? 0 : 6,
+            boxShadow: isPixel ? `2px 2px 0 ${accent}` : '0 6px 18px rgba(0,0,0,0.18)',
+            fontSize: 10,
+            fontWeight: 600,
+            outline: 'none',
+            pointerEvents: 'auto',
+          }}
+        >
+          {paramPresets.map((item) => (
+            <option key={item.id} value={item.id}>{item.label}</option>
+          ))}
+        </select>
+      )}
+    </div>
   );
 }

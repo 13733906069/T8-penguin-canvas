@@ -485,6 +485,257 @@ function normalizeRhToolsBackup(raw) {
   return { categories, tools };
 }
 
+const RH_TOOLBOX_SCHEMA = 't8-rh-toolbox-manifest';
+const RH_TOOLBOX_MEDIA_KINDS = new Set(['text', 'image', 'video', 'audio']);
+const RH_TOOLBOX_PARAM_KINDS = new Set(['text', 'number', 'select', 'boolean']);
+const RH_TOOLBOX_OUTPUT_ROLES = new Set(['append-output', 'replace-source', 'text-only', 'multi-output']);
+const RH_TOOLBOX_PARENT_IDS = new Set(['image', 'video', 'audio', 'model3d', 'text']);
+const RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS = 5000;
+const RH_TOOLBOX_DEFAULT_MAX_POLLS = 720;
+
+function cleanRhToolboxId(value, fallback) {
+  const raw = String(value || '').trim().toLowerCase();
+  const cleaned = raw.replace(/[^a-z0-9._:-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+  return cleaned || fallback;
+}
+
+function cleanRhToolboxText(value, fallback = '', max = 4000) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  return raw.length > max ? raw.slice(0, max) : raw;
+}
+
+function normalizeRhToolboxMajorId(value, fallback = 'image') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (RH_TOOLBOX_PARENT_IDS.has(raw)) return raw;
+  if (['images', 'img', 'photo', 'image-tools', '图像', '图片'].includes(raw)) return 'image';
+  if (['videos', 'movie', 'video-tools', '视频'].includes(raw)) return 'video';
+  if (['sound', 'music', 'voice', 'audio-tools', '音频', '声音'].includes(raw)) return 'audio';
+  if (['3d', 'model-3d', 'models', 'model3d-tools', '模型'].includes(raw)) return 'model3d';
+  if (['texts', 'prompt', 'llm', 'text-tools', '文本', '文字'].includes(raw)) return 'text';
+  return fallback;
+}
+
+function normalizeRhToolboxMediaKind(value) {
+  return RH_TOOLBOX_MEDIA_KINDS.has(String(value || '')) ? String(value) : 'text';
+}
+
+function normalizeRhToolboxParamKind(value) {
+  return RH_TOOLBOX_PARAM_KINDS.has(String(value || '')) ? String(value) : 'text';
+}
+
+function normalizeRhToolboxManifestPayload(raw) {
+  const payload = raw && typeof raw === 'object' ? raw : {};
+  const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
+  const categories = [];
+  const categoryIds = new Set();
+
+  rawCategories.forEach((item, index) => {
+    const id = cleanRhToolboxId(item?.id, `category-${index + 1}`);
+    if (categoryIds.has(id)) return;
+    categoryIds.add(id);
+    categories.push({
+      id,
+      name: cleanRhToolboxText(item?.name, id, 120),
+      parentId: normalizeRhToolboxMajorId(item?.parentId || item?.majorCategoryId || item?.surface),
+      description: cleanRhToolboxText(item?.description, '', 1000),
+      order: Number.isFinite(Number(item?.order)) ? Number(item.order) : index,
+      icon: cleanRhToolboxText(item?.icon, 'Wrench', 80),
+    });
+  });
+
+  if (categories.length === 0) {
+    categories.push({ id: 'general', name: '通用工具', parentId: 'image', order: 0, icon: 'Wrench' });
+    categoryIds.add('general');
+  }
+
+  const rawTools = Array.isArray(payload.tools) ? payload.tools : [];
+  const toolIds = new Set();
+  const tools = [];
+
+  rawTools.forEach((item, index) => {
+    const id = cleanRhToolboxId(item?.id, `tool-${index + 1}`);
+    if (toolIds.has(id)) return;
+    toolIds.add(id);
+    const webappId = cleanRhToolboxText(item?.webappId, '', 120);
+    const categoryIdRaw = cleanRhToolboxId(item?.categoryId, '');
+    const categoryId = categoryIds.has(categoryIdRaw) ? categoryIdRaw : categories[0].id;
+    const inputSchema = Array.isArray(item?.inputSchema)
+      ? item.inputSchema.map((entry, entryIndex) => {
+        const rhNodeId = cleanRhToolboxText(entry?.rhNodeId, '', 80).replace(/^#/, '');
+        const fieldName = cleanRhToolboxText(entry?.fieldName, '', 160);
+        if (!rhNodeId || !fieldName) return null;
+        return {
+          key: cleanRhToolboxId(entry?.key, `${normalizeRhToolboxMediaKind(entry?.kind)}-${entryIndex + 1}`),
+          label: cleanRhToolboxText(entry?.label, '', 160),
+          kind: normalizeRhToolboxMediaKind(entry?.kind),
+          rhNodeId,
+          fieldName,
+          required: entry?.required !== false,
+          multiple: entry?.multiple === true,
+          maxItems: Number.isFinite(Number(entry?.maxItems)) ? Math.max(1, Math.floor(Number(entry.maxItems))) : undefined,
+          defaultValue: entry?.defaultValue == null ? undefined : String(entry.defaultValue).slice(0, 4000),
+          uploadAsset: entry?.uploadAsset !== false,
+          order: Number.isFinite(Number(entry?.order)) ? Number(entry.order) : entryIndex,
+        };
+      }).filter(Boolean)
+      : [];
+    const outputSchema = Array.isArray(item?.outputSchema)
+      ? item.outputSchema.map((entry, entryIndex) => ({
+        key: cleanRhToolboxId(entry?.key, `output-${entryIndex + 1}`),
+        label: cleanRhToolboxText(entry?.label, '', 160),
+        kind: normalizeRhToolboxMediaKind(entry?.kind),
+        role: RH_TOOLBOX_OUTPUT_ROLES.has(String(entry?.role || '')) ? String(entry.role) : 'append-output',
+      }))
+      : [];
+    const fixedParams = Array.isArray(item?.fixedParams)
+      ? item.fixedParams.map((entry) => {
+        const rhNodeId = cleanRhToolboxText(entry?.rhNodeId, '', 80).replace(/^#/, '');
+        const fieldName = cleanRhToolboxText(entry?.fieldName, '', 160);
+        if (!rhNodeId || !fieldName) return null;
+        return {
+          rhNodeId,
+          fieldName,
+          value: entry?.value ?? '',
+          valueType: entry?.valueType,
+        };
+      }).filter(Boolean)
+      : [];
+    const userParams = Array.isArray(item?.userParams)
+      ? item.userParams.map((entry, entryIndex) => {
+        const rhNodeId = cleanRhToolboxText(entry?.rhNodeId, '', 80).replace(/^#/, '');
+        const fieldName = cleanRhToolboxText(entry?.fieldName, '', 160);
+        const label = cleanRhToolboxText(entry?.label, '', 160);
+        if (!rhNodeId || !fieldName || !label) return null;
+        const kind = normalizeRhToolboxParamKind(entry?.kind);
+        return {
+          key: cleanRhToolboxId(entry?.key, `param-${entryIndex + 1}`),
+          label,
+          kind,
+          rhNodeId,
+          fieldName,
+          defaultValue: entry?.defaultValue,
+          placeholder: cleanRhToolboxText(entry?.placeholder, '', 500),
+          options: Array.isArray(entry?.options)
+            ? entry.options.filter((v) => typeof v === 'string' || typeof v === 'number').slice(0, 120)
+            : undefined,
+          min: Number.isFinite(Number(entry?.min)) ? Number(entry.min) : undefined,
+          max: Number.isFinite(Number(entry?.max)) ? Number(entry.max) : undefined,
+          step: Number.isFinite(Number(entry?.step)) ? Number(entry.step) : undefined,
+          required: entry?.required === true,
+        };
+      }).filter(Boolean)
+      : [];
+    const pollIntervalMs = Number.isFinite(Number(item?.runtime?.pollIntervalMs))
+      ? Math.max(1000, Number(item.runtime.pollIntervalMs))
+      : RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS;
+    const maxPolls = Number.isFinite(Number(item?.runtime?.maxPolls))
+      ? Math.max(1, Math.floor(Number(item.runtime.maxPolls)))
+      : RH_TOOLBOX_DEFAULT_MAX_POLLS;
+
+    tools.push({
+      id,
+      title: cleanRhToolboxText(item?.title, id, 160),
+      description: cleanRhToolboxText(item?.description, '', 4000),
+      categoryId,
+      webappId,
+      enabled: item?.enabled !== false && !!webappId,
+      order: Number.isFinite(Number(item?.order)) ? Number(item.order) : index,
+      capabilities: Array.isArray(item?.capabilities)
+        ? Array.from(new Set(item.capabilities.map((cap) => String(cap || '').trim()).filter(Boolean))).slice(0, 80)
+        : [],
+      inputSchema: inputSchema.sort((a, b) => (Number(a.order || 0) - Number(b.order || 0))),
+      outputSchema,
+      fixedParams,
+      userParams,
+      runtime: {
+        instanceType: cleanRhToolboxText(item?.runtime?.instanceType, '', 80),
+        pollIntervalMs,
+        maxPolls,
+        fetchAppInfo: item?.runtime?.fetchAppInfo !== false,
+      },
+      ui: item?.ui && typeof item.ui === 'object'
+        ? {
+          icon: cleanRhToolboxText(item.ui.icon, 'Wrench', 80),
+          showInNode: item.ui.showInNode !== false,
+          showInImageEditor: item.ui.showInImageEditor === true,
+          showInVideoEditor: item.ui.showInVideoEditor === true,
+          showInTextEditor: item.ui.showInTextEditor === true,
+          showInAudioEditor: item.ui.showInAudioEditor === true,
+        }
+        : { icon: 'Wrench', showInNode: true },
+      version: Number.isFinite(Number(item?.version)) ? Number(item.version) : 1,
+    });
+  });
+
+  categories.sort((a, b) => (Number(a.order || 0) - Number(b.order || 0)) || String(a.name).localeCompare(String(b.name), 'zh-Hans-CN'));
+  tools.sort((a, b) => (Number(a.order || 0) - Number(b.order || 0)) || String(a.title).localeCompare(String(b.title), 'zh-Hans-CN'));
+  return {
+    schema: RH_TOOLBOX_SCHEMA,
+    version: Number.isFinite(Number(payload.version)) ? Number(payload.version) : 1,
+    updatedAt: cleanRhToolboxText(payload.updatedAt, new Date().toISOString(), 80),
+    categories,
+    tools,
+  };
+}
+
+function readRhToolboxPersistentManifest() {
+  const empty = {
+    schema: RH_TOOLBOX_SCHEMA,
+    version: 1,
+    updatedAt: '',
+    categories: [],
+    tools: [],
+  };
+  const raw = loadJson(config.RH_TOOLBOX_MANIFEST_FILE, null);
+  if (!raw || typeof raw !== 'object') return empty;
+  const categoryCount = Array.isArray(raw.categories) ? raw.categories.length : 0;
+  const toolCount = Array.isArray(raw.tools) ? raw.tools.length : 0;
+  if (categoryCount === 0 && toolCount === 0) return empty;
+  return normalizeRhToolboxManifestPayload(raw);
+}
+
+function writeRhToolboxPersistentManifest(raw) {
+  const manifest = normalizeRhToolboxManifestPayload({
+    ...(raw && typeof raw === 'object' ? raw : {}),
+    updatedAt: new Date().toISOString(),
+  });
+  if (!saveJson(config.RH_TOOLBOX_MANIFEST_FILE, manifest)) {
+    throw new Error('RH工具箱持久化文件写入失败');
+  }
+  return manifest;
+}
+
+router.get('/rh-toolbox/manifest', (_req, res) => {
+  const manifest = readRhToolboxPersistentManifest();
+  res.json({
+    success: true,
+    data: {
+      manifest,
+      path: config.RH_TOOLBOX_MANIFEST_FILE,
+      categoryCount: manifest.categories.length,
+      toolCount: manifest.tools.length,
+    },
+  });
+});
+
+router.put('/rh-toolbox/manifest', (req, res) => {
+  try {
+    const manifest = writeRhToolboxPersistentManifest(req.body?.manifest || req.body || {});
+    res.json({
+      success: true,
+      data: {
+        manifest,
+        path: config.RH_TOOLBOX_MANIFEST_FILE,
+        categoryCount: manifest.categories.length,
+        toolCount: manifest.tools.length,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
 // 获取分类列表
 router.get('/rh-tool-categories', (_req, res) => {
   const list = loadJson(config.RH_TOOL_CATEGORIES_FILE, []);

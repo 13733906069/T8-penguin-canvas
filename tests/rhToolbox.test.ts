@@ -38,28 +38,55 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
     listRhToolboxTools,
     normalizeRhToolboxManifest,
   } = await loadRhToolboxUtils();
+  const { resolveRhToolboxCapability } = await loadRhToolboxCapabilities();
 
   const manifest = normalizeRhToolboxManifest(RH_TOOLBOX_MANIFEST);
 
   assert.equal(manifest.schema, 't8-rh-toolbox-manifest');
-  assert.equal(manifest.updatedAt, '2026-06-15');
-  assert.equal(manifest.categories.length, 5);
+  assert.match(String(manifest.updatedAt || ''), /^2026-06-17/);
+  assert.equal(manifest.categories.length, 9);
   const categories = new Map(manifest.categories.map((category) => [category.id, category]));
   assert.deepEqual(
-    ['custom-rh-tools', 'video-category-fwv2n', 'image-category-d5zwl', 'video-category-e2v4g', 'image-category-e78o2']
+    [
+      'custom-rh-tools',
+      'video-category-fwv2n',
+      'image-category-d5zwl',
+      'image-category-remove-subject',
+      'video-category-e2v4g',
+      'image-category-e78o2',
+      'video-category-6djrs',
+      'image-category-e7but',
+      'image-category-8h6ed',
+    ]
       .map((id) => [id, categories.get(id)?.name, categories.get(id)?.parentId]),
     [
       ['custom-rh-tools', '抠图', 'image'],
       ['video-category-fwv2n', '图生视频', 'video'],
       ['image-category-d5zwl', '图像编辑', 'image'],
+      ['image-category-remove-subject', '消除主体', 'image'],
       ['video-category-e2v4g', '文生视频', 'video'],
       ['image-category-e78o2', '电商', 'image'],
+      ['video-category-6djrs', '视频去水印', 'video'],
+      ['image-category-e7but', '扩图', 'image'],
+      ['image-category-8h6ed', '移除主体', 'image'],
     ],
   );
-  assert.equal(listRhToolboxTools(manifest).length, 6);
+  assert.equal(listRhToolboxTools(manifest).length, 11);
   assert.deepEqual(
     listRhToolboxTools(manifest).map((tool) => tool.id),
-    ['image-cutout-v1', 'image-upscale-4k', 'tuantiquv10', 'bernini1', 'berninituxiangbianji', 'bernini2'],
+    [
+      'image-cutout-v1',
+      'image-upscale-4k',
+      'tuantiquv10',
+      'bernini1',
+      'berninituxiangbianji',
+      'bernini2',
+      'jimenfenshen1',
+      'kuotu-1',
+      'xiaochuzhuti',
+      'xiaoyunqueheng',
+      'xiaoyunqueshu',
+    ],
   );
   for (const tool of listRhToolboxTools(manifest)) {
     const pollIntervalMs = tool.runtime?.pollIntervalMs || 5000;
@@ -69,25 +96,41 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       `${tool.id} should keep at least a 60 minute RH polling budget`,
     );
   }
-  assert.equal(listRhToolboxTools(manifest, { includeDisabled: true }).length, 6);
+  assert.equal(listRhToolboxTools(manifest, { includeDisabled: true }).length, 11);
   assert.equal(isRhToolboxBuiltinCategoryId('image-tools'), true);
   assert.equal(isRhToolboxBuiltinCategoryId('custom-rh-tools'), false);
   assert.equal(getRhToolboxToolMajorCategory(manifest.tools[0], manifest.categories), 'image');
   assert.deepEqual(
     filterRhToolboxTools(manifest, { majorCategoryId: 'video' }).map((tool) => tool.id),
-    ['bernini1', 'bernini2'],
+    ['bernini1', 'bernini2', 'jimenfenshen1', 'xiaoyunqueheng', 'xiaoyunqueshu'],
   );
   assert.deepEqual(
     filterRhToolboxTools(manifest, { capability: 'image.cutout' }).map((tool) => tool.id),
-    ['image-cutout-v1', 'tuantiquv10'],
+    ['image-cutout-v1', 'tuantiquv10', 'jimenfenshen1', 'kuotu-1', 'xiaochuzhuti', 'xiaoyunqueheng', 'xiaoyunqueshu'],
   );
   assert.deepEqual(
     filterRhToolboxTools(manifest, { capability: 'image.upscale' }).map((tool) => tool.id),
     ['image-upscale-4k'],
   );
   assert.deepEqual(
+    filterRhToolboxTools(manifest, { capability: 'image.remove-subject' }).map((tool) => tool.id),
+    [],
+  );
+  assert.equal(resolveRhToolboxCapability(manifest, { surface: 'image', capability: 'image.expand' })?.id, 'kuotu-1');
+  assert.equal(resolveRhToolboxCapability(manifest, { surface: 'image', capability: 'image.remove-subject' })?.id, 'xiaochuzhuti');
+  assert.deepEqual(
     new Set(buildRhToolboxQuickActions(manifest, 'image').map((action) => action.toolId)),
-    new Set(['image-cutout-v1', 'image-upscale-4k', 'tuantiquv10', 'berninituxiangbianji']),
+    new Set([
+      'image-cutout-v1',
+      'image-upscale-4k',
+      'jimenfenshen1',
+      'kuotu-1',
+      'tuantiquv10',
+      'xiaochuzhuti',
+      'xiaoyunqueheng',
+      'xiaoyunqueshu',
+      'berninituxiangbianji',
+    ]),
   );
   assert.deepEqual(
     new Set(buildRhToolboxQuickActions(manifest, 'video').map((action) => action.toolId)),
@@ -114,6 +157,20 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
     ],
   );
 
+  const removeSubject = findRhToolboxToolById(manifest, 'xiaochuzhuti');
+  assert.equal(removeSubject?.title, '消除主体');
+  assert.equal(removeSubject?.webappId, '2067098822521745410');
+  assert.equal(removeSubject?.inputSchema[0]?.rhNodeId, '44');
+  assert.deepEqual(removeSubject?.capabilities, ['image.cutout', 'image.edit']);
+  assert.deepEqual(
+    buildRhToolboxNodeInfoList(removeSubject, {
+      inputValues: { 'source-image': 'rh-uploaded-remove-subject.png' },
+    }),
+    [
+      { nodeId: '44', fieldName: 'image', fieldValue: 'rh-uploaded-remove-subject.png', valueType: 'image' },
+    ],
+  );
+
   const tuantiqu = findRhToolboxToolById(manifest, 'tuantiquv10');
   assert.equal(tuantiqu?.webappId, '2034251740148666369');
   const aspectRatio = tuantiqu?.userParams?.find((param) => param.key === 'node-22-aspect_ratio');
@@ -129,6 +186,91 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       { nodeId: '39', fieldName: 'image', fieldValue: 'rh-uploaded-a.png', valueType: 'image' },
       { nodeId: '22', fieldName: 'aspect_ratio', fieldValue: '16:9 landscape 1344x768', valueType: 'select' },
     ],
+  );
+  assert.deepEqual(
+    buildRhToolboxNodeInfoList(tuantiqu, {
+      inputValues: { 'source-image': 'rh-uploaded-b.png' },
+      userParamValues: {
+        aspect_ratio: '9:16 portrait 768x1344',
+        width: 768,
+        height: 1344,
+      },
+    }).filter((item) => (
+      (item.nodeId === '39' && item.fieldName === 'image') ||
+      (item.nodeId === '22' && ['aspect_ratio', 'width', 'height'].includes(item.fieldName))
+    )),
+    [
+      { nodeId: '39', fieldName: 'image', fieldValue: 'rh-uploaded-b.png', valueType: 'image' },
+      { nodeId: '22', fieldName: 'aspect_ratio', fieldValue: '9:16 portrait 768x1344', valueType: 'select' },
+      { nodeId: '22', fieldName: 'width', fieldValue: 768, valueType: 'number' },
+      { nodeId: '22', fieldName: 'height', fieldValue: 1344, valueType: 'number' },
+    ],
+  );
+
+  const expandManifest = normalizeRhToolboxManifest({
+    schema: 't8-rh-toolbox-manifest',
+    version: 1,
+    categories: [{ id: 'image-category-expand', name: '扩图', parentId: 'image' }],
+    tools: [
+      {
+        id: 'kuotu-1',
+        title: '扩图',
+        categoryId: 'image-category-expand',
+        webappId: '2066227901946748930',
+        enabled: true,
+        capabilities: ['image.edit'],
+        inputSchema: [{ key: 'source-image', kind: 'image', rhNodeId: '5', fieldName: 'image', required: true }],
+        outputSchema: [{ key: 'output-image', kind: 'image', role: 'append-output' }],
+        userParams: [
+          {
+            key: 'node-105',
+            label: '选择尺寸',
+            kind: 'select',
+            rhNodeId: '105',
+            fieldName: '选择尺寸',
+            defaultValue: '16：9（1392x752）',
+            options: [
+              '原始比例',
+              '1：1（1024x1024）',
+              '9：16（752x1392）',
+              '16：9（1392x752）',
+              '21：9（1568x672）',
+            ],
+          },
+        ],
+        ui: { showInImageEditor: true },
+      },
+    ],
+  });
+  const expandTool = findRhToolboxToolById(expandManifest, 'kuotu-1');
+  assert.ok(expandTool);
+  assert.equal(
+    resolveRhToolboxCapability(expandManifest, { surface: 'image', capability: 'image.expand' })?.id,
+    'kuotu-1',
+  );
+  assert.deepEqual(
+    buildRhToolboxNodeInfoList(expandTool, {
+      inputValues: { 'source-image': 'rh-uploaded-expand.png' },
+      userParamValues: { expand_size: '16：9（1392x752）', resolution: '1344x768' },
+    }),
+    [
+      { nodeId: '5', fieldName: 'image', fieldValue: 'rh-uploaded-expand.png', valueType: 'image' },
+      { nodeId: '105', fieldName: '选择尺寸', fieldValue: '16：9（1392x752）', valueType: 'select' },
+    ],
+  );
+  assert.deepEqual(
+    buildRhToolboxNodeInfoList(expandTool, {
+      inputValues: { 'source-image': 'rh-uploaded-expand.png' },
+      userParamValues: { resolution: '1392x752' },
+    }).find((item) => item.nodeId === '105'),
+    { nodeId: '105', fieldName: '选择尺寸', fieldValue: '16：9（1392x752）', valueType: 'select' },
+  );
+  assert.deepEqual(
+    buildRhToolboxNodeInfoList(expandTool, {
+      inputValues: { 'source-image': 'rh-uploaded-expand.png' },
+      userParamValues: { aspectRatio: '21:9' },
+    }).find((item) => item.nodeId === '105'),
+    { nodeId: '105', fieldName: '选择尺寸', fieldValue: '21：9（1568x672）', valueType: 'select' },
   );
 
   const imageToVideo = findRhToolboxToolById(manifest, 'bernini1');
@@ -148,13 +290,20 @@ test('RH toolbox release manifest check is wired into packaging and post-build v
   const distRelease = readFileSync(new URL('../scripts/dist-release.cjs', import.meta.url), 'utf8');
   const postBuild = readFileSync(new URL('../electron/_post_build.cjs', import.meta.url), 'utf8');
   const checker = readFileSync(new URL('../scripts/check-rh-toolbox-release.cjs', import.meta.url), 'utf8');
+  const syncScript = readFileSync(new URL('../scripts/sync-rh-toolbox-manifest.cjs', import.meta.url), 'utf8');
 
   assert.equal(packageJson.scripts['rh-toolbox:check'], 'node scripts/check-rh-toolbox-release.cjs');
+  assert.match(packageJson.scripts['prepack:enc'], /rh-toolbox:check[\s\S]*build[\s\S]*encrypt/);
   assert.match(distRelease, /RH toolbox release manifest check/);
   assert.match(distRelease, /rh-toolbox:check/);
   assert.ok(distRelease.indexOf('rh-toolbox:check') < distRelease.indexOf('prepack:enc'));
 
+  assert.match(checker, /syncRhToolboxManifest/);
+  assert.match(syncScript, /data['"], ['"]rh_toolbox_manifest\.json/);
+  assert.match(syncScript, /src['"], ['"]data['"], ['"]rhToolboxManifest\.ts/);
+  assert.match(syncScript, /toolIdentityKeys/);
   assert.match(checker, /T8_RH_TOOLBOX_MIN_ENABLED/);
+  assert.match(checker, /frontendMarkersForManifest/);
   assert.match(checker, /image-cutout-v1/);
   assert.match(checker, /tuantiquv10/);
   assert.match(checker, /bernini1/);
@@ -162,9 +311,9 @@ test('RH toolbox release manifest check is wired into packaging and post-build v
   assert.match(checker, /bernini2/);
 
   assert.match(postBuild, /checkRhToolboxReleaseManifest/);
-  assert.match(postBuild, /image-cutout-v1/);
-  assert.match(postBuild, /tuantiquv10/);
-  assert.match(postBuild, /bernini1/);
+  assert.match(postBuild, /loadRhToolboxReleaseManifestMarkers/);
+  assert.match(postBuild, /RH_TOOLBOX_MANIFEST/);
+  assert.match(postBuild, /tool\.enabled === false/);
 });
 
 test('RH toolbox image cutout is exposed as a reusable node capability', async () => {
@@ -188,12 +337,39 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
     capability: 'image.cutout',
     preferredToolId: 'image-cutout-v1',
   });
+  const removeSubjectTool = resolveRhToolboxCapability(RH_TOOLBOX_MANIFEST, {
+    surface: 'image',
+    capability: 'image.remove-subject',
+    preferredToolId: 'xiaochuzhuti',
+  });
 
   assert.equal(tool?.id, 'image-cutout-v1');
   assert.equal(tool?.title, '高清抠图');
+  assert.equal(removeSubjectTool?.id, 'xiaochuzhuti');
   assert.deepEqual(
     buildRhToolboxCapabilityInputValues(tool, 'image', '/files/input/a.png'),
     { 'source-image': '/files/input/a.png' },
+  );
+  assert.equal(
+    resolveRhToolboxCapability({
+      schema: 't8-rh-toolbox-manifest',
+      version: 1,
+      categories: [{ id: 'image-category-expand', name: '扩图', parentId: 'image' }],
+      tools: [
+        {
+          id: 'outpaint-draft',
+          title: '扩图',
+          categoryId: 'image-category-expand',
+          webappId: '200',
+          enabled: true,
+          capabilities: ['image.edit'],
+          inputSchema: [{ key: 'source-image', kind: 'image', rhNodeId: '1', fieldName: 'image' }],
+          outputSchema: [{ key: 'output-image', kind: 'image', role: 'append-output' }],
+          ui: { showInImageEditor: true },
+        },
+      ],
+    }, { surface: 'image', capability: 'image.expand' })?.id,
+    'outpaint-draft',
   );
 
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.cutout.capability, 'image.cutout');
@@ -201,6 +377,14 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.upscale.capability, 'image.upscale');
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.upscale.preferredToolId, 'image-upscale-4k');
   assert.equal(RH_IMAGE_CAPABILITY_PRESETS.expand.capability, 'image.expand');
+  assert.equal(RH_IMAGE_CAPABILITY_PRESETS.expand.defaultParamPresetId, 'landscape-16-9');
+  assert.ok((RH_IMAGE_CAPABILITY_PRESETS.expand.paramPresets?.length || 0) >= 14);
+  assert.equal(
+    RH_IMAGE_CAPABILITY_PRESETS.expand.paramPresets?.find((item) => item.id === 'landscape-16-9')?.userParams.expand_size,
+    '16：9（1392x752）',
+  );
+  assert.equal(RH_IMAGE_CAPABILITY_PRESETS.removeSubject.capability, 'image.remove-subject');
+  assert.equal(RH_IMAGE_CAPABILITY_PRESETS.removeSubject.preferredToolId, 'xiaochuzhuti');
   assert.equal(resolveRhImageCapabilityPreset('cutout').label, '抠图');
 
   assert.match(service, /runRhImageCapability/);
@@ -208,7 +392,10 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.match(service, /runRhImageCutoutBatch/);
   assert.match(service, /preferredToolId:\s*'image-cutout-v1'/);
   assert.match(service, /const RH_TOOLBOX_DEVELOPER_MODULE = '\.\.\/utils\/rhToolboxDeveloper'/);
+  assert.match(service, /getRhToolboxPersistentManifest/);
+  assert.match(service, /mergeRhToolboxManifests/);
   assert.match(service, /mergeRhToolboxManifestWithDeveloperDrafts/);
+  assert.match(service, /userParams: options\.userParams/);
   assert.match(service, /@vite-ignore/);
   assert.match(service, /onItemProgress/);
   assert.match(service, /retryCount\?: number/);
@@ -225,6 +412,7 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.match(button, /sourceUrls\?: string\[\]/);
   assert.match(button, /preset\?:/);
   assert.match(button, /preferredToolId\?: string/);
+  assert.match(button, /userParams\?: Record<string, string \| number \| boolean>/);
   assert.match(button, /label\?: string/);
   assert.match(button, /RH_IMAGE_CAPABILITY_PRESETS/);
   assert.match(button, /runRhImageCapabilityBatch/);
@@ -233,6 +421,14 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.match(button, /data-rh-running=\{running \? 'true' : 'false'\}/);
   assert.match(button, /variant\?: 'inline' \| 'rail'/);
   assert.match(button, /rh-image-capability-button--rail/);
+  assert.match(button, /paramPickerOpen/);
+  assert.match(button, /setParamPickerOpen\(false\)/);
+  assert.match(button, /window\.addEventListener\('pointerdown'/);
+  assert.match(button, /window\.removeEventListener\('pointerdown'/);
+  assert.match(button, /rh-image-capability-param-select/);
+  assert.match(button, /data-rh-param-select="resolution"/);
+  assert.match(button, /选择扩图输出分辨率/);
+  assert.match(button, /selectedParamPreset/);
   assert.match(button, /onRunningChange\?: \(running: boolean\) => void/);
   assert.match(button, /onRunningChange\?\.\(true\)/);
   assert.match(button, /onRunningChange\?\.\(false\)/);
@@ -241,6 +437,7 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.match(rail, /data-rh-image-capability-rail/);
   assert.match(rail, /RH_IMAGE_NODE_CAPABILITY_PRESETS/);
   assert.match(rail, /variant="rail"/);
+  assert.match(rail, /overflowX:\s*'visible'/);
   assert.match(rail, /onRunningChange\?: \(running: boolean\) => void/);
   assert.match(rail, /runningPresetIds/);
   assert.match(rail, /runningPresetIdsRef/);
@@ -521,7 +718,9 @@ test('RH toolbox runtime can consume private maker events without shipping maker
   assert.match(node, /import\(\/\* @vite-ignore \*\/ RH_TOOLBOX_DEVELOPER_MODULE\)/);
   assert.match(node, /penguin:rh-toolbox-manifest-updated/);
   assert.match(node, /detail\?\.kind === 'tool-saved'/);
-  assert.match(node, /mergeRhToolboxManifestWithDeveloperDrafts\(base, detail\?\.manifest\)/);
+  assert.match(node, /getRhToolboxPersistentManifest/);
+  assert.match(node, /mergeRhToolboxManifests\(base, persisted\.data\.manifest\)/);
+  assert.match(node, /mergeRhToolboxManifestWithDeveloperDrafts\(baseWithPersistent, detail\?\.manifest\)/);
   assert.match(node, /function dedupeRhToolboxDisplayTools/);
   assert.match(node, /dedupeRhToolboxDisplayTools\(listRhToolboxTools\(manifest, \{ includeDisabled: true \}\)/);
   assert.match(node, /dedupeRhToolboxDisplayTools\(filterRhToolboxTools\(manifest,/);
@@ -579,8 +778,8 @@ test('RH toolbox maker keeps each draft tool category independent', () => {
   assert.match(maker, /compactTextHash\(`\$\{majorId\}:\$\{name\}`\)/);
   assert.doesNotMatch(maker, /cleanId\(category\?\.id \|\| newCategoryId \|\| name, 'custom-rh-tools'\)/);
   assert.match(maker, /const categoryId = category[\s\S]*buildUniqueCategoryId\(newCategoryId, name, parentId, categories\)/);
-  assert.match(maker, /const patchDraftTool = \(draft: RhToolboxTool, patch: Partial<RhToolboxTool>/);
-  assert.match(maker, /saveRhToolboxDeveloperTool\(nextTool, categories\)/);
+  assert.match(maker, /const patchDraftTool = async \(draft: RhToolboxTool, patch: Partial<RhToolboxTool>/);
+  assert.match(maker, /saveRhToolboxDeveloperToolPersistent\(nextTool, categories\)/);
   assert.match(maker, /const firstSubcategory = customCategories\.find\(\(category\) => getRhToolboxCategoryMajorId\(category\) === nextMajorId\)/);
   assert.match(maker, /保存时按该小类入库/);
   assert.match(maker, /onChange=\{\(event\) => patchDraftTool\(draft, \{ categoryId: event\.target\.value \}/);
@@ -608,11 +807,27 @@ test('RH toolbox maker saves a per-tool default instance type', () => {
 
 test('RH toolbox developer save persists the selected custom category with each tool', () => {
   const developer = readFileSync(new URL('../src/utils/rhToolboxDeveloper.ts', import.meta.url), 'utf8');
+  const settings = readFileSync(new URL('../backend/src/routes/settings.js', import.meta.url), 'utf8');
+  const config = readFileSync(new URL('../backend/src/config.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../src/services/api.ts', import.meta.url), 'utf8');
+  const maker = readFileSync(new URL('../src/components/nodes/RHToolboxMakerNode.tsx', import.meta.url), 'utf8');
 
   assert.match(developer, /isRhToolboxBuiltinCategoryId/);
   assert.match(developer, /for \(const category of incoming\.categories\)/);
   assert.match(developer, /category\.id === normalizedTool\.categoryId/);
   assert.match(developer, /categoryMap\.set\(category\.id, category\)/);
+  assert.match(developer, /saveRhToolboxPersistentManifest/);
+  assert.match(developer, /readRhToolboxPersistentDeveloperManifest/);
+  assert.match(developer, /saveRhToolboxDeveloperToolPersistent/);
+  assert.match(developer, /deleteRhToolboxDeveloperToolPersistent/);
+  assert.match(maker, /readRhToolboxPersistentDeveloperManifest\(\)/);
+  assert.match(maker, /正在保存到 RH工具箱持久应用库/);
+  assert.match(config, /RH_TOOLBOX_MANIFEST_FILE:\s*path\.join\(DATA_ROOT, 'data', 'rh_toolbox_manifest\.json'\)/);
+  assert.match(settings, /router\.get\('\/rh-toolbox\/manifest'/);
+  assert.match(settings, /router\.put\('\/rh-toolbox\/manifest'/);
+  assert.match(settings, /normalizeRhToolboxManifestPayload/);
+  assert.match(api, /getRhToolboxPersistentManifest/);
+  assert.match(api, /saveRhToolboxPersistentManifest/);
 });
 
 test('RH toolbox developer drafts replace the edited released tool instead of duplicating by title', async () => {

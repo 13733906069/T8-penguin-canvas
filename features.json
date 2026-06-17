@@ -1,7 +1,203 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.2.7",
-  "lastUpdated": "2026-06-16-electron-release-v227",
+  "version": "2.2.9",
+  "lastUpdated": "2026-06-17-electron-release-v229",
+  "electronReleaseV229": {
+    "version": "2.2.9",
+    "status": "electron-release",
+    "date": "2026-06-17",
+    "description": "v2.2.9 Electron 自动更新版：继续收口导演分镜台首尾帧桥接、分镜输入复用、RH 工具箱持久化、上传/输出图像能力轨、Codex 生图工作台登录入口和模型注意事项；本次打包 Electron 并发布 GitHub Release / latest.yml 自动更新资产。",
+    "highlights": [
+      "导演分镜台每个分镜新增复用输入：可从其他分镜一键应用提示词、负向提示词、@ 素材提及、帧模式、图像 / 视频 / 音频素材和素材顺序。",
+      "导演分镜台首尾帧桥接默认折叠关闭，用户勾选后才展开当前相邻分镜的桥接设置，减少普通分镜编辑区占用。",
+      "导演分镜台首尾帧桥接提示词新增 50 条通用高质量预设，支持套用、保存自定义、导入和导出 JSON。",
+      "导演分镜台分镜视频和桥接视频使用独立输出绑定 key，避免桥接生成或重新获取后覆盖 S2 等普通分镜视频输出。",
+      "导演分镜台时间线拖拽继续加固，右侧拖拽条和桥接分隔把手都标记为 resize handle，画布按钮拦截逻辑不会吞掉拖拽。",
+      "RH 工具箱新增持久化 manifest，制作器保存后的应用会写入本地数据文件，RH 工具箱节点和图像能力轨会读取并合并，打包前自动同步到发布 manifest。",
+      "RH 工具箱发布检查和 Electron 后置检查改为按 manifest 动态校验所有启用工具及 WebAppId，避免新增工具打包时遗漏。",
+      "上传素材 / 输出素材图像能力轨新增扩图和消除主体；扩图提供常用分辨率选择，点击画布空白可关闭选择框，并会把真实 LIST 选项值传给 RH。",
+      "Codex 生图工作台新增登录入口、刷新状态、命令复制和 Codex 可执行路径配置，和 Codex CLI Agent 一样可独立完成登录后使用。",
+      "左下角特别注意事项更新到 2026.06.17，补充 gpt-image-2 的 azure 特价分组、2K / 4K 稳定性说明和质量参数说明。",
+      "Electron 安装包继续使用 normal 压缩，保留 tools/ffmpeg sidecar 并排除重复 @ffmpeg-installer 运行时，降低 NSIS mmap 失败风险。",
+      "公开版本同步到 2.2.9：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.9.md 同步；本次生成 Electron 安装包、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "electron/_post_build.cjs",
+      "backend/src/config.js",
+      "backend/src/routes/settings.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.2.9.md",
+      "scripts/check-rh-toolbox-release.cjs",
+      "scripts/sync-rh-toolbox-manifest.cjs",
+      "src/components/Canvas.tsx",
+      "src/components/RhImageCapabilityButton.tsx",
+      "src/components/RhImageCapabilityRail.tsx",
+      "src/components/nodes/CodexImageConjureNode.tsx",
+      "src/components/nodes/DirectorStoryboardNode.tsx",
+      "src/components/nodes/RHToolboxNode.tsx",
+      "src/data/rhToolboxManifest.ts",
+      "src/services/api.ts",
+      "src/services/rhToolboxCapabilities.ts",
+      "src/utils/directorStoryboard.ts",
+      "src/utils/rhToolbox.ts",
+      "src/utils/rhToolboxCapabilities.ts",
+      "tests/codexImageConjure.test.ts",
+      "tests/directorStoryboard.test.ts",
+      "tests/electronPackaging.test.ts",
+      "tests/modelUsageHelp.test.ts",
+      "tests/rhToolbox.test.ts"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.2.9.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.2.9.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.2.9 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。"
+    ],
+    "verification": [
+      "node --test tests\\*.test.ts",
+      "npm run type-check",
+      "npm run rh-toolbox:check",
+      "npm run public:check",
+      "npm run build",
+      "git diff --check",
+      "npm run dist:release",
+      "npm run release:verify"
+    ]
+  },
+  "electronReleaseV228": {
+    "version": "2.2.8",
+    "status": "electron-release",
+    "date": "2026-06-17",
+    "description": "v2.2.8 Electron 自动更新版：继续收口导演分镜台、3D 全景分镜提示板、画板自由尺寸、资源库参考图和通用 @ 素材提及输入；本次打包 Electron 并发布 GitHub Release / latest.yml 自动更新资产。",
+    "highlights": [
+      "导演分镜台时间线拖拽调时长更稳：右侧拖拽条和中间 ↔ 分隔把手都可调整分镜秒数，ReactFlow 不会抢走拖拽事件，范围继续锁定 4-15 秒。",
+      "导演分镜台首尾帧桥接改为相邻镜头独立后期任务：生成全部只跑主镜头，S1-S2 / S2-S3 等桥接可分别设置、并发生成、重新获取并按对应镜头输出。",
+      "导演分镜台输出节点只展示对应分镜或桥接的提示词和视频，修复多个视频链接/提示词混在一起导致用户分不清的问题。",
+      "导演分镜台支持从资源库导入图像、视频、音频，并修复素材区无法拖动排序的问题。",
+      "通用 @ 素材提及输入支持紧贴文字触发，例如 女人@ 可直接弹出素材列表，选择后自动补前置空格避免提示词粘连。",
+      "上传素材来自资源库时也能作为图像节点参考图正常识别，避免本地上传可用而资源库拖出丢参考图。",
+      "3D 全景分镜提示板实时预览改为白字、小字号并与最终输出一致；场景输入框支持回车换行，预设提示词支持插入、保存、导入和导出。",
+      "画板节点自由尺寸输入不再被旧下限打断，新增保持原图像素尺寸入口，适合小图、长图和原尺寸编辑。",
+      "宫格剪裁继续加固 2x2 单图拆分，只输出一组 4 张素材，不再重复生成多个相同输出节点。",
+      "Electron 安装包继续保留 tools/ffmpeg sidecar，排除重复的 @ffmpeg-installer 运行时，并将安装器压缩从 store 调整为 normal，避免 NSIS 超过 Windows 编译器内存映射上限。",
+      "公开版本同步到 2.2.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.8.md 同步；本次生成 Electron 安装包、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.2.8.md",
+      "backend/src/routes/proxy.js",
+      "src/components/Canvas.tsx",
+      "src/components/nodes/DirectorStoryboardNode.tsx",
+      "src/components/nodes/DrawingBoardNode.tsx",
+      "src/components/nodes/MentionPromptInput.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/Panorama3DNode.tsx",
+      "src/components/nodes/mediaMentions.ts",
+      "src/utils/directorStoryboard.ts",
+      "src/utils/drawingBoardSizing.ts",
+      "src/utils/panorama3d.ts",
+      "tests/batchProcessor.test.ts",
+      "tests/directorStoryboard.test.ts",
+      "tests/drawingBoardInteractions.test.ts",
+      "tests/drawingBoardSizing.test.ts",
+      "tests/electronPackaging.test.ts",
+      "tests/imageReferencePersistence.test.ts",
+      "tests/outputMaterialPersistence.test.ts",
+      "tests/panorama3d.test.ts",
+      "tests/promptEditor.test.ts"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.2.8.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.2.8.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.2.8 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码和公开打包产物。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。"
+    ],
+    "verification": [
+      "node --test tests\\*.test.ts",
+      "npm run type-check",
+      "npm run rh-toolbox:check",
+      "npm run public:check",
+      "npm run build",
+      "git diff --check",
+      "npm run dist:release",
+      "npm run release:verify"
+    ],
+    "multiAgentHandoff": {
+      "date": "2026-06-17",
+      "purpose": "上下文压缩或多 Agent 接力时使用的 v2.2.8 现场摘要；用户当前只要求同步 skill.md 与 features.json，不要求继续打包、发布或提交。",
+      "sourceState": {
+        "pushedCommits": [
+          "d36afd7 Release v2.2.8",
+          "e75032f Fix v2.2.8 Electron package size"
+        ],
+        "localReleasePatch": [
+          "package.json build.compression 已从 store 调整为 normal，用于降低 NSIS installer payload 的 mmap 压力。",
+          "tests/electronPackaging.test.ts 已锁定 compression=normal、保留 tools/ffmpeg sidecar 并排除重复 @ffmpeg-installer。",
+          "features.json 与 release-notes/v2.2.8.md 已补充 Electron 包体压缩和 ffmpeg 去重说明。"
+        ],
+        "doNotAccidentallyCommit": [
+          "skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录和私有计费/支付/充值/分组令牌实现仍禁止进入公开提交。",
+          "当前未跟踪的 .electron-builder-cache*、artifacts/、comfyui-anima-t8/、hermes-agent/、update.md、src/components/nodes/RHToolRunnerPanel.tsx 不是 release 资产，接力时不要误提交。"
+        ]
+      },
+      "releasePackagingState": {
+        "status": "v2.2.8 release 打包尚未完成；本字段只是交接记录，不代表 GitHub Release 已发布。",
+        "lastFailures": [
+          "第一次 npm run dist:release 失败于 NSIS makensis: Internal compiler error #12345 error creating mmap the size of 1210605027。",
+          "第二次排除重复 @ffmpeg-installer 后仍失败于 NSIS makensis，mmap size 降到 1194530553。"
+        ],
+        "nextIfUserAsksRelease": [
+          "先重新检查 staged diff、公开边界和密钥扫描。",
+          "提交并推送 compression=normal 的本地补丁。",
+          "安全清理失败的 dist_electron/win-unpacked、T8-PenguinCanvas-Setup-2.2.8.exe、blockmap 和临时 nsis.7z。",
+          "重跑 npm run dist:release；若 normal 仍失败，再考虑 maximum 压缩或拆分大型 runtime 资产。"
+        ]
+      },
+      "directorStoryboardDurationDrag": {
+        "status": "源码侧已加固；如果用户仍反馈拖不动，优先确认运行中的页面/安装包是否已经加载最新构建。",
+        "implementation": [
+          "src/components/nodes/DirectorStoryboardNode.tsx::beginDurationResize 负责分镜右侧窄拖拽条。",
+          "src/components/nodes/DirectorStoryboardNode.tsx::beginBridgeSeparatorInteraction 负责中间 ↔ 桥接分隔把手，点击进入桥接，拖动则调整前一个分镜时长。",
+          "两条路径都使用 nodrag/nopan、capture 事件和 window 级 pointer/mouse move/up 兜底，避免 ReactFlow 抢拖拽。",
+          "src/utils/directorStoryboard.ts::calculateDirectorTimelineDragDuration 继续把时长限制在 4-15 秒。"
+        ],
+        "verification": [
+          "node --test tests\\directorStoryboard.test.ts 通过 19/19。",
+          "npm run type-check 通过。"
+        ]
+      },
+      "recentVerificationEvidence": [
+        "压缩补丁后 node --test tests\\electronPackaging.test.ts 通过。",
+        "npm run public:check 通过。",
+        "git diff --check 通过。"
+      ]
+    }
+  },
   "electronReleaseV227": {
     "version": "2.2.7",
     "status": "electron-release",
@@ -2227,11 +2423,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.2.7",
-    "semverVersion": "2.2.7",
+    "version": "2.2.9",
+    "semverVersion": "2.2.9",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.2.7 Electron 自动更新版：新增导演分镜台，并收口侧边栏隐藏、放置栏、素材删除/剪贴板、3D 全景分镜提示板、宫格编辑拖拽、宫格剪裁去重和 LLM/Vision 长回答；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.2.7 是 Electron 自动更新版本：本次通过 npm run dist:release 生成 dist_electron/T8-PenguinCanvas-Setup-2.2.7.exe、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.2.9 Electron 自动更新版：继续收口导演分镜台首尾帧桥接、分镜输入复用、RH 工具箱持久化、上传/输出图像能力轨、Codex 生图工作台登录入口和模型注意事项；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.2.9 是 Electron 自动更新版本：本次通过 npm run dist:release 生成 dist_electron/T8-PenguinCanvas-Setup-2.2.9.exe、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
@@ -5930,6 +6126,13 @@
       "panoramaCompositionGuide",
       "panoramaSceneLegendVisible",
       "panoramaScenePrompt",
+      "panoramaStoryboardPromptEnabled",
+      "panoramaStoryboardPromptText",
+      "panoramaStoryboardPromptSnapshotText",
+      "panoramaStoryboardPresetPrompt",
+      "panoramaStoryboardPresetName",
+      "panoramaStoryboardPromptPresets",
+      "panoramaStoryboardSelectedPresetId",
       "panoramaActionPrompt",
       "panoramaActionPlan",
       "PanoramaAvatar.groundMode",

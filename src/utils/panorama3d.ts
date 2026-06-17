@@ -55,6 +55,22 @@ export interface PanoramaGenerationHistoryItem {
 }
 
 export const PANORAMA_STORYBOARD_PROMPT_DEFAULT = '｛［人物］是@在做［动作］，｝';
+export const PANORAMA_STORYBOARD_PROMPT_PRESET_SCHEMA = 't8-panorama-storyboard-prompt-presets';
+
+export interface PanoramaStoryboardPromptPreset {
+  id: string;
+  name: string;
+  text: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PanoramaStoryboardPromptPresetExport {
+  schema: typeof PANORAMA_STORYBOARD_PROMPT_PRESET_SCHEMA;
+  version: 1;
+  exportedAt: string;
+  presets: PanoramaStoryboardPromptPreset[];
+}
 
 export interface PanoramaStoryboardPromptPanel {
   text: string;
@@ -72,8 +88,92 @@ function clampStoryboardNumber(value: number, min: number, max: number) {
 }
 
 export function normalizePanoramaStoryboardPrompt(value: unknown) {
-  const text = typeof value === 'string' ? value.replace(/\r\n/g, '\n').trim() : '';
-  return text || PANORAMA_STORYBOARD_PROMPT_DEFAULT;
+  const text = typeof value === 'string' ? value.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : '';
+  return text.trim().length ? text : PANORAMA_STORYBOARD_PROMPT_DEFAULT;
+}
+
+function cleanStoryboardPresetString(value: unknown, max = 3000) {
+  return typeof value === 'string'
+    ? value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().slice(0, max)
+    : '';
+}
+
+function cleanStoryboardPresetId(value: unknown, fallback: string) {
+  const raw = cleanStoryboardPresetString(value, 80) || fallback;
+  return raw.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || fallback;
+}
+
+function uniqueStoryboardPresetId(baseId: string, seen: Set<string>) {
+  let id = baseId;
+  let index = 2;
+  while (seen.has(id)) {
+    id = `${baseId}-${index}`;
+    index += 1;
+  }
+  seen.add(id);
+  return id;
+}
+
+export function sanitizePanoramaStoryboardPromptPresets(value: unknown): PanoramaStoryboardPromptPreset[] {
+  const raw: unknown[] = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && Array.isArray((value as any).presets)
+      ? (value as any).presets
+      : [];
+  const seen = new Set<string>();
+  const presets: PanoramaStoryboardPromptPreset[] = [];
+  raw.slice(0, 80).forEach((item, index) => {
+    if (!item || typeof item !== 'object') return;
+    const text = cleanStoryboardPresetString((item as any).text, 3000);
+    if (!text) return;
+    const fallbackId = `storyboard-preset-${index + 1}`;
+    const id = uniqueStoryboardPresetId(cleanStoryboardPresetId((item as any).id, fallbackId), seen);
+    const name =
+      cleanStoryboardPresetString((item as any).name, 48) ||
+      text.replace(/\s+/g, ' ').slice(0, 18) ||
+      `预设 ${presets.length + 1}`;
+    const createdAt = cleanStoryboardPresetString((item as any).createdAt, 40);
+    const updatedAt = cleanStoryboardPresetString((item as any).updatedAt, 40);
+    presets.push({
+      id,
+      name,
+      text,
+      ...(createdAt ? { createdAt } : {}),
+      ...(updatedAt ? { updatedAt } : {}),
+    });
+  });
+  return presets;
+}
+
+export function insertPanoramaStoryboardPresetPrompt(scene: unknown, preset: unknown) {
+  const current = typeof scene === 'string' ? scene.replace(/\r\n/g, '\n').trimEnd() : '';
+  const text = cleanStoryboardPresetString(
+    typeof preset === 'object' && preset !== null ? (preset as any).text : preset,
+    3000,
+  );
+  if (!text) return current;
+  return current ? `${current}\n${text}` : text;
+}
+
+export function createPanoramaStoryboardPromptPresetExport(presets: unknown): PanoramaStoryboardPromptPresetExport {
+  return {
+    schema: PANORAMA_STORYBOARD_PROMPT_PRESET_SCHEMA,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    presets: sanitizePanoramaStoryboardPromptPresets(presets),
+  };
+}
+
+export function parsePanoramaStoryboardPromptPresetImport(payload: string): PanoramaStoryboardPromptPreset[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    throw new Error('不是有效的分镜提示词预设文件');
+  }
+  const presets = sanitizePanoramaStoryboardPromptPresets(parsed);
+  if (!presets.length) throw new Error('没有识别到可导入的分镜提示词预设');
+  return presets;
 }
 
 function splitStoryboardLine(line: string, maxChars: number) {

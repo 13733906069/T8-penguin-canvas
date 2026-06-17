@@ -7,6 +7,7 @@ const canvasSource = readFileSync(new URL('../src/components/Canvas.tsx', import
 test('model usage help text includes current image, video, audio and LLM notes', () => {
   assert.match(canvasSource, /如果不小心网页崩溃等，但是实际任务没失败，需要去网站异步任务看下/);
   assert.match(canvasSource, /图像模型注意事项（2K，4K只有FAL长期稳定，其他都不保证稳定）/);
+  assert.match(canvasSource, /gpt-image-2模型，新增azure特价分组，固定0\.3积分，支持2K,4K，目前稳定/);
   assert.match(canvasSource, /gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定/);
   assert.match(canvasSource, /gpt-image-2-2k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0\.1积分,2026\.06\.10新增（default分组）/);
   assert.match(canvasSource, /gpt-image-2-4k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0\.1积分,2026\.06\.10新增（default分组）/);

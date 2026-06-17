@@ -21,6 +21,7 @@ import { PORT_COLOR } from '../../config/portTypes';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { cancelRh, fetchRhAppInfo, uploadFile } from '../../services/generation';
 import { runRhToolboxTool, getRhToolboxManifest, type RunRhToolboxProgress } from '../../services/rhToolbox';
+import { getRhToolboxPersistentManifest } from '../../services/api';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import { useRunBusStore } from '../../stores/runBus';
@@ -37,6 +38,7 @@ import {
   inferRhToolboxUserParamsFromNodeInfoList,
   isRhToolboxBuiltinCategoryId,
   listRhToolboxTools,
+  mergeRhToolboxManifests,
   normalizeRhToolboxManifest,
   RH_TOOLBOX_MAJOR_CATEGORIES,
   type RhToolboxInputMapping,
@@ -244,18 +246,27 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
           });
         }
       };
-      const base = getRhToolboxManifest();
-      if (!import.meta.env.DEV) {
-        applyManifest(normalizeRhToolboxManifest(base));
-        return;
-      }
-      import(/* @vite-ignore */ RH_TOOLBOX_DEVELOPER_MODULE)
-        .then(({ mergeRhToolboxManifestWithDeveloperDrafts }) => {
-          applyManifest(mergeRhToolboxManifestWithDeveloperDrafts(base, detail?.manifest));
-        })
-        .catch(() => {
-          applyManifest(normalizeRhToolboxManifest(base));
-        });
+      const loadManifest = async () => {
+        const base = getRhToolboxManifest();
+        const persisted = await getRhToolboxPersistentManifest();
+        const baseWithPersistent = persisted.success && persisted.data?.manifest
+          ? mergeRhToolboxManifests(base, persisted.data.manifest)
+          : normalizeRhToolboxManifest(base);
+        if (!import.meta.env.DEV) {
+          applyManifest(baseWithPersistent);
+          return;
+        }
+        await import(/* @vite-ignore */ RH_TOOLBOX_DEVELOPER_MODULE)
+          .then(({ mergeRhToolboxManifestWithDeveloperDrafts }) => {
+            applyManifest(mergeRhToolboxManifestWithDeveloperDrafts(baseWithPersistent, detail?.manifest));
+          })
+          .catch(() => {
+            applyManifest(baseWithPersistent);
+          });
+      };
+      loadManifest().catch(() => {
+        applyManifest(normalizeRhToolboxManifest(getRhToolboxManifest()));
+      });
     };
     refreshManifest();
     window.addEventListener('penguin:rh-toolbox-manifest-updated', refreshManifest);

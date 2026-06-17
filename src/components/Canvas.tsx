@@ -57,6 +57,11 @@ import {
   shouldPreserveAutoOutputMaterialNode,
   writeOutputMaterialPersistenceSetting,
 } from '../utils/outputMaterialPersistence';
+import {
+  buildDirectorStoryboardOutputNodeData,
+  findDirectorStoryboardOutputItemForNodeData,
+  getDirectorStoryboardOutputItemBindingKey,
+} from '../utils/directorStoryboard';
 import { markCanvasNodesDeleted } from '../utils/deletedNodeRegistry';
 import {
   bucketSendableMaterials,
@@ -440,9 +445,13 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     watermark: false,
     webSearch: false,
     seed: -1,
+    directorBridgePanelEnabled: false,
     bridgeEnabled: false,
     bridgeDurationSec: 4,
     bridgePrompt: '',
+    directorBridgePromptPresets: [],
+    directorBridgeSelectedPresetId: '',
+    directorBridgePresetName: '',
     shots: [
       { id: 'shot-1', title: 'S1', durationSec: 5, prompt: '', frameMode: 'auto', localRefImages: [], localRefVideos: [], localRefAudios: [] },
       { id: 'shot-2', title: 'S2', durationSec: 5, prompt: '', frameMode: 'auto', localRefImages: [], localRefVideos: [], localRefAudios: [] },
@@ -905,6 +914,11 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     panoramaScenePrompt: '',
     panoramaStoryboardPromptEnabled: false,
     panoramaStoryboardPromptText: '｛［人物］是@在做［动作］，｝',
+    panoramaStoryboardPromptSnapshotText: '',
+    panoramaStoryboardPresetPrompt: '｛［人物］是@在做［动作］，｝',
+    panoramaStoryboardPresetName: '',
+    panoramaStoryboardPromptPresets: [],
+    panoramaStoryboardSelectedPresetId: '',
     panoramaShotCamera: {
       mode: 'panorama-view',
       presetId: 'full-body',
@@ -1681,6 +1695,7 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
   {
     title: '图像模型注意事项（2K，4K只有FAL长期稳定，其他都不保证稳定）',
     items: [
+      'gpt-image-2模型，新增azure特价分组，固定0.3积分，支持2K,4K，目前稳定（2K,4K没法保证永久稳定，最稳定是FAL模型方法），支持质量参数传入！（2026.06.17）',
       'gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松',
       'gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上',
       'gpt-image-2-fal模型，兜底模型，支持2K，4K，价格较贵',
@@ -5781,6 +5796,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       const t = n.type as string;
       if (!t || SKIP_TYPES.has(t)) continue;
       const d = (n.data as any) || {};
+      const directorOutputItems = t === 'director-storyboard' && Array.isArray(d.directorOutputItems)
+        ? d.directorOutputItems
+        : [];
       // v1.2.9.10: 正在被 LoopNode 累积跑路的 EXEC 节点 (带 __loopAccumulate 标记) 跳过,
       //          避免 autoOutput 把下游的 OutputNode 升级为 pickKind+pickIndex (会误将累积全集切为单项)。
       //          OutputNode 侧的 v1.2.9.10 修复 (hasAnyDirectAccumulated 跳过 pickKind) 是主双保险,
@@ -5947,11 +5965,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         seen.add(u);
         mods.push(u);
       };
-      pushTxt(d.outputText);
-      pushTxt(d.reply);
-      if (Array.isArray(d.textSegments)) d.textSegments.forEach(pushTxt);
-      if (Array.isArray(d.segments)) d.segments.forEach(pushTxt);
-      if (Array.isArray(d.texts)) d.texts.forEach(pushTxt);
+      const suppressStandaloneTextOutputs = t === 'director-storyboard';
+      if (!suppressStandaloneTextOutputs) {
+        pushTxt(d.outputText);
+        pushTxt(d.reply);
+        if (Array.isArray(d.textSegments)) d.textSegments.forEach(pushTxt);
+        if (Array.isArray(d.segments)) d.segments.forEach(pushTxt);
+        if (Array.isArray(d.texts)) d.texts.forEach(pushTxt);
+      }
       pushImg(d.imageUrl);
       if (Array.isArray(d.imageUrls)) d.imageUrls.forEach(pushImg);
       // d.urls 是通用产物数组（RH/FAL 使用），可能同时含图/视频/音频/3D 模型。
@@ -5977,9 +5998,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         if (Array.isArray(d.modelUrls)) d.modelUrls.forEach(pushMod);
         if (Array.isArray(d.directModelUrls)) d.directModelUrls.forEach(pushMod);
       }
-      pushVid(d.videoUrl);
-      // v1.2.8.2: 支持 videoUrls 数组 (LoopNode 聚合多个视频产物)
-      if (Array.isArray(d.videoUrls)) d.videoUrls.forEach(pushVid);
+      if (t === 'director-storyboard') {
+        if (directorOutputItems.length > 0) {
+          directorOutputItems.forEach((item: any) => pushVid(item.videoUrl));
+        } else if (Array.isArray(d.videoUrls)) d.videoUrls.forEach(pushVid);
+        else pushVid(d.videoUrl);
+      } else {
+        pushVid(d.videoUrl);
+        // v1.2.8.2: 支持 videoUrls 数组 (LoopNode 聚合多个视频产物)
+        if (Array.isArray(d.videoUrls)) d.videoUrls.forEach(pushVid);
+      }
       pushAud(d.audioUrl);
       // Suno / AudioNode 双轨输出口: audioUrl=轨1, audioUrl_1=轨2
       // 不取 audioUrl_1 会导致 autoOutput 只创建 1 个 OutputNode
@@ -5996,9 +6024,34 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       const modelItems = mods.map((url, i) => ({ kind: 'model3d' as const, url, kindIndex: i }));
       if (items.length === 0 && modelItems.length === 0) continue;
 
-      const sig = [...items, ...modelItems].map((x) => `${x.kind}:${x.url}`).join('|');
+      const outputDataForItem = (item: { kind: 'text' | 'image' | 'video' | 'audio'; url: string; kindIndex: number }) => {
+        const base = { pickKind: item.kind, pickIndex: item.kindIndex };
+        if (t === 'director-storyboard' && item.kind === 'video') {
+          const directorItem = directorOutputItems[item.kindIndex];
+          if (directorItem && typeof directorItem.videoUrl === 'string' && directorItem.videoUrl.trim()) {
+            return { ...base, ...buildDirectorStoryboardOutputNodeData(directorItem) };
+          }
+        }
+        return outputMaterialPersistenceEnabled
+          ? { ...base, ...buildPersistentOutputSnapshotData(item) }
+          : base;
+      };
+
+      const outputPatchChanged = (current: any, patch: Record<string, any>) => (
+        Object.entries(patch).some(([key, value]) => JSON.stringify(current?.[key]) !== JSON.stringify(value))
+      );
+
+      const sig = [...items, ...modelItems].map((x) => {
+        if (t === 'director-storyboard' && x.kind === 'video') {
+          const directorItem = directorOutputItems[x.kindIndex];
+          return `${x.kind}:${x.url}:${directorItem?.shotId || ''}:${directorItem?.text || ''}`;
+        }
+        return `${x.kind}:${x.url}`;
+      }).join('|');
+      const directorOutputRefreshNonce = t === 'director-storyboard' ? String(d.directorOutputRefreshNonce || '') : '';
+      const outputSig = directorOutputRefreshNonce ? `${sig}|refresh:${directorOutputRefreshNonce}` : sig;
       const lastSig = autoOutputProcessedRef.current.get(n.id);
-      if (lastSig === sig) continue;
+      if (lastSig === outputSig) continue;
 
       if (modelItems.length > 0) {
         const modelUrlSet = new Set(modelItems.map((item) => item.url));
@@ -6075,7 +6128,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       }
 
       if (items.length === 0) {
-        newSigPatches.push([n.id, sig]);
+        newSigPatches.push([n.id, outputSig]);
         continue;
       }
 
@@ -6087,6 +6140,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         id: string;
         pickKind?: string;
         pickIndex?: number;
+        data?: any;
         incomingFromMe: number;
         auto: boolean;
         removable: boolean;
@@ -6104,22 +6158,41 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         const removable = auto && totalIncoming === 1 && !hasOutgoing && td.userMoved !== true;
         if (totalIncoming > 1) {
           // 多上游合并节点 → 不动 data, 但计数占位
-          downstreamOutputs.push({ id: t.id, pickKind: td.pickKind, pickIndex: td.pickIndex, incomingFromMe, auto, removable: false });
+          downstreamOutputs.push({ id: t.id, pickKind: td.pickKind, pickIndex: td.pickIndex, data: td, incomingFromMe, auto, removable: false });
           continue;
         }
-        downstreamOutputs.push({ id: t.id, pickKind: td.pickKind, pickIndex: td.pickIndex, incomingFromMe, auto, removable });
+        downstreamOutputs.push({ id: t.id, pickKind: td.pickKind, pickIndex: td.pickIndex, data: td, incomingFromMe, auto, removable });
       }
 
-      const itemKey = (it: { kind: string; kindIndex: number }) => `${it.kind}:${it.kindIndex}`;
+      const itemKey = (it: { kind: string; kindIndex: number }) => {
+        if (t === 'director-storyboard' && it.kind === 'video') {
+          const directorItem = directorOutputItems[it.kindIndex];
+          if (directorItem) return `director:${getDirectorStoryboardOutputItemBindingKey(directorItem)}`;
+        }
+        return `${it.kind}:${it.kindIndex}`;
+      };
+      const outputNodeItemKey = (data: any) => {
+        if (t === 'director-storyboard') {
+          const matched = findDirectorStoryboardOutputItemForNodeData(
+            directorOutputItems,
+            data,
+            typeof data?.pickIndex === 'number' ? data.pickIndex : undefined,
+          );
+          if (matched) return `director:${getDirectorStoryboardOutputItemBindingKey(matched)}`;
+        }
+        const pickKind = typeof data?.pickKind === 'string' ? data.pickKind : '';
+        const pickIndex = typeof data?.pickIndex === 'number' && Number.isInteger(data.pickIndex) ? data.pickIndex : -1;
+        return pickKind && pickIndex >= 0 ? `${pickKind}:${pickIndex}` : '';
+      };
       const validItemKeys = new Set(items.map(itemKey));
       const activeDownstreamOutputs = downstreamOutputs.filter((o) => {
+        const existingKey = outputNodeItemKey(o.data);
         if (
           o.removable &&
-          o.pickKind &&
-          typeof o.pickIndex === 'number' &&
-          !validItemKeys.has(`${o.pickKind}:${o.pickIndex}`)
+          existingKey &&
+          !validItemKeys.has(existingKey)
         ) {
-          if (shouldPreserveAutoOutputMaterialNode(nodeById.get(o.id), outputMaterialPersistenceEnabled)) {
+          if (t !== 'director-storyboard' && shouldPreserveAutoOutputMaterialNode(nodeById.get(o.id), outputMaterialPersistenceEnabled)) {
             return true;
           }
           toRemoveNodeIds.add(o.id);
@@ -6140,35 +6213,48 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       //   2) 未带 pickKind 的 → 依次升级为 items 中还未被占用的项
       const occupied = new Set<string>(); // key=`${kind}:${kindIndex}`
       for (const o of activeDownstreamOutputs) {
-        if (o.pickKind && typeof o.pickIndex === 'number') {
-          occupied.add(`${o.pickKind}:${o.pickIndex}`);
+        const existingKey = outputNodeItemKey(o.data);
+        if (existingKey) occupied.add(existingKey);
+      }
+      const upgradePatches: Array<[string, Record<string, any>]> = [];
+      if (t === 'director-storyboard') {
+        for (const o of activeDownstreamOutputs) {
+          const existingKey = outputNodeItemKey(o.data);
+          if (!existingKey) continue;
+          const item = items.find((it) => itemKey(it) === existingKey);
+          if (!item) continue;
+          const patch = outputDataForItem(item);
+          if (outputPatchChanged(o.data, patch)) upgradePatches.push([o.id, patch]);
         }
       }
-      const upgradePatches: Array<[string, { pickKind: string; pickIndex: number }]> = [];
       for (const o of activeDownstreamOutputs) {
-        if (o.pickKind) continue;
+        if (o.pickKind || outputNodeItemKey(o.data)) continue;
         // 指定下一个未占用项
         const next = items.find((it) => !occupied.has(itemKey(it)));
         if (!next) break;
         occupied.add(itemKey(next));
-        upgradePatches.push([o.id, { pickKind: next.kind, pickIndex: next.kindIndex }]);
+        upgradePatches.push([o.id, outputDataForItem(next)]);
       }
 
       // 仍然未被占用的 items 数量 = 需要补建的 OutputNode 个数
       const remainingItems = items.filter((it) => !occupied.has(itemKey(it)));
       const needCount = remainingItems.length;
-      newSigPatches.push([n.id, sig]);
+      newSigPatches.push([n.id, outputSig]);
 
       // 接下来先应用 upgradePatches 再补建节点
       if (upgradePatches.length > 0) {
         const patchMap = new Map(upgradePatches);
-        setNodes((prev) =>
-          prev.map((nd) => {
+        setNodes((prev) => {
+          let changed = false;
+          const next = prev.map((nd) => {
             const p = patchMap.get(nd.id);
             if (!p) return nd;
-            return { ...nd, data: { ...(nd.data as any), pickKind: p.pickKind, pickIndex: p.pickIndex } };
-          })
-        );
+            if (!outputPatchChanged(nd.data, p)) return nd;
+            changed = true;
+            return { ...nd, data: { ...(nd.data as any), ...p } };
+          });
+          return changed ? next : prev;
+        });
       }
       if (needCount <= 0) continue;
 
@@ -6211,9 +6297,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
           },
           // pickKind/pickIndex: 下游 OutputNode 只拾上游对应 kind 的第 kindIndex 项,
           // 避免多图场景下所有 OutputNode 都重复显示全部输出
-          data: outputMaterialPersistenceEnabled
-            ? { pickKind: item.kind, pickIndex: item.kindIndex, ...buildPersistentOutputSnapshotData(item) }
-            : { pickKind: item.kind, pickIndex: item.kindIndex },
+          data: outputDataForItem(item),
           selected: false,
         } as Node;
         toAddNodes.push(_newNodeGen);
@@ -6596,6 +6680,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       if ('isPrimary' in event && event.isPrimary === false) return false;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return false;
+      if (target.closest('[data-director-timeline-resize-handle]')) return false;
       const button = target.closest('button, [role="button"]') as HTMLElement | null;
       if (!button) return false;
       if (button.closest('[data-node-action-bar]')) return false;

@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { syncRhToolboxManifest } = require('./sync-rh-toolbox-manifest.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const MANIFEST_PATH = path.join(ROOT, 'src', 'data', 'rhToolboxManifest.ts');
@@ -245,11 +246,22 @@ function checkFrontendMarkers(frontendDir, markers) {
   return failures;
 }
 
+function frontendMarkersForManifest(manifest) {
+  const markers = [];
+  for (const tool of Array.isArray(manifest.tools) ? manifest.tools : []) {
+    if (!tool || tool.enabled === false || !String(tool.webappId || '').trim()) continue;
+    if (String(tool.id || '').trim()) markers.push(String(tool.id).trim());
+    markers.push(String(tool.webappId).trim());
+  }
+  return Array.from(new Set(markers));
+}
+
 function main() {
+  syncRhToolboxManifest({ verbose: true });
   const { source, manifest } = loadManifest();
   const failures = validateManifest(source, manifest);
   const frontendDir = findArgValue('--frontend') || process.env.T8_RH_TOOLBOX_FRONTEND_DIR || '';
-  failures.push(...checkFrontendMarkers(frontendDir, REQUIRED_TOOL_IDS));
+  failures.push(...checkFrontendMarkers(frontendDir, frontendMarkersForManifest(manifest)));
 
   if (failures.length) {
     console.error('[rh-toolbox-check] FAILED');

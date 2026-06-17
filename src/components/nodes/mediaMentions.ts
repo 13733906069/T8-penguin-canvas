@@ -13,6 +13,12 @@ export interface MediaMention {
   end: number;
 }
 
+export interface MediaMentionQuery {
+  start: number;
+  end: number;
+  query: string;
+}
+
 const TOKEN_PREFIX: Record<MediaMentionKind, string> = {
   image: 'image',
   video: 'video',
@@ -26,6 +32,48 @@ function tokenMatchesMentionKind(mention: Pick<MediaMention, 'kind' | 'token'>):
   if (mention.kind === 'audio' && /^@aud\d+\b/.test(mention.token)) return true;
   if (mention.kind === 'text' && /^@txt\d+\b/.test(mention.token)) return true;
   return new RegExp(`^@${TOKEN_PREFIX[mention.kind]}\\d+\\b`).test(mention.token);
+}
+
+function mentionIsBoundAt(text: string, mention: MediaMention, at: number) {
+  return mention.start === at
+    && mention.end > at
+    && tokenMatchesMentionKind(mention)
+    && text.slice(mention.start, mention.end) === mention.token;
+}
+
+function mentionEndsAt(text: string, mention: MediaMention, at: number) {
+  return mention.end === at
+    && tokenMatchesMentionKind(mention)
+    && text.slice(mention.start, mention.end) === mention.token;
+}
+
+export function findMediaMentionQuery(
+  text: string,
+  caret: number,
+  mentions: MediaMention[] = [],
+): MediaMentionQuery | null {
+  const safeText = String(text || '');
+  const safeCaret = Math.max(0, Math.min(safeText.length, Math.round(Number(caret) || 0)));
+  let searchEnd = safeCaret;
+  while (searchEnd > 0) {
+    const before = safeText.slice(0, searchEnd);
+    const at = Math.max(before.lastIndexOf('@'), before.lastIndexOf('＠'));
+    if (at < 0) return null;
+
+    const boundMention = mentions.find((mention) => mentionIsBoundAt(safeText, mention, at));
+    if (boundMention) {
+      if (safeCaret >= boundMention.end) {
+        searchEnd = at;
+        continue;
+      }
+      return null;
+    }
+
+    const segment = safeText.slice(at, safeCaret);
+    if (/\s/.test(segment)) return null;
+    return { start: at, end: safeCaret, query: segment.slice(1) };
+  }
+  return null;
 }
 
 export function isMentionableMaterial(material: Material): material is Material & { kind: MediaMentionKind } {
@@ -102,11 +150,13 @@ export function insertMediaMention(
   const token = tokenForMaterial(material, materials);
   const before = text.slice(0, start);
   const after = text.slice(end);
-  const needsSpace = !/^\s/.test(after);
-  const insertText = `${token}${needsSpace ? ' ' : ''}`;
+  const needsLeadingSpace = before.length > 0 && !/[\s(\[{"'，。！？、:：]$/.test(before);
+  const needsTrailingSpace = !/^\s/.test(after);
+  const insertText = `${needsLeadingSpace ? ' ' : ''}${token}${needsTrailingSpace ? ' ' : ''}`;
   const nextText = `${before}${insertText}${after}`;
   const caret = before.length + insertText.length;
   const shifted = updateMentionRanges(text, nextText, mentions);
+  const mentionStart = before.length + (needsLeadingSpace ? 1 : 0);
   const mention: MediaMention = {
     id: `${materialMentionKey(material)}:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
     kind: material.kind,
@@ -114,8 +164,8 @@ export function insertMediaMention(
     url: material.url,
     label: material.label,
     token,
-    start: before.length,
-    end: before.length + token.length,
+    start: mentionStart,
+    end: mentionStart + token.length,
   };
   return {
     text: nextText,

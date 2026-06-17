@@ -493,6 +493,141 @@ function aspectToGptSize(aspectRatio, sizeLevel) {
   return GPT_SIZE_MAP[key] || '1024x1024';
 }
 
+function imageMimeFromLocalPath(filePath) {
+  const ext = path.extname(filePath || '').toLowerCase().replace(/^\./, '');
+  const map = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    bmp: 'image/bmp',
+    avif: 'image/avif',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+  };
+  return map[ext] || 'image/png';
+}
+
+function assertInsideDir(root, target) {
+  const base = path.resolve(root);
+  const full = path.resolve(target);
+  if (full !== base && !full.startsWith(base + path.sep)) return null;
+  return full;
+}
+
+function toLocalPathnameIfSameApp(url) {
+  const raw = String(url || '').trim();
+  try {
+    const u = new URL(raw);
+    const host = String(u.hostname || '').toLowerCase();
+    if (host === '127.0.0.1' || host === 'localhost' || host === '::1') {
+      return decodeURIComponent(u.pathname || '');
+    }
+  } catch {
+    // Relative app URLs stay on the normal path below.
+  }
+  return raw;
+}
+
+function resolveStaticImagePath(ref) {
+  const raw = toLocalPathnameIfSameApp(ref);
+  const candidates = [
+    ['/files/input/', config.INPUT_DIR],
+    ['/input/', config.INPUT_DIR],
+    ['/files/output/', config.OUTPUT_DIR],
+    ['/output/', config.OUTPUT_DIR],
+    ['/files/thumbnails/', config.THUMBNAILS_DIR],
+  ];
+  for (const [prefix, root] of candidates) {
+    if (!raw.startsWith(prefix)) continue;
+    const rel = decodeURIComponent(raw.slice(prefix.length).split('?')[0].split('#')[0]);
+    return assertInsideDir(root, path.join(root, rel));
+  }
+  return null;
+}
+
+function readLocalImageRefBuffer(ref) {
+  const full = resolveStaticImagePath(ref);
+  if (!full || !fs.existsSync(full)) return null;
+  const mime = imageMimeFromLocalPath(full);
+  return {
+    buf: fs.readFileSync(full),
+    mime,
+    ext: safeOutputExt(path.extname(full), 'png'),
+  };
+}
+
+function getResourceLibraryRootForProxy() {
+  const settings = loadRawSettings() || {};
+  return String(settings.resourceLibraryPath || config.DEFAULT_RESOURCE_LIBRARY_DIR || '').trim();
+}
+
+function readResourceLibraryDbForProxy(root) {
+  if (!root) return null;
+  const dbPath = path.join(root, 'resource_library.json');
+  if (!fs.existsSync(dbPath)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+    return raw && typeof raw === 'object' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveResourceImageRef(ref) {
+  const clean = toLocalPathnameIfSameApp(ref).split(/[?#]/)[0];
+  const fileMatch = /^\/api\/resources\/file\/([^/?#]+)/.exec(clean);
+  const setFileMatch = /^\/api\/resources\/set-file\/([^/?#]+)\/(\d+)/.exec(clean);
+  if (!fileMatch && !setFileMatch) return null;
+
+  const root = getResourceLibraryRootForProxy();
+  const db = readResourceLibraryDbForProxy(root);
+  const items = Array.isArray(db?.items) ? db.items : [];
+  if (!root || items.length === 0) return null;
+
+  if (fileMatch) {
+    const id = decodeURIComponent(fileMatch[1]);
+    const item = items.find((entry) => entry?.id === id);
+    const fileRel = String(item?.fileRel || '').trim();
+    if (!item || !fileRel) return null;
+    const full = assertInsideDir(root, path.join(root, fileRel));
+    if (!full) return null;
+    return {
+      full,
+      mime: item.mime || imageMimeFromLocalPath(full),
+      ext: safeOutputExt(path.extname(full), 'png'),
+    };
+  }
+
+  const id = decodeURIComponent(setFileMatch[1]);
+  const index = Number(setFileMatch[2]);
+  const item = items.find((entry) => entry?.id === id);
+  const children = Array.isArray(item?.materialSetItems) ? item.materialSetItems : [];
+  const child = Number.isFinite(index) ? children[index] : null;
+  const fileRel = String(child?.fileRel || '').trim();
+  if (!child || !fileRel) return null;
+  const full = assertInsideDir(root, path.join(root, fileRel));
+  if (!full) return null;
+  return {
+    full,
+    mime: child.mime || imageMimeFromLocalPath(full),
+    ext: safeOutputExt(path.extname(full), 'png'),
+  };
+}
+
+function readResourceImageRefBuffer(ref) {
+  const resolved = resolveResourceImageRef(ref);
+  if (!resolved || !fs.existsSync(resolved.full)) return null;
+  const mime = String(resolved.mime || imageMimeFromLocalPath(resolved.full)).toLowerCase();
+  if (mime && !mime.startsWith('image/')) return null;
+  return {
+    buf: fs.readFileSync(resolved.full),
+    mime: resolved.mime || imageMimeFromLocalPath(resolved.full),
+    ext: resolved.ext || safeOutputExt(path.extname(resolved.full), 'png'),
+  };
+}
+
 // 将 base64 dataURL / http(s) URL 转成 multipart Buffer
 async function refToBuffer(ref) {
   if (typeof ref !== 'string' || !ref) return null;
@@ -511,6 +646,10 @@ async function refToBuffer(ref) {
     ref.startsWith('/api/resources/file/') ||
     ref.startsWith('/api/resources/set-file/')
   ) {
+    const local = readLocalImageRefBuffer(ref);
+    if (local) return local;
+    const resource = readResourceImageRefBuffer(ref);
+    if (resource) return resource;
     // /files/* 是本地静态,走 127.0.0.1:18766
     const url = ref.startsWith('/') ? `http://127.0.0.1:${config.PORT}${ref}` : ref;
     const r = await fetch(url);
@@ -523,19 +662,96 @@ async function refToBuffer(ref) {
   return null;
 }
 
+function summarizeImageRef(ref, index) {
+  const text = String(ref || '').trim();
+  if (!text) return `#${index + 1} 空引用`;
+  if (text.startsWith('data:')) {
+    const mime = text.match(/^data:([^;,]+)/)?.[1] || 'image';
+    return `#${index + 1} data:${mime};base64,...`;
+  }
+  return `#${index + 1} ${text.length > 140 ? `${text.slice(0, 96)}...${text.slice(-24)}` : text}`;
+}
+
+async function collectConvertedImageRefs(refs, label = '参考图') {
+  if (!Array.isArray(refs) || refs.length === 0) return [];
+  const convertedRefs = [];
+  const failedRefs = [];
+  for (let i = 0; i < refs.length; i++) {
+    const ref = refs[i];
+    try {
+      const conv = await refToBuffer(ref);
+      if (!conv) {
+        failedRefs.push({ index: i, ref, reason: '读取结果为空或 HTTP 非成功' });
+        continue;
+      }
+      const mime = String(conv.mime || '').toLowerCase();
+      if (mime && !mime.startsWith('image/')) {
+        failedRefs.push({ index: i, ref, reason: `非图片内容 ${conv.mime}` });
+        continue;
+      }
+      convertedRefs.push({ ...conv, index: i, ref });
+    } catch (error) {
+      failedRefs.push({ index: i, ref, reason: error?.message || '读取异常' });
+    }
+  }
+  if (refs.length > 0 && convertedRefs.length === 0) {
+    const preview = failedRefs
+      .slice(0, 3)
+      .map((item) => `${summarizeImageRef(item.ref, item.index)} ${item.reason}`)
+      .join('；');
+    throw new Error(`${label}读取失败，已中止生成，避免按无参考图生成${preview ? `：${preview}` : ''}`);
+  }
+  if (failedRefs.length > 0) {
+    const preview = failedRefs
+      .slice(0, 3)
+      .map((item) => `${summarizeImageRef(item.ref, item.index)} ${item.reason}`)
+      .join('；');
+    console.warn(`[upstream] ${label}部分读取失败 converted=${convertedRefs.length}/${refs.length}: ${preview}`);
+  }
+  return convertedRefs;
+}
+
+function appendConvertedImagesToForm(form, convertedRefs) {
+  for (let i = 0; i < convertedRefs.length; i++) {
+    const conv = convertedRefs[i];
+    const blob = new Blob([conv.buf], { type: conv.mime || 'image/png' });
+    const ext = safeOutputExt(conv.ext, 'png');
+    form.append('image', blob, `image_${Number.isFinite(conv.index) ? conv.index : i}.${ext}`);
+  }
+}
+
 // 将 base64/URL 参考图转成 banana 希望的 dataURL 或保留外部 URL
+function isLocalImageDataRef(ref) {
+  return (
+    typeof ref === 'string' &&
+    (
+      ref.startsWith('/files/') ||
+      ref.startsWith('/api/resources/file/') ||
+      ref.startsWith('/api/resources/set-file/')
+    )
+  );
+}
+
+async function localImageRefToDataUrl(ref) {
+  const conv = await refToBuffer(ref);
+  if (!conv) return null;
+  const mime = String(conv.mime || 'image/png');
+  if (!mime.toLowerCase().startsWith('image/')) return null;
+  return `data:${mime};base64,${conv.buf.toString('base64')}`;
+}
+
 async function refToBananaImage(ref) {
   if (typeof ref !== 'string' || !ref) return null;
   if (ref.startsWith('data:')) return ref;
   if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
-  if (ref.startsWith('/files/')) {
+  if (
+    ref.startsWith('/files/') ||
+    ref.startsWith('/api/resources/file/') ||
+    ref.startsWith('/api/resources/set-file/')
+  ) {
     // 本地资源 → 转 base64
     try {
-      const r = await fetch(`http://127.0.0.1:${config.PORT}${ref}`);
-      if (!r.ok) return null;
-      const ct = r.headers.get('content-type') || 'image/png';
-      const buf = Buffer.from(await r.arrayBuffer());
-      return `data:${ct};base64,${buf.toString('base64')}`;
+      return await localImageRefToDataUrl(ref);
     } catch { return null; }
   }
   return null;
@@ -545,8 +761,15 @@ async function refToBananaImage(ref) {
 async function refToGrokImage(ref) {
   if (typeof ref !== 'string' || !ref) return null;
   if (ref.startsWith('data:')) return ref.startsWith('data:image') ? ref : null;
-  if (ref.startsWith('http://') || ref.startsWith('https://') || ref.startsWith('/files/')) {
+  if (
+    ref.startsWith('http://') ||
+    ref.startsWith('https://') ||
+    ref.startsWith('/files/') ||
+    ref.startsWith('/api/resources/file/') ||
+    ref.startsWith('/api/resources/set-file/')
+  ) {
     try {
+      if (isLocalImageDataRef(ref)) return await localImageRefToDataUrl(ref);
       const url = ref.startsWith('/') ? `http://127.0.0.1:${config.PORT}${ref}` : ref;
       const r = await fetch(url);
       if (!r.ok) return ref.startsWith('http') ? ref : null;
@@ -736,11 +959,14 @@ async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt
         const converted = await refToGrokImage(ref);
         if (converted) grokRefs.push(converted);
       }
+      if (grokRefs.length === 0) {
+        throw new Error('Grok 参考图读取失败，已中止生成，避免按无参考图生成');
+      }
     }
     const body = { model: finalApiModel, prompt, aspect_ratio: isAuto ? '1:1' : ar };
     if (grokRefs.length) body.image = grokRefs;
     const url = `${upstreamBase}/generations?async=true`;
-    console.log('[upstream] Grok Image JSON → /generations?async=true model:', finalApiModel, 'aspect_ratio:', body.aspect_ratio, 'refs:', grokRefs.length);
+    console.log('[upstream] Grok Image JSON → /generations?async=true model:', finalApiModel, 'aspect_ratio:', body.aspect_ratio, { requested: refs?.length || 0, converted: grokRefs.length });
     return await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
@@ -761,13 +987,10 @@ async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt
     form.append('aspectRatio', isAuto ? '' : ar); // 主项目用 camelCase
     form.append('resolution', lvlLower);          // 主项目用小写 1k/2k/4k
 
+    let convertedRefs = [];
     if (hasRefs) {
-      for (let i = 0; i < refs.length; i++) {
-        const conv = await refToBuffer(refs[i]);
-        if (!conv) continue;
-        const blob = new Blob([conv.buf], { type: conv.mime });
-        form.append('image', blob, `image_${i}.${conv.ext}`);
-      }
+      convertedRefs = await collectConvertedImageRefs(refs, 'GPT2 参考图');
+      appendConvertedImagesToForm(form, convertedRefs);
     } else {
       // 主项目 line 2861: 无参考图时创建 1024x1024 白图占位
       const whiteBuf = getWhitePng(1024, 1024);
@@ -776,7 +999,7 @@ async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt
     }
 
     const url = `${upstreamBase}/edits?async=true`;
-    console.log('[upstream] GPT2 multipart → /edits?async=true model:', finalApiModel, 'size:', px, 'aspectRatio:', ar, 'resolution:', lvlLower, 'refs:', refs?.length || 0);
+    console.log('[upstream] GPT2 multipart → /edits?async=true model:', finalApiModel, 'size:', px, 'aspectRatio:', ar, 'resolution:', lvlLower, { requested: refs.length, converted: convertedRefs.length });
     return await fetch(url, { method: 'POST', headers: { Authorization: auth }, body: form });
   }
 
@@ -788,14 +1011,10 @@ async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt
     form.append('model', finalApiModel);
     form.append('aspect_ratio', isAuto ? '1:1' : ar);
     form.append('image_size', lvlUpper);
-    for (let i = 0; i < refs.length; i++) {
-      const conv = await refToBuffer(refs[i]);
-      if (!conv) continue;
-      const blob = new Blob([conv.buf], { type: conv.mime });
-      form.append('image', blob, `image_${i}.${conv.ext}`);
-    }
+    const convertedRefs = await collectConvertedImageRefs(refs, 'nano-banana 参考图');
+    appendConvertedImagesToForm(form, convertedRefs);
     const url = `${upstreamBase}/edits?async=true`;
-    console.log('[upstream] nano-banana multipart → /edits?async=true model:', finalApiModel, 'aspect_ratio:', ar, 'image_size:', lvlUpper, 'refs:', refs.length);
+    console.log('[upstream] nano-banana multipart → /edits?async=true model:', finalApiModel, 'aspect_ratio:', ar, 'image_size:', lvlUpper, { requested: refs.length, converted: convertedRefs.length });
     return await fetch(url, { method: 'POST', headers: { Authorization: auth }, body: form });
   }
   // 文生图 → JSON /generations?async=true
@@ -1587,14 +1806,14 @@ router.post('/llm', async (req, res) => {
 
 // 上传本地/远端参考素材到上游 /v1/files 取 URL
 // 对齐 gpt-image-2-web 的 uploadFileToAPI: Seedance 的图像、视频、音频都不能直接传 /files/* 本地 URL。
-async function uploadRefToZhenzhen(ref, apiKey) {
-  if (typeof ref !== 'string' || !ref) return null;
+async function uploadRefToZhenzhen(ref, apiKey, label = '参考素材') {
+  if (typeof ref !== 'string' || !ref) throw new Error(`${label} 上传失败: 引用为空`);
   const trimmed = ref.trim();
   if (/^asset-[a-z0-9_-]+$/i.test(trimmed)) return trimmed;
   let buf, mime, ext;
   if (trimmed.startsWith('data:')) {
     const m = trimmed.match(/^data:([^;,]+);base64,(.+)$/);
-    if (!m) return null;
+    if (!m) throw new Error(`${label} 上传失败: data URL 格式无效`);
     mime = m[1] || 'image/png';
     buf = Buffer.from(m[2], 'base64');
     ext = extFromContentType(mime) || (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
@@ -1607,13 +1826,13 @@ async function uploadRefToZhenzhen(ref, apiKey) {
   ) {
     const url = trimmed.startsWith('/') ? `http://127.0.0.1:${config.PORT}${trimmed}` : trimmed;
     const r = await fetch(url);
-    if (!r.ok) return null;
+    if (!r.ok) throw new Error(`${label} 上传失败: 读取素材 HTTP ${r.status}`);
     mime = r.headers.get('content-type') || 'image/png';
     buf = Buffer.from(await r.arrayBuffer());
     const tailExt = url.split(/[?#]/)[0].match(/\.([a-z0-9]{2,8})$/i)?.[1];
     ext = extFromContentType(mime) || tailExt || (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
   } else {
-    return null;
+    throw new Error(`${label} 上传失败: 不支持的引用地址`);
   }
   const fd = new FormData();
   const blob = new Blob([buf], { type: mime });
@@ -1623,12 +1842,21 @@ async function uploadRefToZhenzhen(ref, apiKey) {
     headers: { Authorization: `Bearer ${apiKey}` },
     body: fd,
   });
+  const upText = await upR.text();
+  const preview = String(upText || '').replace(/\s+/g, ' ').slice(0, 300);
   if (!upR.ok) {
-    console.warn('[video] /v1/files 上传失败 status=', upR.status);
-    return null;
+    console.warn('[video] /v1/files 上传失败', label, 'status=', upR.status, preview);
+    throw new Error(`${label} 上传失败: /v1/files HTTP ${upR.status} ${preview}`);
   }
-  const j = await upR.json();
-  return j?.url || null;
+  let j;
+  try {
+    j = upText ? JSON.parse(upText) : {};
+  } catch {
+    throw new Error(`${label} 上传失败: /v1/files 返回非 JSON ${preview}`);
+  }
+  const uploadedUrl = j?.url || j?.file_url || j?.data?.url || j?.data?.file_url || null;
+  if (!uploadedUrl) throw new Error(`${label} 上传失败: /v1/files 未返回 url ${preview}`);
+  return uploadedUrl;
 }
 
 // ========================================================================
@@ -2735,7 +2963,7 @@ router.post('/seedance/submit', async (req, res) => {
     //   - 单独 first_frame(无 last_frame): 不带 role
     //   - 与 last_frame 同时存在: role='first_frame'
     if (hasF) {
-      const u = await uploadRefToZhenzhen(firstFrame, apiKey);
+      const u = await uploadRefToZhenzhen(firstFrame, apiKey, 'first_frame');
       if (!u) throw new Error('first_frame 上传失败');
       const e = { type: 'image_url', image_url: { url: u } };
       if (hasL) e.role = 'first_frame';
@@ -2744,7 +2972,7 @@ router.post('/seedance/submit', async (req, res) => {
 
     // last_frame: 必须与 first_frame 同时
     if (hasL && hasF) {
-      const u = await uploadRefToZhenzhen(lastFrame, apiKey);
+      const u = await uploadRefToZhenzhen(lastFrame, apiKey, 'last_frame');
       if (!u) throw new Error('last_frame 上传失败');
       content.push({ type: 'image_url', image_url: { url: u }, role: 'last_frame' });
     }
@@ -2752,7 +2980,7 @@ router.post('/seedance/submit', async (req, res) => {
     // reference_image
     if (Array.isArray(refImages)) {
       for (let i = 0; i < refImages.length; i++) {
-        const u = await uploadRefToZhenzhen(refImages[i], apiKey);
+        const u = await uploadRefToZhenzhen(refImages[i], apiKey, `reference_image ${i + 1}`);
         if (u) content.push({ type: 'image_url', image_url: { url: u }, role: 'reference_image' });
       }
     }
@@ -2764,7 +2992,7 @@ router.post('/seedance/submit', async (req, res) => {
       for (let i = 0; i < videos.length; i++) {
         const v = videos[i];
         if (typeof v === 'string' && v) {
-          const u = await uploadRefToZhenzhen(v, apiKey);
+          const u = await uploadRefToZhenzhen(v, apiKey, `reference_video ${i + 1}`);
           if (!u) throw new Error(`reference_video ${i + 1} 上传失败`);
           content.push({ type: 'video_url', video_url: { url: u }, role: 'reference_video' });
         }
@@ -2774,7 +3002,7 @@ router.post('/seedance/submit', async (req, res) => {
       for (let i = 0; i < audios.length; i++) {
         const a = audios[i];
         if (typeof a === 'string' && a) {
-          const u = await uploadRefToZhenzhen(a, apiKey);
+          const u = await uploadRefToZhenzhen(a, apiKey, `reference_audio ${i + 1}`);
           if (!u) throw new Error(`reference_audio ${i + 1} 上传失败`);
           content.push({ type: 'audio_url', audio_url: { url: u }, role: 'reference_audio' });
         }

@@ -56,3 +56,14 @@ test('drawing board exposes in-node shortcut help and hover shortcut hints', () 
   assert.match(source, /<HelpCircle size=\{14\} \/>/);
   assert.match(source, /title=\{`\$\{TOOL_LABEL\[value\]\}\$\{shortcut \? ` \(\$\{shortcut\}\)` : ''\}`\}/);
 });
+
+test('drawing board keeps free size inputs editable and exposes original pixel size action', () => {
+  assert.match(source, /const \[boardWDraft, setBoardWDraft\] = useState/);
+  assert.match(source, /const \[boardHDraft, setBoardHDraft\] = useState/);
+  assert.match(source, /const commitBoardDimension = useCallback/);
+  assert.match(source, /onBlur=\{\(e\) => commitBoardDimension\('w', e\.currentTarget\.value\)\}/);
+  assert.match(source, /onBlur=\{\(e\) => commitBoardDimension\('h', e\.currentTarget\.value\)\}/);
+  assert.match(source, /const applyOriginalPixelSize = useCallback/);
+  assert.match(source, /originalPixelImagePlacement\(naturalW, naturalH\)/);
+  assert.match(source, /> 保持原图像素尺寸/);
+});

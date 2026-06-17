@@ -66,7 +66,7 @@ export default function RhImageCapabilityRail({
         flexDirection: 'column',
         gap: 6,
         maxHeight: 'calc(100% - 58px)',
-        overflowX: 'hidden',
+        overflowX: 'visible',
         overflowY: 'auto',
         padding: '2px',
         scrollbarWidth: 'thin',

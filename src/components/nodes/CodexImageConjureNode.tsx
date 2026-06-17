@@ -17,10 +17,11 @@ import {
   Search,
   Sparkles,
   Square,
+  TerminalSquare,
   Trash2,
 } from 'lucide-react';
 import * as api from '../../services/api';
-import { getCodexCliStatus, type CodexCliStatus } from '../../services/codexCli';
+import { getCodexCliStatus, startCodexCliLogin, type CodexCliStatus } from '../../services/codexCli';
 import { publishCodexImageConjureResult, streamCodexImageConjure, type CodexImageConjureResult } from '../../services/codexImageConjure';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -58,6 +59,8 @@ import {
 } from '../../utils/materialExclusion';
 
 const STORAGE_KEY = 't8.codexImageConjure.prompts.v1';
+const codexLoginCommand = 'codex login';
+const codexInstallCommand = 'npm install -g @openai/codex';
 
 const CODEX_CONJURE_MODELS = [
   { value: 'gpt-5.5', label: 'GPT-5.5（推荐）' },
@@ -154,6 +157,17 @@ function compactText(value: string, max = 72) {
   return cleaned.length > max ? `${cleaned.slice(0, max)}...` : cleaned;
 }
 
+function isRouteMissingMessage(message: string) {
+  return /后端路由未加载|HTTP\s*404|404\s*\(Not Found\)/i.test(message || '');
+}
+
+function friendlyCodexErrorMessage(message: any) {
+  const text = String(message || '').trim();
+  if (!text) return '';
+  if (isRouteMissingMessage(text)) return 'Codex CLI 后端路由未加载：请重启后端服务或桌面应用，让 /api/codex-cli 生效。';
+  return text;
+}
+
 const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
   const d = data as any;
   const update = useUpdateNodeData(id);
@@ -168,6 +182,7 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
   const [promptState, setPromptState] = useState<CodexImagePromptState>(() => initialPromptState());
   const [galleryItems, setGalleryItems] = useState<api.ResourceItem[]>([]);
   const [busy, setBusy] = useState(false);
+  const [loginBusy, setLoginBusy] = useState(false);
   const [streamText, setStreamText] = useState('');
   const [panel, setPanel] = useState<PanelKey>('queue');
   const [templateDraft, setTemplateDraft] = useState({
@@ -329,12 +344,15 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const next = await getCodexCliStatus(String(d.codexExecutablePath || ''));
+      const next = await getCodexCliStatus(String(d.codexExecutablePath || '').trim() || undefined);
       setStatus(next);
+      if (next.available && d.error && /Codex CLI 不可用|没有登录|需要登录|后端路由未加载/i.test(String(d.error))) {
+        update({ error: '' });
+      }
     } catch (error: any) {
-      setStatus({ available: false, message: error?.message || 'Codex CLI 状态检查失败' });
+      setStatus({ available: false, message: friendlyCodexErrorMessage(error?.message || 'Codex CLI 状态检查失败') });
     }
-  }, [d.codexExecutablePath]);
+  }, [d.codexExecutablePath, d.error, update]);
 
   useEffect(() => {
     void refreshStatus();
@@ -377,6 +395,27 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
   const exportPromptPack = useCallback(() => {
     downloadJsonFile('codex-image-conjure-prompts.json', exportCodexImagePromptPack(promptState));
   }, [promptState]);
+
+  const openCodexLogin = useCallback(async () => {
+    if (loginBusy) return;
+    setLoginBusy(true);
+    try {
+      const result = await startCodexCliLogin({
+        executablePath: String(d.codexExecutablePath || '').trim() || undefined,
+      });
+      update({
+        error: '',
+        codexConjureLastRunSummary: result.message || '已打开 Codex CLI 登录流程；完成浏览器登录后回到节点点刷新。',
+      });
+      setTimeout(() => void refreshStatus(), 1600);
+    } catch (error: any) {
+      const message = friendlyCodexErrorMessage(error?.message || '打开 Codex 登录失败');
+      setStatus({ available: false, message });
+      update({ error: message });
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [d.codexExecutablePath, loginBusy, refreshStatus, update]);
 
   const applyTemplate = useCallback((templateId: string) => {
     const template = promptState.templates.find((item) => item.id === templateId);
@@ -678,6 +717,13 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
   }, 'codex-image-conjure');
 
   const statusText = status?.available ? (status.version ? `Codex ${status.version}` : 'Codex 已就绪') : (status?.message || '正在检查 Codex CLI');
+  const routeMissing = isRouteMissingMessage(statusText);
+  const imageGenerationReady = status?.featureNames?.includes('image_generation') || status?.features?.some((feature) => feature.name === 'image_generation');
+  const statusHint = routeMissing
+    ? '当前后端没有加载 /api/codex-cli，请重启后端服务或桌面应用后再刷新。'
+    : status?.available
+      ? (imageGenerationReady ? '已登录，imagegen 生图能力可用。' : '已登录；若生成失败，请升级 Codex CLI 或确认 image_generation feature 已启用。')
+      : '首次使用可直接在本节点打开 Codex CLI 登录，登录完成后点刷新。';
   const queuedCount = tasks.filter((task) => task.status === 'queued').length;
   const runningCount = tasks.filter((task) => task.status === 'running').length;
   const completedCount = tasks.filter((task) => task.status === 'completed').length;
@@ -866,12 +912,48 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
       >
         <section className="p-3" style={cardStyle}>
           <div className="flex items-center justify-between gap-2">
-            <div className="font-bold">{status?.available ? 'Codex 已就绪' : '登录 / 路径检查'}</div>
+            <div className="font-bold">{status?.available ? 'Codex 已就绪' : routeMissing ? '后端路由未加载' : '登录 Codex CLI'}</div>
             <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: status?.available ? 'rgba(34,197,94,0.16)' : 'rgba(251,191,36,0.18)', color: status?.available ? '#22c55e' : '#f59e0b' }}>
-              {status?.available ? '可生成' : '需确认'}
+              {status?.available ? '可生成' : '需登录'}
             </span>
           </div>
           <div className="mt-1 text-xs" style={{ color: subText }}>{statusText}</div>
+          <div className="mt-1 text-[11px] leading-relaxed" style={{ color: subText }}>{statusHint}</div>
+          <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+            <input
+              className="nodrag min-w-0 px-2 py-2 text-xs outline-none"
+              style={inputStyle}
+              value={String(d.codexExecutablePath || '')}
+              onChange={(event) => update({ codexExecutablePath: event.currentTarget.value })}
+              placeholder="Codex 可执行文件路径，留空使用 codex"
+            />
+            <button type="button" className="nodrag inline-flex items-center justify-center gap-1 px-2 py-2 text-xs font-bold" style={buttonStyle} onClick={() => void refreshStatus()}>
+              <RefreshCw size={13} /> 刷新
+            </button>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="nodrag inline-flex items-center justify-center gap-1 px-2 py-2 text-xs font-bold"
+              style={{ ...buttonStyle, background: status?.available ? surfaceStrong : accent, color: status?.available ? text : (isDark ? '#00111a' : '#fff'), borderColor: status?.available ? border : accent }}
+              disabled={loginBusy}
+              onClick={() => void openCodexLogin()}
+            >
+              {loginBusy ? <Loader2 size={14} className="animate-spin" /> : <TerminalSquare size={14} />}
+              {status?.available ? '重新登录' : '打开登录'}
+            </button>
+            <button type="button" className="nodrag px-2 py-2 text-xs font-bold" style={buttonStyle} onClick={() => void navigator.clipboard?.writeText?.(codexLoginCommand)}>
+              复制登录命令
+            </button>
+          </div>
+          {!status?.available && (
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5" style={{ borderColor: border, background: bg }}>
+              <code className="truncate text-[11px]">{codexInstallCommand}</code>
+              <button type="button" className="nodrag rounded-md px-2 py-1 text-[11px] font-bold" style={buttonStyle} onClick={() => void navigator.clipboard?.writeText?.(codexInstallCommand)}>
+                复制安装
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="grid grid-cols-2 gap-2 p-3" style={cardStyle}>

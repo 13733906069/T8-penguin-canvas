@@ -111,6 +111,11 @@ test('Codex image conjure frontend only uses Codex CLI image generation and reso
   assert.match(node, /自动发布/);
   assert.match(node, /提示词持久化/);
   assert.match(node, /素材持久化/);
+  assert.match(node, /startCodexCliLogin/);
+  assert.match(node, /登录 Codex CLI/);
+  assert.match(node, /打开登录/);
+  assert.match(node, /复制登录命令/);
+  assert.match(node, /codexExecutablePath/);
   assert.match(node, /模板工坊/);
   assert.match(node, /片段工坊/);
   assert.match(node, /重命名/);

@@ -27,6 +27,7 @@ import {
   Plus,
   RectangleHorizontal,
   RotateCcw,
+  Ruler,
   Save,
   Scissors,
   Send,
@@ -56,6 +57,13 @@ import {
   fitBoardViewport,
   zoomBoardViewport,
 } from '../../utils/drawingBoardViewport';
+import {
+  MAX_BOARD_DIMENSION,
+  MIN_BOARD_DIMENSION,
+  clampBoardDimension,
+  fitImageToBoard,
+  originalPixelImagePlacement,
+} from '../../utils/drawingBoardSizing';
 
 type BoardTool = 'select' | 'pen' | 'eraser' | 'text' | 'rect' | 'circle' | 'arrow' | 'cutout-lasso' | 'cutout-pen';
 type BoardRatio = 'free' | '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
@@ -70,6 +78,8 @@ interface ImageElement {
   kind: 'image';
   url: string;
   name?: string;
+  naturalW?: number;
+  naturalH?: number;
   x: number;
   y: number;
   w: number;
@@ -236,6 +246,8 @@ function normalizeElements(value: unknown): BoardElement[] {
           kind: 'image',
           url: item.url,
           name: typeof item.name === 'string' ? item.name : undefined,
+          naturalW: Number.isFinite(Number(item.naturalW)) && Number(item.naturalW) > 0 ? Math.round(Number(item.naturalW)) : undefined,
+          naturalH: Number.isFinite(Number(item.naturalH)) && Number(item.naturalH) > 0 ? Math.round(Number(item.naturalH)) : undefined,
           x: Number(item.x) || 0,
           y: Number(item.y) || 0,
           w: Math.max(20, Number(item.w) || 320),
@@ -530,23 +542,6 @@ function labelForElement(el: BoardElement) {
   return '箭头元素';
 }
 
-function fitImageToBoard(naturalW: number, naturalH: number, boardW: number, boardH: number, index: number) {
-  const srcW = Math.max(1, naturalW || boardW);
-  const srcH = Math.max(1, naturalH || boardH);
-  const maxW = Math.max(80, boardW * 0.78);
-  const maxH = Math.max(80, boardH * 0.78);
-  const scale = Math.min(maxW / srcW, maxH / srcH);
-  const w = Math.max(24, srcW * scale);
-  const h = Math.max(24, srcH * scale);
-  const offset = Math.min(54, index * 18);
-  return {
-    x: clamp((boardW - w) / 2 + offset, 0, Math.max(0, boardW - w)),
-    y: clamp((boardH - h) / 2 + offset, 0, Math.max(0, boardH - h)),
-    w,
-    h,
-  };
-}
-
 function isEditableEventTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
   return !!el?.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]');
@@ -618,8 +613,10 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [tool, setTool] = useState<BoardTool>('select');
   const [ratio, setRatio] = useState<BoardRatio>((d.boardRatio as BoardRatio) || '16:9');
-  const [boardW, setBoardW] = useState(Math.max(240, Number(d.boardWidth) || DEFAULT_BOARD_W));
-  const [boardH, setBoardH] = useState(Math.max(240, Number(d.boardHeight) || DEFAULT_BOARD_H));
+  const [boardW, setBoardW] = useState(clampBoardDimension(Number(d.boardWidth), DEFAULT_BOARD_W));
+  const [boardH, setBoardH] = useState(clampBoardDimension(Number(d.boardHeight), DEFAULT_BOARD_H));
+  const [boardWDraft, setBoardWDraft] = useState(() => String(clampBoardDimension(Number(d.boardWidth), DEFAULT_BOARD_W)));
+  const [boardHDraft, setBoardHDraft] = useState(() => String(clampBoardDimension(Number(d.boardHeight), DEFAULT_BOARD_H)));
   const [strokeColor, setStrokeColor] = useState(typeof d.boardColor === 'string' ? d.boardColor : '#111827');
   const [strokeSize, setStrokeSize] = useState(Math.max(1, Number(d.boardStrokeSize) || 5));
   const [textDraft, setTextDraft] = useState(typeof d.boardTextDraft === 'string' ? d.boardTextDraft : '文字');
@@ -643,6 +640,7 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
   const activeLayer = useMemo(() => layers.find((layer) => layer.id === activeLayerId && layer.kind === 'layer'), [activeLayerId, layers]);
   const activeLayerWritable = useMemo(() => isLayerEditable(layers, activeLayer), [activeLayer, layers]);
   const renderableLayers = useMemo(() => layers.filter((layer) => isLayerVisible(layers, layer)), [layers]);
+  const hasBoardImages = useMemo(() => flattenElements(layers).some((el) => el.kind === 'image'), [layers]);
   const selectedElement = useMemo(() => {
     if (!selectedElementId) return null;
     for (const layer of layers) {
@@ -750,6 +748,14 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
   useEffect(() => {
     if (activeLayerId) update({ activeBoardLayerId: activeLayerId });
   }, [activeLayerId, update]);
+
+  useEffect(() => {
+    setBoardWDraft(String(boardW));
+  }, [boardW]);
+
+  useEffect(() => {
+    setBoardHDraft(String(boardH));
+  }, [boardH]);
 
   useEffect(() => {
     textEditHistoryRef.current = null;
@@ -1384,8 +1390,12 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
       const baseIndex = layers.filter((layer) => layer.kind === 'layer').length;
       const newLayers = await Promise.all(unique.map(async (item, index) => {
         let rect = fitImageToBoard(boardW, boardH, boardW, boardH, index);
+        let naturalW: number | undefined;
+        let naturalH: number | undefined;
         try {
           const img = await loadImage(item.url);
+          naturalW = Math.max(1, Math.round(img.naturalWidth || 0));
+          naturalH = Math.max(1, Math.round(img.naturalHeight || 0));
           rect = fitImageToBoard(img.naturalWidth, img.naturalHeight, boardW, boardH, index);
         } catch {
           // Fallback keeps the layer usable even if the preview image is still loading.
@@ -1397,6 +1407,8 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
           kind: 'image',
           url: item.url,
           name: item.name,
+          naturalW,
+          naturalH,
           ...rect,
           rotation: 0,
           opacity: 1,
@@ -1532,6 +1544,90 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
     autoImportSigRef.current = upstreamSig;
     void addImageLayers(upstream.images.map((m) => ({ url: m.url, name: m.label })));
   }, [addImageLayers, layers, upstream.images, upstreamSig]);
+
+  const commitBoardDimension = useCallback(
+    (axis: 'w' | 'h', raw: string) => {
+      const current = axis === 'w' ? boardW : boardH;
+      const parsed = raw.trim() ? Number(raw) : current;
+      const next = clampBoardDimension(parsed, current);
+      setRatio('free');
+      if (axis === 'w') {
+        setBoardW(next);
+        setBoardWDraft(String(next));
+        update({ boardRatio: 'free', boardWidth: next });
+      } else {
+        setBoardH(next);
+        setBoardHDraft(String(next));
+        update({ boardRatio: 'free', boardHeight: next });
+      }
+    },
+    [boardH, boardW, update],
+  );
+
+  const resolveOriginalPixelSource = useCallback(() => {
+    if (selectedElement?.element.kind === 'image') {
+      return { layerId: selectedElement.layer.id, element: selectedElement.element as ImageElement };
+    }
+    for (const layer of renderableLayers) {
+      if (layer.kind !== 'layer') continue;
+      const element = layer.elements.find((el): el is ImageElement => el.kind === 'image');
+      if (element) return { layerId: layer.id, element };
+    }
+    return null;
+  }, [renderableLayers, selectedElement]);
+
+  const applyOriginalPixelSize = useCallback(async () => {
+    const source = resolveOriginalPixelSource();
+    if (!source) {
+      setError('请先载入或选中一张图片，再使用原图像素尺寸');
+      return;
+    }
+    try {
+      const img = await loadImage(source.element.url);
+      const naturalW = source.element.naturalW || Math.max(1, Math.round(img.naturalWidth || source.element.w || boardW));
+      const naturalH = source.element.naturalH || Math.max(1, Math.round(img.naturalHeight || source.element.h || boardH));
+      const placement = originalPixelImagePlacement(naturalW, naturalH);
+      pushHistorySnapshot();
+      setRatio('free');
+      setBoardW(placement.boardW);
+      setBoardH(placement.boardH);
+      setBoardWDraft(String(placement.boardW));
+      setBoardHDraft(String(placement.boardH));
+      setActiveLayerId(source.layerId);
+      setSelectedElementId(source.element.id);
+      patchLayers((prev) =>
+        prev.map((layer) =>
+          layer.id === source.layerId && layer.kind === 'layer'
+            ? {
+              ...layer,
+              elements: layer.elements.map((el) =>
+                el.id === source.element.id && el.kind === 'image'
+                  ? {
+                    ...el,
+                    naturalW: placement.boardW,
+                    naturalH: placement.boardH,
+                    x: placement.rect.x,
+                    y: placement.rect.y,
+                    w: placement.rect.w,
+                    h: placement.rect.h,
+                    rotation: 0,
+                  }
+                  : el,
+              ),
+            }
+            : layer,
+        ),
+      );
+      update({
+        boardRatio: 'free',
+        boardWidth: placement.boardW,
+        boardHeight: placement.boardH,
+      });
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message || '读取原图像素尺寸失败');
+    }
+  }, [boardH, boardW, loadImage, patchLayers, pushHistorySnapshot, resolveOriginalPixelSource, update]);
 
   const changeRatio = (nextRatio: BoardRatio) => {
     setRatio(nextRatio);
@@ -1832,8 +1928,8 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
         const json = JSON.parse(await file.text());
         const nextLayers = normalizeLayers(json?.boardLayers || json?.layers, json?.boardElements || json?.elements);
         const nextRatio = isBoardRatio(json?.boardRatio) ? json.boardRatio : 'free';
-        const nextW = clamp(Number(json?.boardWidth) || DEFAULT_BOARD_W, 240, 4096);
-        const nextH = clamp(Number(json?.boardHeight) || DEFAULT_BOARD_H, 240, 4096);
+        const nextW = clampBoardDimension(Number(json?.boardWidth), DEFAULT_BOARD_W);
+        const nextH = clampBoardDimension(Number(json?.boardHeight), DEFAULT_BOARD_H);
         const nextActive = nextLayers.some((layer) => layer.id === json?.activeBoardLayerId && layer.kind === 'layer')
           ? json.activeBoardLayerId
           : firstEditableLayerId(nextLayers);
@@ -2532,31 +2628,50 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
               <input
                 className="t8-input nodrag nowheel h-8 px-2 text-[11px]"
                 type="number"
-                min={240}
-                max={4096}
-                value={boardW}
+                min={MIN_BOARD_DIMENSION}
+                max={MAX_BOARD_DIMENSION}
+                value={boardWDraft}
                 onChange={(e) => {
-                  const v = clamp(Number(e.target.value) || DEFAULT_BOARD_W, 240, 4096);
-                  setRatio('free');
-                  setBoardW(v);
-                  update({ boardRatio: 'free', boardWidth: v });
+                  const next = e.target.value;
+                  if (/^\d*$/.test(next)) setBoardWDraft(next);
+                }}
+                onBlur={(e) => commitBoardDimension('w', e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    commitBoardDimension('w', e.currentTarget.value);
+                    e.currentTarget.blur();
+                  }
                 }}
                 title="画布宽度"
               />
               <input
                 className="t8-input nodrag nowheel h-8 px-2 text-[11px]"
                 type="number"
-                min={240}
-                max={4096}
-                value={boardH}
+                min={MIN_BOARD_DIMENSION}
+                max={MAX_BOARD_DIMENSION}
+                value={boardHDraft}
                 onChange={(e) => {
-                  const v = clamp(Number(e.target.value) || DEFAULT_BOARD_H, 240, 4096);
-                  setRatio('free');
-                  setBoardH(v);
-                  update({ boardRatio: 'free', boardHeight: v });
+                  const next = e.target.value;
+                  if (/^\d*$/.test(next)) setBoardHDraft(next);
+                }}
+                onBlur={(e) => commitBoardDimension('h', e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    commitBoardDimension('h', e.currentTarget.value);
+                    e.currentTarget.blur();
+                  }
                 }}
                 title="画布高度"
               />
+              <button
+                type="button"
+                className="t8-btn col-span-3 min-h-7 px-2 text-[10px]"
+                onClick={() => void applyOriginalPixelSize()}
+                disabled={!hasBoardImages}
+                title={hasBoardImages ? '用当前选中图片或第一张图片的原始像素设置画布，并按 1:1 放置图片' : '请先载入一张图片'}
+              >
+                <Ruler size={12} /> 保持原图像素尺寸
+              </button>
             </div>
             <div className="grid grid-cols-[38px_1fr_46px] items-center gap-2">
               <input

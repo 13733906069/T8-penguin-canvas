@@ -20,6 +20,7 @@ import type { PromptTemplateKind } from '../../data/promptTemplateLibrary';
 import type { Material } from './useUpstreamMaterials';
 import {
   getUnresolvedMentionCount,
+  findMediaMentionQuery,
   insertMediaMention,
   isMentionableMaterial,
   materialMentionKey,
@@ -75,17 +76,6 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
     return;
   }
   (ref as MutableRefObject<T | null>).current = value;
-}
-
-function getAtQuery(text: string, caret: number, mentions: MediaMention[] = []): { start: number; end: number; query: string } | null {
-  const before = text.slice(0, caret);
-  const at = Math.max(before.lastIndexOf('@'), before.lastIndexOf('＠'));
-  if (at < 0) return null;
-  const segment = before.slice(at);
-  if (/\s/.test(segment)) return null;
-  const afterMention = mentions.some((mention) => mention.end === at);
-  if (!afterMention && at > 0 && !/\s|[\(\[{"'，。！？、:：]/.test(text[at - 1])) return null;
-  return { start: at, end: caret, query: segment.slice(1) };
 }
 
 function fileName(url: string): string {
@@ -490,7 +480,7 @@ const MentionPromptInput = ({
   }, [editorHtml, inlineMentions, isDark, isPixel]);
 
   const openFromCaret = (text: string, caret: number, mentionList: MediaMention[] = mentions) => {
-    const query = getAtQuery(text, caret, mentionList);
+    const query = findMediaMentionQuery(text, caret, mentionList);
     if (!query) {
       setQueryState((s) => ({ ...s, open: false }));
       return;
@@ -729,7 +719,10 @@ const MentionPromptInput = ({
             const el = localRef.current;
             window.setTimeout(() => {
               if (!el) return;
-              composingRef.current = false;
+              if (composingRef.current) {
+                // Some Chromium IME paths leave the component in a composing state after focus moves away.
+                composingRef.current = false;
+              }
               const flushed = flushEditorToData();
               if (!flushed) return;
               const fixed = stripCompositionLeak(flushed.text, flushed.mentions, compositionLeakRef.current);

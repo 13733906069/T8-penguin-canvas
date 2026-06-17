@@ -38,7 +38,8 @@ test('auto output persistence snapshots generated items without changing the def
   assert.match(persistence, /shouldPreserveAutoOutputMaterialNode/);
 
   assert.match(canvas, /buildPersistentOutputSnapshotData\(item\)/);
-  assert.match(canvas, /outputMaterialPersistenceEnabled\s*\?\s*\{\s*pickKind:\s*item\.kind,\s*pickIndex:\s*item\.kindIndex,\s*\.\.\.buildPersistentOutputSnapshotData\(item\)\s*\}/);
+  assert.match(canvas, /const outputDataForItem = \(item:/);
+  assert.match(canvas, /return outputMaterialPersistenceEnabled\s*\?\s*\{\s*\.\.\.base,\s*\.\.\.buildPersistentOutputSnapshotData\(item\)\s*\}\s*:\s*base/);
   assert.match(canvas, /shouldPreserveAutoOutputMaterialNode\(nodeById\.get\(o\.id\),\s*outputMaterialPersistenceEnabled\)/);
   assert.match(canvas, /\}, \[nodes, edges, loaded, assignActiveNodeSerials, registerPlacementShelfNodes, outputMaterialPersistenceEnabled\]\)/);
 });
@@ -55,5 +56,5 @@ test('persisted single auto-output snapshots still honor pickKind filtering', ()
     outputNode,
     /Array\.isArray\(d\.directImageUrls\)\s*&&\s*d\.directImageUrls\.length\s*>\s*1/,
   );
-  assert.match(outputNode, /const pickKind:\s*string \| undefined = hasAnyDirectAccumulated \? undefined : d\.pickKind/);
+  assert.match(outputNode, /const pickKind:\s*string \| undefined = \(hasAnyDirectAccumulated \|\| directSnapshotOnly\) \? undefined : d\.pickKind/);
 });

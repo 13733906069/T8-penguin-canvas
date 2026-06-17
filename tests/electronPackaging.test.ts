@@ -37,6 +37,21 @@ test('dir packaging verification ignores stale release metadata unless update ar
   assert.match(postBuild, /skipping installer\/latest\.yml checks for dir build/);
 });
 
+test('Electron release keeps one packaged ffmpeg runtime and excludes installer duplicate', () => {
+  const packageJson = JSON.parse(read('../package.json'));
+  const files = packageJson.build.files;
+  const resources = packageJson.build.extraResources.map((item: any) => `${item.from}->${item.to}`);
+  const ffmpegResource = packageJson.build.extraResources.find((item: any) => item.to === 'tools/ffmpeg');
+  const llmMedia = read('../backend/src/providers/llmMedia.js');
+
+  assert.equal(packageJson.build.compression, 'normal');
+  assert.ok(files.includes('!node_modules/@ffmpeg-installer/**/*'));
+  assert.ok(resources.includes('tools/ffmpeg-runtime->tools/ffmpeg'));
+  assert.deepEqual(ffmpegResource.filter, ['ffmpeg.exe', 'ffmpeg', 'README.md']);
+  assert.match(llmMedia, /resRoot && path\.join\(resRoot, 'tools', 'ffmpeg', binary\)/);
+  assert.match(llmMedia, /optional dev fallback only/);
+});
+
 test('Electron packaging verifies encrypted local extension hook points', () => {
   const postBuild = read('../electron/_post_build.cjs');
 

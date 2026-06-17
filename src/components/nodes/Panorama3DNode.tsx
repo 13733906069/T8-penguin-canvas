@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import {
@@ -70,6 +70,7 @@ import {
   buildPanoramaPromptFinal,
   clampPanoramaNumber,
   composePanoramaStoryboardPromptDataUrl,
+  createPanoramaStoryboardPromptPresetExport,
   deletePanoramaAvatarKeyframe,
   deletePanoramaAvatar,
   deletePanoramaCameraView,
@@ -81,10 +82,12 @@ import {
   measurePanoramaStoryboardPromptPanel,
   normalizePanoramaStoryboardPrompt,
   normalizePanoramaYaw,
+  insertPanoramaStoryboardPresetPrompt,
   inferPanoramaAvatarPoseFromText,
   panoramaAvatarPoseDefaultParams,
   panoramaAvatarPoseRootDefaults,
   panoramaRenderSize,
+  parsePanoramaStoryboardPromptPresetImport,
   prependPanoramaHistory,
   projectPanoramaAvatar,
   projectPanoramaHotspot,
@@ -103,6 +106,7 @@ import {
   sanitizePanoramaCameraViews,
   sanitizePanoramaHotspots,
   sanitizePanoramaOcclusionMasks,
+  sanitizePanoramaStoryboardPromptPresets,
   sanitizePanoramaViewAngles,
   screenPointToPanoramaAngles,
   safePanoramaGenerationMode,
@@ -134,6 +138,7 @@ import {
   type PanoramaImageQuality,
   type PanoramaRatioId,
   type PanoramaShotCamera,
+  type PanoramaStoryboardPromptPreset,
   type PanoramaSizeLevel,
 } from '../../utils/panorama3d';
 import { materialSetItemsToData, type MaterialSetItem } from '../../utils/materialSet';
@@ -783,6 +788,16 @@ function downloadUrl(url: string, filename: string) {
   a.remove();
 }
 
+function downloadJson(filename: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    downloadUrl(url, filename);
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+  }
+}
+
 function shotFrameRect(canvas: HTMLCanvasElement, shotCamera: PanoramaShotCamera) {
   const guide = PANORAMA_COMPOSITION_GUIDES.find((item) => item.id === shotCamera.framingRatio)?.ratio || { w: 16, h: 9 };
   const canvasAspect = canvas.width / Math.max(1, canvas.height);
@@ -1038,6 +1053,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const directorPreviewWrapRef = useRef<HTMLDivElement | null>(null);
   const directorStageRef = useRef<HTMLDivElement | null>(null);
   const refInputRef = useRef<HTMLInputElement | null>(null);
+  const storyboardPresetImportRef = useRef<HTMLInputElement | null>(null);
   const runtimeRef = useRef<PanoramaRuntime>({ loadToken: 0 });
   const dragRef = useRef<DragState | null>(null);
   const avatarDragRef = useRef<AvatarDragState | null>(null);
@@ -1116,6 +1132,16 @@ const Panorama3DNode = (p: NodeProps) => {
   const sceneLegendVisible = d.panoramaSceneLegendVisible !== false;
   const storyboardPromptEnabled = Boolean(d.panoramaStoryboardPromptEnabled);
   const storyboardPromptText = normalizePanoramaStoryboardPrompt(d.panoramaStoryboardPromptText);
+  const storyboardPromptPresets: PanoramaStoryboardPromptPreset[] = useMemo(
+    () => sanitizePanoramaStoryboardPromptPresets(d.panoramaStoryboardPromptPresets),
+    [d.panoramaStoryboardPromptPresets],
+  );
+  const storyboardSelectedPresetId = typeof d.panoramaStoryboardSelectedPresetId === 'string' ? d.panoramaStoryboardSelectedPresetId : '';
+  const storyboardPresetPrompt =
+    typeof d.panoramaStoryboardPresetPrompt === 'string' && d.panoramaStoryboardPresetPrompt.trim()
+      ? d.panoramaStoryboardPresetPrompt
+      : PANORAMA_STORYBOARD_PROMPT_DEFAULT;
+  const storyboardPresetName = typeof d.panoramaStoryboardPresetName === 'string' ? d.panoramaStoryboardPresetName : '';
   const compositionGuide: PanoramaCompositionGuideId = safePanoramaCompositionGuide(d.panoramaCompositionGuide);
   const shotCamera: PanoramaShotCamera = useMemo(
     () => sanitizePanoramaShotCamera(d.panoramaShotCamera),
@@ -1180,6 +1206,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const [hotspotPickMode, setHotspotPickMode] = useState(false);
   const [sceneCopyState, setSceneCopyState] = useState('');
   const [layoutIoState, setLayoutIoState] = useState('');
+  const [storyboardPresetNotice, setStoryboardPresetNotice] = useState('');
   const [sceneResourceState, setSceneResourceState] = useState('');
   const [poseSourceId, setPoseSourceId] = useState('');
   const [avatarIkControls, setAvatarIkControls] = useState<AvatarIkControl[]>([]);
@@ -2970,6 +2997,7 @@ const Panorama3DNode = (p: NodeProps) => {
           width: canvasRef.current.width,
           height: canvasRef.current.height,
         },
+        panoramaStoryboardPromptSnapshotText: storyboardPromptEnabled ? storyboardPromptText : '',
       });
     } catch (e: any) {
       const msg = e?.message || '导出全景画面失败';
@@ -3126,6 +3154,7 @@ const Panorama3DNode = (p: NodeProps) => {
         panoramaFov: view.fov,
         panoramaSceneSnapshot: snapshot,
         panoramaScenePrompt: snapshot.promptText,
+        panoramaStoryboardPromptSnapshotText: storyboardPromptEnabled ? storyboardPromptText : '',
       });
       taskCompletionSound.notifyComplete(p.id, 'image');
     } catch (e: any) {
@@ -3175,6 +3204,7 @@ const Panorama3DNode = (p: NodeProps) => {
         panoramaControlSnapshotUrl: imageUrl,
         panoramaSceneSnapshot: snapshot,
         panoramaScenePrompt: snapshot.promptText,
+        panoramaStoryboardPromptSnapshotText: storyboardPromptEnabled ? storyboardPromptText : '',
       });
       taskCompletionSound.notifyComplete(p.id, 'image');
     } catch (e: any) {
@@ -3396,6 +3426,7 @@ const Panorama3DNode = (p: NodeProps) => {
       imageUrls: [url],
       urls: [url],
       usedI2I: params.mode === 'image',
+      panoramaStoryboardPromptSnapshotText: '',
     });
     taskCompletionSound.notifyComplete(p.id, 'image');
   }, [generatedHistory, p.id, update]);
@@ -3603,24 +3634,123 @@ const Panorama3DNode = (p: NodeProps) => {
     ? 'border-slate-400/25 bg-slate-400/10 text-[var(--t8-text-muted)]'
     : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-100';
 
+  const selectStoryboardPreset = (presetId: string) => {
+    if (!presetId) {
+      update({
+        panoramaStoryboardSelectedPresetId: '',
+        panoramaStoryboardPresetPrompt: PANORAMA_STORYBOARD_PROMPT_DEFAULT,
+        panoramaStoryboardPresetName: '',
+      });
+      return;
+    }
+    const preset = storyboardPromptPresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    update({
+      panoramaStoryboardSelectedPresetId: preset.id,
+      panoramaStoryboardPresetPrompt: preset.text,
+      panoramaStoryboardPresetName: preset.name,
+    });
+  };
+
+  const insertStoryboardPreset = () => {
+    update({
+      panoramaStoryboardPromptText: insertPanoramaStoryboardPresetPrompt(storyboardPromptText, storyboardPresetPrompt),
+      panoramaStoryboardPromptEnabled: true,
+    });
+    setStoryboardPresetNotice('已插入到场景');
+  };
+
+  const saveStoryboardPreset = () => {
+    const now = new Date().toISOString();
+    const text = normalizePanoramaStoryboardPrompt(storyboardPresetPrompt);
+    const existing = storyboardPromptPresets.find((item) => item.id === storyboardSelectedPresetId);
+    const fallbackName = text.replace(/\s+/g, ' ').slice(0, 18) || `预设 ${storyboardPromptPresets.length + 1}`;
+    const name = storyboardPresetName.trim() || existing?.name || fallbackName;
+    const next = existing
+      ? storyboardPromptPresets.map((item) => item.id === existing.id ? { ...item, name, text, updatedAt: now } : item)
+      : [
+          ...storyboardPromptPresets,
+          {
+            id: `storyboard-preset-${Date.now().toString(36)}`,
+            name,
+            text,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+    const sanitized = sanitizePanoramaStoryboardPromptPresets(next);
+    const saved = existing
+      ? sanitized.find((item) => item.id === existing.id)
+      : sanitized[sanitized.length - 1];
+    update({
+      panoramaStoryboardPromptPresets: sanitized,
+      panoramaStoryboardSelectedPresetId: saved?.id || '',
+      panoramaStoryboardPresetPrompt: saved?.text || text,
+      panoramaStoryboardPresetName: saved?.name || name,
+    });
+    setStoryboardPresetNotice(existing ? '已更新预设' : '已保存预设');
+  };
+
+  const exportStoryboardPresets = () => {
+    const exportPresets = storyboardPromptPresets.length
+      ? storyboardPromptPresets
+      : sanitizePanoramaStoryboardPromptPresets([
+          {
+            id: 'default',
+            name: storyboardPresetName.trim() || '默认提示词',
+            text: storyboardPresetPrompt,
+          },
+        ]);
+    downloadJson(
+      `panorama-storyboard-prompts-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.json`,
+      createPanoramaStoryboardPromptPresetExport(exportPresets),
+    );
+    setStoryboardPresetNotice('已导出预设');
+  };
+
+  const importStoryboardPresets = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const imported = parsePanoramaStoryboardPromptPresetImport(await file.text());
+      const next = sanitizePanoramaStoryboardPromptPresets([...storyboardPromptPresets, ...imported]);
+      const firstImported = next[Math.max(0, next.length - imported.length)];
+      update({
+        panoramaStoryboardPromptPresets: next,
+        panoramaStoryboardSelectedPresetId: firstImported?.id || '',
+        panoramaStoryboardPresetPrompt: firstImported?.text || storyboardPresetPrompt,
+        panoramaStoryboardPresetName: firstImported?.name || storyboardPresetName,
+      });
+      setStoryboardPresetNotice(`已导入 ${imported.length} 条预设`);
+    } catch (error: any) {
+      setStoryboardPresetNotice(error?.message || '导入预设失败');
+    }
+  };
+
   const renderStoryboardPromptPreview = () => {
-    const previewUrl = outputUrl
-      || (typeof d.panoramaSceneSnapshot?.snapshotUrl === 'string' ? d.panoramaSceneSnapshot.snapshotUrl : '')
-      || sourceUrl;
+    const sceneSnapshotUrl = typeof d.panoramaSceneSnapshot?.snapshotUrl === 'string' ? d.panoramaSceneSnapshot.snapshotUrl : '';
+    const controlSnapshotUrl = typeof d.panoramaSceneSnapshot?.controlSnapshotUrl === 'string' ? d.panoramaSceneSnapshot.controlSnapshotUrl : '';
+    const rawPreviewUrl = sourceUrl || sceneSnapshotUrl || controlSnapshotUrl || outputUrl;
+    const previewFontSize = 11;
     return (
       <div className="overflow-hidden rounded-md border border-white/15 bg-black shadow-inner">
-        {previewUrl && (
+        {rawPreviewUrl ? (
           <SmartImage
-            src={previewUrl}
+            src={rawPreviewUrl}
             alt="分镜提示板预览"
             className="max-h-28 w-full bg-slate-950 object-contain"
             draggable={false}
             thumbSize={720}
           />
+        ) : (
+          <div className="flex h-24 items-center justify-center bg-slate-950 text-[10px] font-semibold text-white/60">
+            等待快照预览
+          </div>
         )}
         <div
           className="space-y-1 bg-black px-3 py-2 font-bold leading-snug text-white"
-          style={{ fontSize: Math.max(11, Math.min(14, Math.round(storyboardPromptPreviewPanel.fontSize * 0.45))) }}
+          style={{ fontSize: previewFontSize, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,.8)' }}
         >
           {storyboardPromptPreviewPanel.lines.map((line, index) => (
             <div key={`${line}-${index}`} className="whitespace-pre-wrap break-words">
@@ -4844,6 +4974,64 @@ const Panorama3DNode = (p: NodeProps) => {
                       />
                     </label>
                     {renderStoryboardPromptPreview()}
+                    <div className="rounded-md border border-[var(--t8-border)] bg-[var(--t8-bg-panel)] p-2">
+                      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold text-[var(--t8-text-muted)]">
+                        <span>预设提示词 · LIST</span>
+                        <span>{storyboardPromptPresets.length} 条</span>
+                      </div>
+                      <div className="grid grid-cols-[1fr_1fr] gap-1.5">
+                        <select
+                          aria-label="panorama-storyboard-preset-select"
+                          value={storyboardSelectedPresetId}
+                          onChange={(event) => selectStoryboardPreset(event.target.value)}
+                          className="nodrag nowheel min-w-0 rounded-md border border-[var(--t8-border)] bg-[var(--t8-bg-panel-muted)] px-2 py-1.5 text-[10px] font-bold text-[var(--t8-text-main)] outline-none"
+                        >
+                          <option value="">默认预设</option>
+                          {storyboardPromptPresets.map((preset) => (
+                            <option key={preset.id} value={preset.id}>{preset.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          value={storyboardPresetName}
+                          onChange={(event) => update({ panoramaStoryboardPresetName: event.target.value })}
+                          placeholder="预设名称（保存时使用）"
+                          className="nodrag nowheel min-w-0 rounded-md border border-[var(--t8-border)] bg-[var(--t8-bg-panel-muted)] px-2 py-1.5 text-[10px] text-[var(--t8-text-main)] outline-none"
+                        />
+                      </div>
+                      <textarea
+                        value={storyboardPresetPrompt}
+                        onChange={(event) => update({ panoramaStoryboardPresetPrompt: event.target.value })}
+                        rows={2}
+                        className="nodrag nowheel mt-1.5 w-full resize-y rounded-md border border-[var(--t8-border)] bg-[var(--t8-bg-panel-muted)] px-2 py-1.5 text-[10px] leading-relaxed text-[var(--t8-text-main)] outline-none"
+                        placeholder={PANORAMA_STORYBOARD_PROMPT_DEFAULT}
+                      />
+                      <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+                        <button type="button" className="t8-btn t8-btn-primary h-7 px-1 text-[10px]" onClick={insertStoryboardPreset} title="插入到上方场景输入框">
+                          <Plus size={12} /> 插入
+                        </button>
+                        <button type="button" className="t8-btn h-7 px-1 text-[10px]" onClick={saveStoryboardPreset} title="保存或更新当前预设">
+                          <CheckCircle2 size={12} /> 保存预设
+                        </button>
+                        <button type="button" className="t8-btn h-7 px-1 text-[10px]" onClick={exportStoryboardPresets} title="导出预设 JSON">
+                          <Download size={12} /> 导出预设
+                        </button>
+                        <button type="button" className="t8-btn h-7 px-1 text-[10px]" onClick={() => storyboardPresetImportRef.current?.click()} title="导入预设 JSON">
+                          <Upload size={12} /> 导入预设
+                        </button>
+                      </div>
+                      <input
+                        ref={storyboardPresetImportRef}
+                        type="file"
+                        accept="application/json,.json"
+                        className="hidden"
+                        onChange={importStoryboardPresets}
+                      />
+                      {storyboardPresetNotice && (
+                        <div className="mt-1.5 rounded border border-[var(--t8-border)] bg-[var(--t8-bg-panel-muted)] px-2 py-1 text-[10px] font-bold text-[var(--t8-text-muted)]">
+                          {storyboardPresetNotice}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="mt-2 rounded-md border border-dashed border-[var(--t8-border)] bg-[var(--t8-bg-panel)] px-2 py-2 text-[10px] leading-relaxed text-[var(--t8-text-muted)]">

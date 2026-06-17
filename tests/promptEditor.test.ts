@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import {
+  findMediaMentionQuery,
+  insertMediaMention,
+  type MediaMention,
+} from '../src/components/nodes/mediaMentions.ts';
 
 function read(path: string) {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -56,8 +61,9 @@ test('mention prompt input keeps media mentions in expanded editor', () => {
   assert.match(mention, /const flushEditorToData = \(\) =>/);
   assert.match(mention, /onBlur=\{\(\) => \{\s*composingRef\.current = false;\s*flushEditorToData\(\)/);
   assert.match(mention, /zIndex:\s*expandable \? 10050 : 10120/);
-  assert.match(mention, /height:\s*expandable \? style\?\.height : '100%'/);
-  assert.match(mention, /minHeight:\s*expandable \? \(style\?\.minHeight \?\? 56\) : '100%'/);
+  assert.match(mention, /const fillLayout = fillHeight \|\| !expandable/);
+  assert.match(mention, /height:\s*fillLayout \? '100%' : style\?\.height/);
+  assert.match(mention, /minHeight:\s*fillLayout \? 0 : \(style\?\.minHeight \?\? 56\)/);
   assert.match(mention, /'display:inline-block'/);
   assert.match(mention, /'width:24px'/);
   assert.match(mention, /'height:24px'/);
@@ -66,6 +72,53 @@ test('mention prompt input keeps media mentions in expanded editor', () => {
   assert.match(mention, /span\.replaceChildren\(content\)/);
   assert.match(mention, /expandable=\{false\}/);
   assert.match(mention, /setDraftMentions\(nextMentions\)/);
+});
+
+test('mention query ignores an existing media chip token before normal text', () => {
+  const mentions: MediaMention[] = [
+    {
+      id: 'm-image',
+      kind: 'image',
+      materialKey: 'image:/files/input/monkey.png',
+      url: '/files/input/monkey.png',
+      token: '@image1',
+      start: 0,
+      end: '@image1'.length,
+    },
+  ];
+
+  assert.equal(findMediaMentionQuery('@image1的女人在和', '@image1的女人在和'.length, mentions), null);
+  assert.equal(findMediaMentionQuery('@猴 ', '@猴 '.length, []), null);
+  assert.deepEqual(findMediaMentionQuery('@image1 @猴', '@image1 @猴'.length, mentions), {
+    start: '@image1 '.length,
+    end: '@image1 @猴'.length,
+    query: '猴',
+  });
+});
+
+test('mention query can start immediately after normal prompt text', () => {
+  assert.deepEqual(findMediaMentionQuery('女人@', '女人@'.length, []), {
+    start: '女人'.length,
+    end: '女人@'.length,
+    query: '',
+  });
+  assert.deepEqual(findMediaMentionQuery('女人@猴', '女人@猴'.length, []), {
+    start: '女人'.length,
+    end: '女人@猴'.length,
+    query: '猴',
+  });
+
+  const material = {
+    kind: 'image',
+    url: '/files/input/monkey.png',
+    label: '猴子',
+  } as any;
+  const result = insertMediaMention('女人@', [], material, [material], '女人'.length, '女人@'.length);
+  assert.equal(result.text, '女人 @image1 ');
+  assert.equal(result.caret, '女人 @image1 '.length);
+  assert.equal(result.mentions.length, 1);
+  assert.equal(result.mentions[0].start, '女人 '.length);
+  assert.equal(result.mentions[0].end, '女人 @image1'.length);
 });
 
 test('text node media mentions can read downstream generation node media', () => {

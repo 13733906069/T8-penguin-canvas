@@ -10,13 +10,13 @@ https://www.runninghub.cn/?inviteCode=rh-v1121
 My favorite girl Go YounJung
 # 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
-> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.2.7
+> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.2.9
 >
 > GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
 一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器和桌面端均可使用。
 
-![status](https://img.shields.io/badge/version-v2.2.7-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
+![status](https://img.shields.io/badge/version-v2.2.9-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
@@ -39,6 +39,8 @@ My favorite girl Go YounJung
 - 🧺 **画布级批量导入 + 素材合集打散**：上传节点支持一次选择多张图 / 多个视频 / 多段音频；也可直接把剪贴板或文件拖到画布，同类型多素材自动形成合集，上传和输出合集都可一键打散为多个独立素材节点
 - 👁️ **上传 / 输出图像原图悬停预览**（v1.8.7）：上传素材与输出素材的图像卡片在 hover 时显示小眼睛按钮，鼠标停在按钮上可按 100% 原尺寸预览，超出视口时自动等比收进可见区域，输出素材入口位于图像对比按钮下方
 - 🧾 **提示词模板库媒体套件**（v2.1.2）：图像 / 视频 / 音频 / 文本素材可从节点右键直接保存到提示词模板库，连同原 Prompt、标题、标签和配套媒体一起沉淀；右键保存时可选择或新建模板分类，模板库支持分类新增 / 删除 / 重命名，预览采用懒加载并支持图像 100% 查看
+- 🎬 **v2.2.9 Electron 自动更新版**：导演分镜台补齐分镜输入一键复用、首尾帧桥接默认折叠启用、50 条桥接提示词预设和自定义导入/导出，并继续稳住桥接输出和分镜输出的独立绑定；RH 工具箱改为持久化应用清单，上传/输出图像能力轨新增扩图和消除主体，扩图分辨率选择可正确传入；Codex 生图工作台新增登录入口；左下角模型注意事项更新到 2026.06.17；本次打包 Electron 并发布 GitHub Release / `latest.yml` 自动更新资产。
+- 🎬 **v2.2.8 Electron 自动更新版**：继续收口导演分镜台，修复时间线拖拽调时长、桥接片段并发、重新获取和分镜输出对应关系；补齐资源库图像/视频/音频导入、素材排序、`@` 紧贴文字触发，以及 3D 全景分镜提示板实时白字预览和回车换行；画板自由尺寸支持小尺寸和保持原图像素；本次打包 Electron 并发布 GitHub Release / `latest.yml` 自动更新资产。
 - 🎬 **v2.2.7 Electron 自动更新版**：新增导演分镜台，支持 4-15 秒分镜时长、单镜头提示词和多参考素材；补齐侧边栏 H 隐藏、放置栏清空与右键入栏、上传/输出素材删除和复制到剪贴板、3D 全景分镜提示板、宫格编辑拖拽入格和宫格剪裁去重修复；本次打包 Electron 并发布 GitHub Release / `latest.yml` 自动更新资产。
 - 🧩 **v2.2.6 Electron 自动更新版**：动漫标签大师和艺术风格大师接入 `--t8-*` 主题语义变量，强主题、模板主题和样式主题下的节点、弹窗、卡片、输入框、按钮与预览层会跟随当前皮肤，不再在灌篮高手等主题里露出默认绿/青色风格；本次打包 Electron 并发布 GitHub Release / `latest.yml` 自动更新资产。
 - 🧩 **v2.2.5 Electron 自动更新版**：创作台背景层改为“完成态只读展示层 + 编辑态可操作层”，修复完成后背景消失、编辑时不能选中/拖动的问题；补齐导入导出、50 款边框与按 Delete 删除；RH 工具箱图像能力中间层继续收口，上传 / 输出素材左侧能力轨支持抠图与 4K 放大，RH 任务停止会同步取消 RunningHub 后台任务；本次打包 Electron 并发布 GitHub Release / `latest.yml` 自动更新资产。

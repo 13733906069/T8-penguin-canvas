@@ -330,6 +330,8 @@ test('panorama storyboard prompt board defaults closed and stitches text below s
   const normalize = (utils as any).normalizePanoramaStoryboardPrompt as (value: unknown) => string;
   const measure = (utils as any).measurePanoramaStoryboardPromptPanel as (value: string, width: number) => { lines: string[]; panelHeight: number };
   assert.equal(normalize('   '), '｛［人物］是@在做［动作］，｝');
+  assert.equal(normalize('第一行\n'), '第一行\n');
+  assert.equal(normalize('第一行\n第二行'), '第一行\n第二行');
   const single = measure('角色走进庭院', 1280);
   const multi = measure('第一行\n第二行\n第三行\n第四行', 1280);
   const wrapped = measure('这是一段非常长的分镜提示词，用来确认黑底白字提示词框会根据内容自动换行并增加高度，避免最终合成图被截断。', 420);
@@ -343,6 +345,63 @@ test('panorama storyboard prompt board defaults closed and stitches text below s
   assert.match(source, /panoramaStoryboardPromptText/);
   assert.match(source, /composePanoramaStoryboardPromptDataUrl/);
   assert.match(source, /renderStoryboardPromptPreview/);
+  assert.match(source, /rawPreviewUrl/);
+  assert.doesNotMatch(source, /const fallbackPreviewUrl = rawPreviewUrl \|\| storyboardPromptLivePreviewUrl/);
+  assert.doesNotMatch(source, /previewHasComposedPrompt/);
+  assert.match(source, /const previewFontSize = 11/);
+  assert.match(source, /style=\{\{ fontSize: previewFontSize, color: '#fff'/);
+  assert.match(source, /等待快照预览/);
+  assert.match(source, /text-white/);
+  assert.match(source, /panoramaStoryboardPromptSnapshotText/);
+  assert.doesNotMatch(source, /previewAlreadyIncludesPrompt/);
+});
+
+test('panorama storyboard prompt board manages reusable prompt presets', async () => {
+  const source = readFileSync(new URL('../src/components/nodes/Panorama3DNode.tsx', import.meta.url), 'utf8');
+  const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
+  const features = readFileSync(new URL('../features.json', import.meta.url), 'utf8');
+  const utils = await import('../src/utils/panorama3d.ts');
+
+  assert.equal(typeof (utils as any).sanitizePanoramaStoryboardPromptPresets, 'function');
+  assert.equal(typeof (utils as any).insertPanoramaStoryboardPresetPrompt, 'function');
+  assert.equal(typeof (utils as any).createPanoramaStoryboardPromptPresetExport, 'function');
+  assert.equal(typeof (utils as any).parsePanoramaStoryboardPromptPresetImport, 'function');
+
+  const sanitize = (utils as any).sanitizePanoramaStoryboardPromptPresets as (value: unknown) => Array<{ id: string; name: string; text: string }>;
+  const insert = (utils as any).insertPanoramaStoryboardPresetPrompt as (scene: unknown, preset: unknown) => string;
+  const createExport = (utils as any).createPanoramaStoryboardPromptPresetExport as (presets: unknown) => any;
+  const parseImport = (utils as any).parsePanoramaStoryboardPromptPresetImport as (payload: string) => Array<{ id: string; name: string; text: string }>;
+
+  const presets = sanitize([
+    { id: 'a', name: '  动作预设  ', text: ' 第一行 ' },
+    { id: 'a', name: '重复', text: '第二行' },
+    { id: 'empty', name: '', text: '' },
+  ]);
+  assert.deepEqual(
+    presets.map((item) => ({ id: item.id, name: item.name, text: item.text })),
+    [
+      { id: 'a', name: '动作预设', text: '第一行' },
+      { id: 'a-2', name: '重复', text: '第二行' },
+    ],
+  );
+  assert.equal(insert('镜头一', '｛［人物］是@在做［动作］，｝'), '镜头一\n｛［人物］是@在做［动作］，｝');
+  assert.equal(insert('', '｛［人物］是@在做［动作］，｝'), '｛［人物］是@在做［动作］，｝');
+
+  const exported = createExport(presets);
+  assert.equal(exported.schema, 't8-panorama-storyboard-prompt-presets');
+  assert.deepEqual(parseImport(JSON.stringify(exported)), presets);
+
+  assert.match(canvas, /panoramaStoryboardPromptPresets:\s*\[\]/);
+  assert.match(canvas, /panoramaStoryboardPresetPrompt:\s*'｛［人物］是@在做［动作］，｝'/);
+  assert.match(canvas, /panoramaStoryboardPresetName:\s*''/);
+  assert.match(source, /panorama-storyboard-preset-select/);
+  assert.match(source, /保存预设/);
+  assert.match(source, /插入/);
+  assert.match(source, /导出预设/);
+  assert.match(source, /导入预设/);
+  assert.match(features, /panoramaStoryboardPromptPresets/);
+  assert.match(features, /panoramaStoryboardPresetPrompt/);
+  assert.match(features, /panoramaStoryboardPresetName/);
 });
 
 test('panorama seam score classification gives actionable labels', () => {

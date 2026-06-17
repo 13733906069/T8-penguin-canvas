@@ -330,23 +330,60 @@ function isFrontendBundleTextFile(p) {
   }
 }
 
+function extractRhToolboxManifestObjectLiteral(source) {
+  const marker = 'export const RH_TOOLBOX_MANIFEST';
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) throw new Error('RH_TOOLBOX_MANIFEST export not found');
+  const start = source.indexOf('{', markerIndex);
+  if (start < 0) throw new Error('RH_TOOLBOX_MANIFEST object literal not found');
+
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const ch = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '{') depth += 1;
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error('RH_TOOLBOX_MANIFEST object literal is not balanced');
+}
+
+function loadRhToolboxReleaseManifestMarkers() {
+  const manifestPath = path.join(ROOT, 'src', 'data', 'rhToolboxManifest.ts');
+  const source = fs.readFileSync(manifestPath, 'utf-8');
+  const literal = extractRhToolboxManifestObjectLiteral(source);
+  const manifest = Function(`"use strict"; return (${literal});`)();
+  const markers = [];
+  for (const tool of Array.isArray(manifest.tools) ? manifest.tools : []) {
+    if (!tool || tool.enabled === false || !String(tool.webappId || '').trim()) continue;
+    if (String(tool.id || '').trim()) markers.push(String(tool.id).trim());
+    markers.push(String(tool.webappId).trim());
+  }
+  return Array.from(new Set(markers));
+}
+
 function checkRhToolboxReleaseManifest() {
   const frontendRoot = path.join(RES, 'frontend');
   if (!fs.existsSync(frontendRoot)) {
     failSecurity('frontend assets missing before RH toolbox release manifest check:', frontendRoot);
   }
-  const requiredMarkers = [
-    'image-cutout-v1',
-    'tuantiquv10',
-    'bernini1',
-    'berninituxiangbianji',
-    'bernini2',
-    '2066002530877927426',
-    '2034251740148666369',
-    '2064192352843034626',
-    '2064222937024131073',
-    '2064185875537420290',
-  ];
+  const requiredMarkers = loadRhToolboxReleaseManifestMarkers();
+  if (requiredMarkers.length === 0) {
+    failSecurity('RH toolbox release manifest has no enabled tools to verify:', frontendRoot);
+  }
   const found = new Set();
   for (const p of walkFiles(frontendRoot).filter(isFrontendBundleTextFile)) {
     const text = fs.readFileSync(p, 'utf-8');

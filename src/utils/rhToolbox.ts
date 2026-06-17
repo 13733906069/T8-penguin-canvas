@@ -211,6 +211,7 @@ export const RH_TOOLBOX_CAPABILITY_LABELS: Record<string, string> = {
   'image.edit': '图像编辑',
   'image.upscale': '图像放大',
   'image.expand': '图像扩图',
+  'image.remove-subject': '消除主体',
   'image.restore': '图像修复',
   'image.background': '背景处理',
   'image.color': '色彩调整',
@@ -728,6 +729,70 @@ export function normalizeRhToolboxManifest(manifest: Partial<RhToolboxManifest> 
   };
 }
 
+function compactRhToolboxIdentity(value: unknown): string {
+  return String(value ?? '').trim().replace(/[\s\u200b-\u200f\ufeff]+/g, '').toLowerCase();
+}
+
+function rhToolboxToolIdentityKeys(tool: RhToolboxTool): string[] {
+  const keys = new Set<string>();
+  const id = compactRhToolboxIdentity(tool.id);
+  const title = compactRhToolboxIdentity(tool.title);
+  const webappId = compactRhToolboxIdentity(tool.webappId);
+  if (id) keys.add(`id:${id}`);
+  if (title) keys.add(`title:${title}`);
+  if (webappId) keys.add(`webapp:${webappId}`);
+  return Array.from(keys);
+}
+
+function putRhToolboxToolByIdentity(
+  toolMap: Map<string, RhToolboxTool>,
+  identityToToolId: Map<string, string>,
+  tool: RhToolboxTool,
+) {
+  const keys = rhToolboxToolIdentityKeys(tool);
+  for (const key of keys) {
+    const existingId = identityToToolId.get(key);
+    if (existingId && existingId !== tool.id) {
+      toolMap.delete(existingId);
+    }
+  }
+  toolMap.set(tool.id, tool);
+  for (const key of keys) identityToToolId.set(key, tool.id);
+}
+
+export function mergeRhToolboxManifests(
+  baseManifest: Partial<RhToolboxManifest> | null | undefined,
+  overlayManifest?: Partial<RhToolboxManifest> | null | undefined,
+): RhToolboxManifest {
+  const base = normalizeRhToolboxManifest(baseManifest);
+  const overlayCategoryCount = Array.isArray(overlayManifest?.categories) ? overlayManifest!.categories.length : 0;
+  const overlayToolCount = Array.isArray(overlayManifest?.tools) ? overlayManifest!.tools.length : 0;
+  if (overlayCategoryCount === 0 && overlayToolCount === 0) return base;
+  const overlay = normalizeRhToolboxManifest(overlayManifest);
+
+  const categoryMap = new Map<string, RhToolboxCategory>();
+  for (const category of base.categories) categoryMap.set(category.id, category);
+  for (const category of overlay.categories) categoryMap.set(category.id, category);
+
+  const toolMap = new Map<string, RhToolboxTool>();
+  const identityToToolId = new Map<string, string>();
+  for (const tool of base.tools) putRhToolboxToolByIdentity(toolMap, identityToToolId, tool);
+  for (const tool of overlay.tools) putRhToolboxToolByIdentity(toolMap, identityToToolId, tool);
+
+  const merged = normalizeRhToolboxManifest({
+    schema: 't8-rh-toolbox-manifest',
+    version: Math.max(base.version || 1, overlay.version || 1),
+    updatedAt: overlay.updatedAt || base.updatedAt,
+    categories: Array.from(categoryMap.values()),
+    tools: Array.from(toolMap.values()),
+  });
+  return {
+    ...merged,
+    categories: sortByOrderThenTitle(merged.categories as any) as RhToolboxCategory[],
+    tools: sortByOrderThenTitle(merged.tools),
+  };
+}
+
 export function listRhToolboxTools(
   manifest: Partial<RhToolboxManifest> | null | undefined,
   options: { includeDisabled?: boolean } = {},
@@ -894,6 +959,94 @@ function coerceFieldValue(value: any, valueType?: string): string | number | boo
   return value as any;
 }
 
+function hasOwnValue(record: Record<string, string | number | boolean>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function normalizeRhSelectComparable(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/：/g, ':')
+    .replace(/[（]/g, '(')
+    .replace(/[）]/g, ')')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function extractRhDimensions(value: unknown): string | undefined {
+  const match = String(value ?? '').match(/(\d{2,5})\s*[x×]\s*(\d{2,5})/i);
+  return match ? `${match[1]}x${match[2]}` : undefined;
+}
+
+function extractRhRatio(value: unknown): string | undefined {
+  const match = String(value ?? '').replace(/：/g, ':').match(/(\d{1,2})\s*:\s*(\d{1,2})/);
+  return match ? `${match[1]}:${match[2]}` : undefined;
+}
+
+function matchRhSelectOptionValue(
+  param: RhToolboxUserParam,
+  value: string | number | boolean,
+): string | number | undefined {
+  const options = param.options || [];
+  if (options.length === 0) return value === true || value === false ? String(value) : value;
+  const direct = options.find((option) => option === value || String(option) === String(value ?? '').trim());
+  if (direct != null) return direct;
+
+  const normalizedValue = normalizeRhSelectComparable(value);
+  const normalized = options.find((option) => normalizeRhSelectComparable(option) === normalizedValue);
+  if (normalized != null) return normalized;
+
+  const dimensions = extractRhDimensions(value);
+  if (dimensions) {
+    const byDimensions = options.find((option) => normalizeRhSelectComparable(option).includes(dimensions.toLowerCase()));
+    if (byDimensions != null) return byDimensions;
+  }
+
+  const ratio = extractRhRatio(value);
+  if (ratio) {
+    const byRatio = options.find((option) => normalizeRhSelectComparable(option).includes(ratio));
+    if (byRatio != null) return byRatio;
+  }
+
+  return undefined;
+}
+
+function semanticKeysForUserParam(param: RhToolboxUserParam): string[] {
+  const keys = [
+    param.key,
+    param.fieldName,
+    `${param.rhNodeId}-${param.fieldName}`,
+    rhToolboxFieldKey(param.rhNodeId, param.fieldName),
+  ].filter(Boolean);
+  const haystack = `${param.key} ${param.label} ${param.fieldName}`.toLowerCase();
+  if (/aspect|ratio|比例/.test(haystack)) keys.push('aspect_ratio', 'aspectRatio', 'ratio');
+  if (/扩图|选择尺寸|target.*size|output.*size|outpaint|uncrop|尺寸/.test(haystack)) {
+    keys.push('expand_size', 'target_size', 'output_size');
+  }
+  if (/resolution|分辨率|尺寸|size/.test(haystack)) keys.push('resolution', 'size', 'aspectRatio', 'aspect_ratio', 'ratio');
+  if (/(^|[^a-z])width([^a-z]|$)|宽度|自定义\(宽\)|\b宽\b/.test(haystack)) keys.push('width', 'w');
+  if (/(^|[^a-z])height([^a-z]|$)|高度|自定义\(高\)|\b高\b/.test(haystack)) keys.push('height', 'h');
+  if (/longest|long\s*side|最长边|长边/.test(haystack)) keys.push('longest_side', 'longestSide');
+  return Array.from(new Set(keys));
+}
+
+function readRhToolboxUserParamValue(
+  param: RhToolboxUserParam,
+  userParamValues: Record<string, string | number | boolean>,
+): string | number | boolean | undefined {
+  for (const key of semanticKeysForUserParam(param)) {
+    if (!hasOwnValue(userParamValues, key)) continue;
+    const value = userParamValues[key];
+    if (param.kind === 'select') {
+      const matched = matchRhSelectOptionValue(param, value);
+      if (matched != null) return matched;
+      continue;
+    }
+    return value;
+  }
+  return undefined;
+}
+
 export function buildRhToolboxNodeInfoList(
   tool: RhToolboxTool,
   options: {
@@ -919,7 +1072,8 @@ export function buildRhToolboxNodeInfoList(
   }
 
   for (const param of tool.userParams || []) {
-    const raw = userParamValues[param.key] ?? param.defaultValue;
+    const explicit = readRhToolboxUserParamValue(param, userParamValues);
+    const raw = explicit ?? param.defaultValue;
     if (raw == null || raw === '') {
       if (!param.required) continue;
     }
