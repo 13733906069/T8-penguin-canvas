@@ -13,7 +13,8 @@ const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV ? [
 export const NODE_REGISTRY: NodeMeta[] = [
   // ========== 国漫角色制作 ==========
   { type: 'guoman-char-1', label: '清风-国漫角色文生图', category: 'guoman', description: 'RunningHub 国漫角色文生图专用节点（清风），支持角色模型/外观/动作/背景自定义', icon: 'Palette', color: 'orange' },
-  { type: 'guoman-char-2', label: '国漫角色 2', category: 'guoman', description: '国漫角色制作节点 2（待定义）', icon: 'Wand2', color: 'violet' },
+  { type: 'guoman-char-2', label: '清风-国漫角色姿势复刻', category: 'guoman', description: 'RunningHub 国漫角色姿势复刻专用节点（清风），支持姿势图上传/角色模型/外观/背景自定义', icon: 'Wand2', color: 'violet' },
+  { type: 'guoman-char-3', label: '清风-国漫角色放大', category: 'guoman', description: 'RunningHub 国漫角色放大专用节点（清风），支持图像上传和角色模型选择', icon: 'ZoomIn', color: 'cyan' },
 
   // ========== Input 素材资源 ==========
   { type: 'upload', label: '上传素材', category: 'input', description: '图像 / 视频 / 音频 三合一上传(自适应输出端口)', icon: 'Upload', color: 'emerald' },

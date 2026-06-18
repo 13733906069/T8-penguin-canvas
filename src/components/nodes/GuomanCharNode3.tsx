@@ -1,22 +1,17 @@
 /**
- * GuomanCharNode1 - 清风-国漫角色文生图
+ * GuomanCharNode3 - 清风-国漫角色放大
  *
- * 独立的 RunningHub 应用节点，webappId 固定为 2066139220363800578
+ * 独立的 RunningHub 应用节点，webappId 固定为 2066150333931409410
  * 自动拉取应用参数，自定义表单 UI，支持上游文本/图像连接
  *
  * 参数：
- *   1569::lora_name  — 角色模型（文本输入 + 模型选择器）
- *   1643::text       — 角色外观（多行文本）
- *   1644::value      — 是否随机动作（默认关闭，内部处理）
- *   1646::text       — 动作提示词（多行文本）
- *   1496::text       — 背景提示词（多行文本）
- *   577::width       — 宽度（数字）
- *   577::height      — 高度（数字）
+ *   923::image      — 上传图像（单张图片上传）
+ *   917::lora_name  — 角色模型（文本输入 + 模型选择器）
  */
 import { memo, useEffect, useRef, useState } from 'react';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { Palette, Loader2, AlertCircle, Square, RefreshCw, Play, ChevronDown } from 'lucide-react';
-import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
+import { ZoomIn, Loader2, AlertCircle, Square, RefreshCw, Play, ChevronDown, Upload, X } from 'lucide-react';
+import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset, uploadFile } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -24,11 +19,12 @@ import { useUpstreamMaterials } from './useUpstreamMaterials';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import GuomanModelPickerModal from '../GuomanModelPickerModal';
+import SmartImage from '../SmartImage';
 
 // ========== 固定配置 ==========
-const WEBAPP_ID = '2066139220363800578';
-const APP_NAME = '清风-国漫角色文生图';
-const COLOR = '#f97316';
+const WEBAPP_ID = '2066150333931409410';
+const APP_NAME = '清风-国漫角色放大';
+const COLOR = '#06b6d4'; // cyan-500
 
 // ========== 参数 key ==========
 const paramKey = (nodeId: string | number, fieldName: string) => `${nodeId}::${fieldName}`;
@@ -55,7 +51,7 @@ function inferValueType(fieldType: string | undefined): string {
 }
 
 // ========== 主组件 ==========
-const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
+const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const updateNodeInternals = useUpdateNodeInternals();
   const { theme } = useThemeStore();
@@ -71,24 +67,48 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [visibleError, setVisibleError] = useState<string | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   const currentPollKeyRef = useRef<string | null>(taskId ? pollKey(id, taskId) : null);
 
   const src = `[${APP_NAME}]`;
   const upstream = useUpstreamMaterials(id);
-  const orderedTexts = upstream.texts;
+  const orderedImages = upstream.images;
   const hasAutoOutput = useHasAutoOutput(id);
 
-  const getUpstreamTexts = (): string[] => {
-    return orderedTexts.map((m: { url?: string; label?: string }) => m.url || m.label || '').filter(Boolean);
-  };
-
-  const updateParam = (key: string, value: string) => {
-    update({ paramValues: { ...paramValues, [key]: { value } } });
+  const updateParam = (key: string, value: string, sourceFromUpstream = false) => {
+    update({ paramValues: { ...paramValues, [key]: { value, sourceFromUpstream } } });
   };
 
   const getVal = (nodeId: string, fieldName: string, fallback = ''): string => {
     return paramValues[paramKey(nodeId, fieldName)]?.value ?? fallback;
+  };
+
+  // ========== 图片上传处理 ==========
+  const inputImageKey = paramKey('923', 'image');
+  const inputImageUrl = paramValues[inputImageKey]?.value || '';
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setVisibleError(null);
+    try {
+      const result = await uploadFile(file);
+      updateParam(inputImageKey, result.url);
+      logBus.success(`图片上传成功`, src);
+    } catch (err: any) {
+      setVisibleError(err?.message || '图片上传失败');
+      logBus.error(`图片上传失败: ${err?.message}`, src);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveImage = () => {
+    updateParam(inputImageKey, '');
   };
 
   // ========== 拉取应用信息 ==========
@@ -105,19 +125,20 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         if (k in next) continue;
         const vt = inferValueType(it?.fieldType);
         if (vt === 'image' || vt === 'video' || vt === 'audio') {
-          next[k] = { value: '', sourceFromUpstream: true };
+          next[k] = { value: '', sourceFromUpstream: false };
         } else {
           next[k] = { value: extractDefaultValue(it) };
         }
       }
-      const texts = getUpstreamTexts();
-      if (texts.length > 0) {
-        const appKey = paramKey('1643', 'text');
-        if (next[appKey] && !next[appKey].value && texts[0]) next[appKey] = { value: texts[0], sourceFromUpstream: true };
-        const actKey = paramKey('1646', 'text');
-        if (next[actKey] && !next[actKey].value && texts[1]) next[actKey] = { value: texts[1], sourceFromUpstream: true };
-        const bgKey = paramKey('1496', 'text');
-        if (next[bgKey] && !next[bgKey].value && texts[2]) next[bgKey] = { value: texts[2], sourceFromUpstream: true };
+      // 处理上游图像：有则填充，无则清空
+      const images = orderedImages.map((m: { url?: string }) => m.url || '').filter(Boolean);
+      const imageKey = paramKey('923', 'image');
+      if (images.length > 0 && !next[imageKey]?.value) {
+        next[imageKey] = { value: images[0], sourceFromUpstream: true };
+        logBus.info(`自动填充上游图像`, src);
+      } else if (images.length === 0 && next[imageKey]?.sourceFromUpstream) {
+        next[imageKey] = { value: '', sourceFromUpstream: false };
+        logBus.info(`上游连接断开，清空图像`, src);
       }
       update({ appInfo: info, paramValues: next });
     } catch (e: any) {
@@ -136,6 +157,23 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
     void handleFetchInfo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ========== 监听上游图像变化，自动填充/清空 ==========
+  useEffect(() => {
+    const images = orderedImages.map((m: { url?: string }) => m.url || '').filter(Boolean);
+    if (images.length > 0) {
+      if (!inputImageUrl) {
+        updateParam(inputImageKey, images[0], true);
+        logBus.info(`自动填充上游图像`, src);
+      }
+    } else {
+      if (inputImageUrl && paramValues[inputImageKey]?.sourceFromUpstream) {
+        updateParam(inputImageKey, '', false);
+        logBus.info(`上游连接断开，清空图像`, src);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedImages]);
 
   // ========== 轮询 ==========
   const stopPoll = () => {
@@ -195,6 +233,10 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
       await handleFetchInfo();
       if (!appInfo?.nodeInfoList?.length) { setVisibleError('无法获取应用信息'); return; }
     }
+    if (!inputImageUrl) {
+      setVisibleError('请先上传图像');
+      return;
+    }
     update({ status: 'submitting', error: null, urls: [], imageUrl: '' });
     try {
       const nodeInfoList: any[] = [];
@@ -207,19 +249,16 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
             try { const r = await uploadRhAsset(fieldValue); fieldValue = r.fileName; } catch {}
           }
         } else if (vt === 'number') {
-          // 数字类型：传真正的数字，与 RH 超市 coerceFieldValue 一致
           const num = Number(fieldValue);
           fieldValue = Number.isFinite(num) ? num : fieldValue;
         }
-        // 布尔类型：传真正的布尔值，与 RH 超市 coerceFieldValue 一致
         if (String(it?.fieldType || '').toUpperCase() === 'BOOLEAN') {
           fieldValue = fieldValue === 'true' || fieldValue === '1' || fieldValue === true;
         }
         nodeInfoList.push({ nodeId: it.nodeId, fieldName: it.fieldName, fieldValue });
       }
       logBus.info(`提交任务 · ${nodeInfoList.length} 个字段`, src);
-      // 调试：打印提交参数，方便对比 RH 超市
-      console.log('[国漫节点] 提交参数:', JSON.stringify(nodeInfoList, null, 2));
+      console.log('[清风-国漫角色放大] 提交参数:', JSON.stringify(nodeInfoList, null, 2));
       const r = await submitRh({ webappId: WEBAPP_ID, nodeInfoList, instanceType: instanceType || undefined });
       logBus.success(`任务已提交 taskId=${r.taskId}`, src);
       update({ status: 'polling', taskId: r.taskId });
@@ -276,7 +315,7 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         width: 300,
         borderRadius: 12,
         border: `2px solid ${borderColor}`,
-        boxShadow: selected ? `0 0 0 1px ${COLOR}, 0 16px 40px rgba(249,115,22,.18)` : undefined,
+        boxShadow: selected ? `0 0 0 1px ${COLOR}, 0 16px 40px rgba(6,182,212,.18)` : undefined,
         overflow: 'hidden',
         transition: 'border-color .2s, box-shadow .2s',
       }}
@@ -288,13 +327,13 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
         borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
-        background: 'linear-gradient(135deg, rgba(249,115,22,.12), transparent)',
+        background: 'linear-gradient(135deg, rgba(6,182,212,.12), transparent)',
       }}>
         <div style={{
           width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(249,115,22,.2)', color: '#fb923c', boxShadow: `inset 0 0 0 1px ${COLOR}`,
+          background: 'rgba(6,182,212,.2)', color: '#22d3ee', boxShadow: `inset 0 0 0 1px ${COLOR}`,
         }}>
-          <Palette size={14} />
+          <ZoomIn size={14} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: textColor, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -326,22 +365,89 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
+        {/* 上传图像（单张上传） */}
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>上传图像</span>
+            <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#923</span>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+          {inputImageUrl ? (
+            <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: `1px solid ${inputBorder}` }}>
+              <SmartImage
+                src={inputImageUrl}
+                alt="待放大图像"
+                style={{ width: '100%', display: 'block', maxHeight: 150, objectFit: 'contain', background: '#000' }}
+                thumbSize={300}
+              />
+              <button
+                onClick={handleRemoveImage}
+                style={{
+                  position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: '50%',
+                  background: 'rgba(239,68,68,.8)', border: 'none', color: '#fff', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+                title="移除图片"
+              >
+                <X size={12} />
+              </button>
+              {paramValues[inputImageKey]?.sourceFromUpstream && (
+                <span style={{
+                  position: 'absolute', top: 4, left: 4, fontSize: 9, padding: '1px 4px', borderRadius: 3,
+                  background: 'rgba(56,189,248,.15)', color: '#38bdf8', fontWeight: 600,
+                }}>
+                  上游
+                </span>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || isBusy}
+              style={{
+                width: '100%', height: 80, borderRadius: 8, border: `2px dashed ${inputBorder}`,
+                background: inputBg, color: mutedColor, cursor: uploading ? 'wait' : 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+                opacity: uploading || isBusy ? 0.6 : 1,
+              }}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                  <span style={{ fontSize: 10 }}>上传中…</span>
+                </>
+              ) : (
+                <>
+                  <Upload size={16} />
+                  <span style={{ fontSize: 10 }}>点击上传图像</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+
         {/* 角色模型（带模型选择器） */}
-        {nodeInfoList.filter((it: any) => it.nodeId === '1569').map((it: any, i: number) => {
+        {nodeInfoList.filter((it: any) => it.nodeId === '917').map((it: any, i: number) => {
           const k = paramKey(it.nodeId, it.fieldName);
           const value = paramValues[k]?.value ?? extractDefaultValue(it);
           return (
             <div key={`model-${i}`} style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>角色模型</span>
-                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#1569</span>
+                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#917</span>
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
                 <input type="text" value={value} onChange={(e) => updateParam(k, e.target.value)} placeholder={it.description}
                   style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 11, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, outline: 'none', boxSizing: 'border-box' }}
                 />
                 <button onClick={() => setModelPickerOpen(true)} title="选择模型"
-                  style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${inputBorder}`, background: isDark ? 'rgba(249,115,22,.1)' : 'rgba(249,115,22,.06)', color: '#fb923c', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${inputBorder}`, background: isDark ? 'rgba(6,182,212,.1)' : 'rgba(6,182,212,.06)', color: '#22d3ee', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                 >
                   <ChevronDown size={14} />
                 </button>
@@ -349,97 +455,6 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
             </div>
           );
         })}
-
-        {/* 角色外观 */}
-        {nodeInfoList.filter((it: any) => it.nodeId === '1643').map((it: any, i: number) => {
-          const k = paramKey(it.nodeId, it.fieldName);
-          const value = paramValues[k]?.value ?? extractDefaultValue(it);
-          const isFromUpstream = paramValues[k]?.sourceFromUpstream === true;
-          return (
-            <div key={`appearance-${i}`} style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>角色外观</span>
-                {isFromUpstream && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: 'rgba(56,189,248,.15)', color: '#38bdf8', fontWeight: 600 }}>上游</span>}
-                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#1643</span>
-              </div>
-              <textarea value={value} onChange={(e) => updateParam(k, e.target.value)} placeholder={it.description} rows={3}
-                style={{ width: '100%', minHeight: 56, padding: '6px 8px', fontSize: 11, lineHeight: 1.5, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
-              />
-            </div>
-          );
-        })}
-
-        {/* 随机动作开关 */}
-        {nodeInfoList.filter((it: any) => it.nodeId === '1644').map((it: any) => {
-          const k = paramKey(it.nodeId, it.fieldName);
-          const value = paramValues[k]?.value ?? extractDefaultValue(it);
-          return (
-            <div key="random-action" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>随机动作</span>
-              <button onClick={() => updateParam(k, value === 'true' ? 'false' : 'true')}
-                style={{ width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', background: value === 'true' ? COLOR : isDark ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.12)', position: 'relative', transition: 'background .2s' }}
-              >
-                <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: value === 'true' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
-              </button>
-              <span style={{ fontSize: 10, color: mutedColor }}>{value === 'true' ? '开启' : '关闭'}</span>
-              <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#1644</span>
-            </div>
-          );
-        })}
-
-        {/* 动作提示词 */}
-        {nodeInfoList.filter((it: any) => it.nodeId === '1646').map((it: any, i: number) => {
-          const k = paramKey(it.nodeId, it.fieldName);
-          const value = paramValues[k]?.value ?? extractDefaultValue(it);
-          const isFromUpstream = paramValues[k]?.sourceFromUpstream === true;
-          return (
-            <div key={`action-${i}`} style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>动作提示词</span>
-                {isFromUpstream && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: 'rgba(56,189,248,.15)', color: '#38bdf8', fontWeight: 600 }}>上游</span>}
-                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#1646</span>
-              </div>
-              <textarea value={value} onChange={(e) => updateParam(k, e.target.value)} placeholder={it.description} rows={2}
-                style={{ width: '100%', minHeight: 44, padding: '6px 8px', fontSize: 11, lineHeight: 1.5, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
-              />
-            </div>
-          );
-        })}
-
-        {/* 背景提示词 */}
-        {nodeInfoList.filter((it: any) => it.nodeId === '1496').map((it: any, i: number) => {
-          const k = paramKey(it.nodeId, it.fieldName);
-          const value = paramValues[k]?.value ?? extractDefaultValue(it);
-          const isFromUpstream = paramValues[k]?.sourceFromUpstream === true;
-          return (
-            <div key={`bg-${i}`} style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>背景提示词</span>
-                {isFromUpstream && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: 'rgba(56,189,248,.15)', color: '#38bdf8', fontWeight: 600 }}>上游</span>}
-                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#1496</span>
-              </div>
-              <textarea value={value} onChange={(e) => updateParam(k, e.target.value)} placeholder={it.description} rows={2}
-                style={{ width: '100%', minHeight: 44, padding: '6px 8px', fontSize: 11, lineHeight: 1.5, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
-              />
-            </div>
-          );
-        })}
-
-        {/* 宽度/高度 */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          {nodeInfoList.filter((it: any) => it.nodeId === '577').map((it: any, i: number) => {
-            const k = paramKey(it.nodeId, it.fieldName);
-            const value = paramValues[k]?.value ?? extractDefaultValue(it);
-            return (
-              <div key={`dim-${i}`} style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: textColor, marginBottom: 3 }}>{it.fieldName === 'width' ? '宽度' : '高度'}</div>
-                <input type="number" value={value} onChange={(e) => updateParam(k, e.target.value)} min={16} max={16384} step={8}
-                  style={{ width: '100%', height: 28, padding: '0 8px', fontSize: 11, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, outline: 'none', boxSizing: 'border-box' }}
-                />
-              </div>
-            );
-          })}
-        </div>
 
         {/* 实例类型 */}
         <div style={{ marginBottom: 8 }}>
@@ -457,7 +472,7 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         {isBusy && (
           <div style={{ marginBottom: 8 }}>
             <div style={{ height: 4, borderRadius: 2, background: isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)', overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 2, background: `linear-gradient(90deg, ${COLOR}, #fb923c)`, animation: 'guoman-progress 2s ease-in-out infinite', width: '40%' }} />
+              <div style={{ height: '100%', borderRadius: 2, background: `linear-gradient(90deg, ${COLOR}, #22d3ee)`, animation: 'guoman-progress 2s ease-in-out infinite', width: '40%' }} />
             </div>
             <div style={{ fontSize: 10, color: mutedColor, marginTop: 4, textAlign: 'center' }}>
               {status === 'submitting' ? '正在提交任务…' : 'AI 正在生成，请耐心等待…'}
@@ -476,7 +491,7 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         {/* 输出预览 */}
         {!hasAutoOutput && imageUrl && (
           <div style={{ marginBottom: 8, borderRadius: 8, overflow: 'hidden', border: `1px solid ${inputBorder}` }}>
-            <img src={imageUrl} alt="生成结果" style={{ width: '100%', display: 'block', maxHeight: 300, objectFit: 'contain', background: '#000' }} />
+            <SmartImage src={imageUrl} alt="放大结果" style={{ width: '100%', display: 'block', maxHeight: 300, objectFit: 'contain', background: '#000' }} thumbSize={400} />
           </div>
         )}
 
@@ -490,7 +505,7 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
             </button>
           ) : (
             <button onClick={handleRun}
-              style={{ flex: 1, height: 32, borderRadius: 8, border: 'none', background: `linear-gradient(135deg, ${COLOR}, #fb923c)`, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, boxShadow: '0 2px 8px rgba(249,115,22,.3)' }}
+              style={{ flex: 1, height: 32, borderRadius: 8, border: 'none', background: `linear-gradient(135deg, ${COLOR}, #22d3ee)`, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, boxShadow: '0 2px 8px rgba(6,182,212,.3)' }}
             >
               <Play size={12} /> 运行
             </button>
@@ -506,11 +521,11 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
       <GuomanModelPickerModal
         open={modelPickerOpen}
         onClose={() => setModelPickerOpen(false)}
-        onSelect={(modelName) => updateParam(paramKey('1569', 'lora_name'), modelName)}
-        currentModel={getVal('1569', 'lora_name')}
+        onSelect={(modelName) => updateParam(paramKey('917', 'lora_name'), modelName)}
+        currentModel={getVal('917', 'lora_name')}
       />
     </div>
   );
 };
 
-export default memo(GuomanCharNode1);
+export default memo(GuomanCharNode3);
