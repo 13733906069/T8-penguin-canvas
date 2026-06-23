@@ -13,8 +13,8 @@
  *   577::width       — 宽度（数字）
  *   577::height      — 高度（数字）
  */
-import { memo, useEffect, useRef, useState } from 'react';
-import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Handle, Position, useNodeConnections, useNodesData, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { Palette, Loader2, AlertCircle, Square, RefreshCw, Play, ChevronDown } from 'lucide-react';
 import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
@@ -79,17 +79,59 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
   const orderedTexts = upstream.texts;
   const hasAutoOutput = useHasAutoOutput(id);
 
+  // ========== 检测上游模型选择器连接 ==========
+  const conns = useNodeConnections({ id, handleType: 'target' });
+  const upstreamIds = useMemo(() => Array.from(new Set(conns.map((c) => c.source))), [conns]);
+  const upstreamNodes = useNodesData(upstreamIds);
+
+  // 找到上游的模型选择器节点
+  const modelSelectorNode = useMemo(() => {
+    if (!Array.isArray(upstreamNodes)) return null;
+    return upstreamNodes.find((n: any) => n?.type === 'guoman-model-selector') || null;
+  }, [upstreamNodes]);
+
+  // 是否有上游模型选择器连接
+  const hasModelSelectorUpstream = !!modelSelectorNode;
+
+  // 从上游模型选择器获取模型名称
+  const upstreamModelName = useMemo(() => {
+    if (!modelSelectorNode) return '';
+    const data = modelSelectorNode.data as any;
+    return data?.modelName || data?.text || data?.prompt || '';
+  }, [modelSelectorNode]);
+
   const getUpstreamTexts = (): string[] => {
     return orderedTexts.map((m: { url?: string; label?: string }) => m.url || m.label || '').filter(Boolean);
   };
 
-  const updateParam = (key: string, value: string) => {
-    update({ paramValues: { ...paramValues, [key]: { value } } });
+  const updateParam = (key: string, value: string, sourceFromUpstream = false) => {
+    update({ paramValues: { ...paramValues, [key]: { value, sourceFromUpstream } } });
   };
 
   const getVal = (nodeId: string, fieldName: string, fallback = ''): string => {
     return paramValues[paramKey(nodeId, fieldName)]?.value ?? fallback;
   };
+
+  // ========== 监听上游模型选择器输出，自动填充模型字段 ==========
+  useEffect(() => {
+    const modelKey = paramKey('1569', 'lora_name');
+
+    if (hasModelSelectorUpstream && upstreamModelName) {
+      // 有上游模型选择器连接，强制使用上游模型
+      const currentModel = paramValues[modelKey]?.value;
+      if (currentModel !== upstreamModelName) {
+        update({ paramValues: { ...paramValues, [modelKey]: { value: upstreamModelName, sourceFromUpstream: true } } });
+        logBus.info(`从上游模型选择器获取模型: ${upstreamModelName}`, src);
+      }
+    } else if (!hasModelSelectorUpstream) {
+      // 没有上游模型选择器连接，清除来自上游的模型标记
+      const modelData = paramValues[modelKey];
+      if (modelData?.sourceFromUpstream) {
+        update({ paramValues: { ...paramValues, [modelKey]: { value: modelData.value, sourceFromUpstream: false } } });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasModelSelectorUpstream, upstreamModelName]);
 
   // ========== 拉取应用信息 ==========
   const handleFetchInfo = async () => {
@@ -330,18 +372,20 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         {nodeInfoList.filter((it: any) => it.nodeId === '1569').map((it: any, i: number) => {
           const k = paramKey(it.nodeId, it.fieldName);
           const value = paramValues[k]?.value ?? extractDefaultValue(it);
+          const isFromUpstream = paramValues[k]?.sourceFromUpstream === true;
           return (
             <div key={`model-${i}`} style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>角色模型</span>
+                {isFromUpstream && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: 'rgba(56,189,248,.15)', color: '#38bdf8', fontWeight: 600 }}>上游</span>}
                 <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#1569</span>
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
-                <input type="text" value={value} onChange={(e) => updateParam(k, e.target.value)} placeholder={it.description}
-                  style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 11, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, outline: 'none', boxSizing: 'border-box' }}
+                <input type="text" value={value} onChange={(e) => updateParam(k, e.target.value)} placeholder={it.description} disabled={hasModelSelectorUpstream}
+                  style={{ flex: 1, height: 28, padding: '0 8px', fontSize: 11, color: textColor, background: hasModelSelectorUpstream ? (isDark ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.02)') : inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, outline: 'none', boxSizing: 'border-box', opacity: hasModelSelectorUpstream ? 0.7 : 1, cursor: hasModelSelectorUpstream ? 'not-allowed' : 'text' }}
                 />
-                <button onClick={() => setModelPickerOpen(true)} title="选择模型"
-                  style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${inputBorder}`, background: isDark ? 'rgba(249,115,22,.1)' : 'rgba(249,115,22,.06)', color: '#fb923c', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                <button onClick={() => setModelPickerOpen(true)} title="选择模型" disabled={hasModelSelectorUpstream}
+                  style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${inputBorder}`, background: isDark ? 'rgba(249,115,22,.1)' : 'rgba(249,115,22,.06)', color: '#fb923c', cursor: hasModelSelectorUpstream ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: hasModelSelectorUpstream ? 0.5 : 1 }}
                 >
                   <ChevronDown size={14} />
                 </button>

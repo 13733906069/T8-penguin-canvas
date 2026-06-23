@@ -107,8 +107,10 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   'guoman-char-1': { inputs: ['text', 'image'], outputs: ['image'] },
   // 清风-国漫角色姿势复刻：左侧可接 text/image 上游，右侧输出 image
   'guoman-char-2': { inputs: ['text', 'image'], outputs: ['image'] },
-  // 清风-国漫角色放大：左侧可接 image 上游，右侧输出 image
-  'guoman-char-3': { inputs: ['image'], outputs: ['image'] },
+  // 清风-国漫角色放大：左侧可接 image/text 上游（text 用于模型选择器），右侧输出 image
+  'guoman-char-3': { inputs: ['text', 'image'], outputs: ['image'] },
+  // 清风-国漫角色模型选择器：无需输入，输出文本（模型名称）
+  'guoman-model-selector': { inputs: [], outputs: ['text'] },
 
   // ========== ComfyUI ==========
   // ComfyUI超市：本地 workflow 应用运行器，可按 manifest 消费/输出四类素材。
