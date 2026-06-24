@@ -171,6 +171,16 @@ const PRESET_NOTES: Record<ThemeMusicPreset, Note[]> = {
     { freq: 247, at: 0.86, len: 0.12, type: 'sawtooth' },
     { freq: 988, at: 1.06, len: 0.08, type: 'square' },
   ],
+  'farm-breeze': [
+    { freq: 196, at: 0, len: 0.18, type: 'triangle' },
+    { freq: 247, at: 0.26, len: 0.14, type: 'sine' },
+    { freq: 294, at: 0.52, len: 0.16, type: 'triangle' },
+    { freq: 392, at: 0.84, len: 0.18, type: 'sine' },
+    { freq: 330, at: 1.18, len: 0.14, type: 'triangle' },
+    { freq: 440, at: 1.46, len: 0.16, type: 'sine' },
+    { freq: 523, at: 1.82, len: 0.2, type: 'triangle' },
+    { freq: 392, at: 2.18, len: 0.18, type: 'sine' },
+  ],
 };
 
 const PRESET_LOOP_SECONDS: Record<ThemeMusicPreset, number> = {
@@ -188,6 +198,7 @@ const PRESET_LOOP_SECONDS: Record<ThemeMusicPreset, number> = {
   'pegasus-cosmos': 2.18,
   'hades-eclipse': 2.78,
   'block-drop': 1.32,
+  'farm-breeze': 2.48,
 };
 
 function clampVolume(value?: number) {

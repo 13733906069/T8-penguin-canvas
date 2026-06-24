@@ -2109,6 +2109,10 @@ html[data-theme-visual="saint-seiya"] .t8-saint-sanctuary {
   z-index: 80;
 }
 
+.t8-main-layout[data-sidebar-collapsed="true"] .t8-saint-sanctuary {
+  left: var(--t8-sidebar-collapsed-content-left, 54px) !important;
+}
+
 html[data-theme-visual="saint-seiya"] .t8-saint-sanctuary__toolbar-toggle {
   flex: 0 0 auto;
   min-height: 42px;

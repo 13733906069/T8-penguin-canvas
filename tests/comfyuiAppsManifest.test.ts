@@ -7,6 +7,7 @@ const store = fs.readFileSync('src/components/nodes/ComfyUIStoreNode.tsx', 'utf8
 const maker = fs.readFileSync('src/components/nodes/ComfyUIAppMakerNode.tsx', 'utf8');
 const apiSettings = fs.readFileSync('src/components/ApiSettings.tsx', 'utf8');
 const workflow = fs.readFileSync('src/utils/comfyuiWorkflow.ts', 'utf8');
+const service = fs.readFileSync('src/services/comfyuiApps.ts', 'utf8');
 
 test('ComfyUI manifest utilities expose user library CRUD and backup flows', () => {
   assert.match(comfyApps, /export function saveComfyAppCategory/);
@@ -63,4 +64,11 @@ test('ComfyUI app builder exposes custom workflow fields from the expanded analy
   assert.match(comfyApps, /num_frames/);
   assert.match(comfyApps, /SAFE_CUSTOM_SOURCE_RE/);
   assert.match(comfyApps, /MEDIA_SOURCE_RE\.test\(source\)\) return false/);
+});
+
+test('ComfyUI store runner does not force prompt input for fixed workflow apps', () => {
+  assert.doesNotMatch(service, /请输入 Prompt 或连接文本上游/);
+  assert.doesNotMatch(service, /if\s*\(!prompt\)\s*throw new Error/);
+  assert.match(service, /const request:\s*GenerateExternalImageRequest/);
+  assert.match(service, /if\s*\(prompt\)\s*request\.prompt = prompt/);
 });

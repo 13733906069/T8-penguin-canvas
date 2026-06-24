@@ -1,6 +1,7 @@
 const openaiCompatible = require('./openaiCompatible');
 const modelscope = require('./modelscope');
 const volcengine = require('./volcengine');
+const agnes = require('./agnes');
 const comfyui = require('./comfyui');
 const jimengCli = require('./jimengCli');
 
@@ -8,6 +9,7 @@ const ADAPTERS = {
   'openai-compatible': openaiCompatible,
   modelscope,
   volcengine,
+  agnes,
   comfyui,
   'jimeng-cli': jimengCli,
 };

@@ -1,5 +1,6 @@
 const DEFAULT_MODELSCOPE_BASE_URL = 'https://api-inference.modelscope.cn/v1';
 const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
+const DEFAULT_AGNES_BASE_URL = 'https://apihub.agnes-ai.com/v1';
 const { isAllowedComfyuiUrl } = require('./comfyuiAccess');
 
 const DEFAULT_MODELSCOPE_IMAGE_MODELS = [
@@ -61,6 +62,19 @@ const DEFAULT_VOLCENGINE_CHAT_MODELS = [
   'doubao-seed-1-6-250615',
 ];
 
+const DEFAULT_AGNES_IMAGE_MODELS = [
+  'agnes-image-2.1-flash',
+  'agnes-image-2.0-flash',
+];
+
+const DEFAULT_AGNES_VIDEO_MODELS = [
+  'agnes-video-v2.0',
+];
+
+const DEFAULT_AGNES_CHAT_MODELS = [
+  'agnes-2.0-flash',
+];
+
 const DEFAULT_JIMENG_IMAGE_MODELS = [
   'seedream-4.7',
   'seedream-4.6',
@@ -83,6 +97,7 @@ const SUPPORTED_PROTOCOLS = new Set([
   'openai-compatible',
   'modelscope',
   'volcengine',
+  'agnes',
   'comfyui',
   'jimeng-cli',
 ]);
@@ -137,6 +152,22 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     volcengineConfig: {
       project: 'default',
       region: 'cn-beijing',
+    },
+  },
+  {
+    id: 'agnes',
+    label: 'Agnes AI',
+    protocol: 'agnes',
+    baseUrl: DEFAULT_AGNES_BASE_URL,
+    enabled: false,
+    imageModels: DEFAULT_AGNES_IMAGE_MODELS,
+    videoModels: DEFAULT_AGNES_VIDEO_MODELS,
+    chatModels: DEFAULT_AGNES_CHAT_MODELS,
+    defaults: {
+      imageModel: DEFAULT_AGNES_IMAGE_MODELS[0],
+      videoModel: DEFAULT_AGNES_VIDEO_MODELS[0],
+      chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
+      responseFormat: 'url',
     },
   },
   {
@@ -412,6 +443,7 @@ function normalizeProvider(raw, previous = null) {
   let baseUrl = normalizeUrl(raw.baseUrl || raw.base_url || '');
   if (!baseUrl && protocol === 'modelscope') baseUrl = DEFAULT_MODELSCOPE_BASE_URL;
   if (!baseUrl && protocol === 'volcengine') baseUrl = DEFAULT_VOLCENGINE_BASE_URL;
+  if (!baseUrl && protocol === 'agnes') baseUrl = DEFAULT_AGNES_BASE_URL;
   if (protocol === 'jimeng-cli') baseUrl = '';
   if (protocol === 'comfyui') {
     const allowRemote = normalizeBoolean(raw.allowRemote, false);
@@ -473,6 +505,19 @@ function normalizeProvider(raw, previous = null) {
     provider.imageModels = mergeModelLists(DEFAULT_JIMENG_IMAGE_MODELS, provider.imageModels);
     provider.videoModels = mergeModelLists(DEFAULT_JIMENG_VIDEO_MODELS, provider.videoModels);
     provider.jimengConfig = normalizeJimengConfig(raw.jimengConfig || raw.jimeng_config);
+  }
+
+  if (id === 'agnes' && protocol === 'agnes') {
+    provider.imageModels = mergeModelLists(DEFAULT_AGNES_IMAGE_MODELS, provider.imageModels);
+    provider.videoModels = mergeModelLists(DEFAULT_AGNES_VIDEO_MODELS, provider.videoModels);
+    provider.chatModels = mergeModelLists(DEFAULT_AGNES_CHAT_MODELS, provider.chatModels);
+    provider.defaults = {
+      imageModel: DEFAULT_AGNES_IMAGE_MODELS[0],
+      videoModel: DEFAULT_AGNES_VIDEO_MODELS[0],
+      chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
+      responseFormat: 'url',
+      ...provider.defaults,
+    };
   }
 
   return provider;
@@ -556,6 +601,10 @@ module.exports = {
   DEFAULT_MODELSCOPE_IMAGE_MODELS,
   DEFAULT_MODELSCOPE_LORAS,
   DEFAULT_MODELSCOPE_BASE_URL,
+  DEFAULT_AGNES_BASE_URL,
+  DEFAULT_AGNES_CHAT_MODELS,
+  DEFAULT_AGNES_IMAGE_MODELS,
+  DEFAULT_AGNES_VIDEO_MODELS,
   DEFAULT_VOLCENGINE_CHAT_MODELS,
   DEFAULT_VOLCENGINE_IMAGE_MODELS,
   DEFAULT_VOLCENGINE_VIDEO_MODELS,

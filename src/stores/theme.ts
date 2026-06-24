@@ -9,6 +9,12 @@ import {
   resolveThemeTemplate,
 } from '../theme/defaultTemplates';
 import type { LegacyThemeStyle, ThemeMode, ThemeTemplate } from '../theme/types';
+import {
+  DEFAULT_UI_FONT_PRESET,
+  normalizeUiFontPresetId,
+  sanitizeCustomUiFont,
+  type UiFontPresetId,
+} from '../utils/uiFont';
 
 export type CanvasTheme = ThemeMode;
 export type ThemeStyle = LegacyThemeStyle;
@@ -21,11 +27,16 @@ interface ThemeState {
   templatesLoaded: boolean;
   templatesPath: string;
   templatesError: string | null;
+  uiFontPreset: UiFontPresetId;
+  customUiFont: string;
   toggleTheme: () => void;
   setTheme: (theme: CanvasTheme) => void;
   toggleStyle: () => void;
   setStyle: (style: ThemeStyle) => void;
   setTemplate: (templateId: string, mode?: CanvasTheme) => void;
+  setUiFontPreset: (preset: UiFontPresetId) => void;
+  setCustomUiFont: (font: string) => void;
+  resetUiFontPreference: () => void;
   loadCustomTemplates: () => Promise<void>;
   importTemplate: (template: ThemeTemplate) => Promise<ThemeTemplate>;
   saveCustomTemplate: (template: ThemeTemplate) => Promise<ThemeTemplate>;
@@ -52,6 +63,8 @@ export const useThemeStore = create<ThemeState>()(
       templatesLoaded: false,
       templatesPath: '',
       templatesError: null,
+      uiFontPreset: DEFAULT_UI_FONT_PRESET,
+      customUiFont: '',
       toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
       setTheme: (theme) => set({ theme }),
       toggleStyle: () =>
@@ -72,6 +85,9 @@ export const useThemeStore = create<ThemeState>()(
         const tpl = resolveThemeTemplate(templateId, get().customTemplates);
         set({ templateId: tpl.id, style: tpl.legacyStyle, ...(mode ? { theme: mode } : {}) });
       },
+      setUiFontPreset: (preset) => set({ uiFontPreset: normalizeUiFontPresetId(preset) }),
+      setCustomUiFont: (font) => set({ customUiFont: sanitizeCustomUiFont(font), uiFontPreset: 'custom' }),
+      resetUiFontPreference: () => set({ uiFontPreset: DEFAULT_UI_FONT_PRESET, customUiFont: '' }),
       async loadCustomTemplates() {
         const res = await api.getThemeTemplates();
         if (!res.success) {
@@ -132,6 +148,8 @@ export const useThemeStore = create<ThemeState>()(
         theme: state.theme,
         style: state.style,
         templateId: state.templateId,
+        uiFontPreset: state.uiFontPreset,
+        customUiFont: state.customUiFont,
       }),
       merge: (persisted, current) => {
         const p = (persisted || {}) as Partial<ThemeState>;
@@ -143,6 +161,8 @@ export const useThemeStore = create<ThemeState>()(
           templateId,
           style: tpl?.legacyStyle || p.style || current.style,
           theme: p.theme || ((tpl?.legacyStyle || p.style) === 'pixel' ? 'light' : 'dark'),
+          uiFontPreset: normalizeUiFontPresetId(p.uiFontPreset),
+          customUiFont: sanitizeCustomUiFont(p.customUiFont),
         };
       },
     }

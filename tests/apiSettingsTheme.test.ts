@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 
 const apiSettingsSource = readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
+const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const indexCss = readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8');
 const defaultTemplatesSource = readFileSync(new URL('../src/theme/defaultTemplates.ts', import.meta.url), 'utf8');
+const themeStoreSource = readFileSync(new URL('../src/stores/theme.ts', import.meta.url), 'utf8');
 const themeTemplateManagerSource = readFileSync(new URL('../src/components/ThemeTemplateManager.tsx', import.meta.url), 'utf8');
 const featuresSource = readFileSync(new URL('../features.json', import.meta.url), 'utf8');
 
@@ -115,6 +117,37 @@ test('ApiSettings exposes custom task completion sound upload without bypassing 
   assert.match(apiSettingsSource, /恢复默认/);
   assert.match(apiSettingsSource, /t8-api-settings-section/);
   assert.match(apiSettingsSource, /t8-api-settings-secondary-btn/);
+});
+
+test('UI font preference resolves readable defaults and custom stacks', async () => {
+  const fontModule = new URL('../src/utils/uiFont.ts', import.meta.url);
+
+  assert.equal(existsSync(fontModule), true, 'uiFont utility should exist');
+  const utils = await import('../src/utils/uiFont.ts');
+  assert.equal(utils.DEFAULT_UI_FONT_PRESET, 'readable');
+  assert.equal(utils.normalizeUiFontPresetId('missing'), 'readable');
+  assert.match(utils.resolveUiFontStack('readable', ''), /Microsoft YaHei UI/);
+  assert.match(utils.resolveUiFontStack('system', ''), /system-ui/);
+  assert.equal(utils.resolveUiFontStack('theme', ''), '');
+  assert.equal(utils.sanitizeCustomUiFont('  "霞鹜文楷", serif  '), '"霞鹜文楷", serif');
+  assert.equal(utils.resolveUiFontStack('custom', '"霞鹜文楷", serif'), '"霞鹜文楷", serif');
+});
+
+test('ApiSettings exposes a persisted global UI font control', () => {
+  assert.match(apiSettingsSource, /UI_FONT_PRESETS/);
+  assert.match(apiSettingsSource, /界面字体/);
+  assert.match(apiSettingsSource, /data-ui-font-settings="true"/);
+  assert.match(apiSettingsSource, /data-ui-font-preset/);
+  assert.match(apiSettingsSource, /界面字体预览/);
+  assert.match(apiSettingsSource, /setUiFontPreset/);
+  assert.match(apiSettingsSource, /setCustomUiFont/);
+  assert.match(themeStoreSource, /uiFontPreset/);
+  assert.match(themeStoreSource, /customUiFont/);
+  assert.match(themeStoreSource, /setUiFontPreset/);
+  assert.match(themeStoreSource, /resetUiFontPreference/);
+  assert.match(appSource, /applyUiFontPreference/);
+  assert.match(indexCss, /\.t8-ui-font-option/);
+  assert.match(indexCss, /\.t8-ui-font-preview/);
 });
 
 test('Dragon Ball theme defaults to bundled mp3 music and packaging validates the asset', () => {

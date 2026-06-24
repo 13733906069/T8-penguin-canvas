@@ -1,5 +1,5 @@
 import type { AdvancedProviderConfig } from '../types/canvas';
-import { generateExternalImage } from './generation';
+import { generateExternalImage, type GenerateExternalImageRequest } from './generation';
 import {
   getComfyProviderBaseUrl,
   negativeFromComfyParams,
@@ -39,7 +39,6 @@ export async function runComfyuiApp(options: RunComfyuiAppOptions): Promise<RunC
   const prompt = promptFromComfyParams(app, userParams, inputs.texts || []);
   const negativePrompt = negativeFromComfyParams(app, userParams);
   const size = sizeFromComfyParams(app, userParams);
-  if (!prompt) throw new Error('请输入 Prompt 或连接文本上游。');
 
   const runnableProvider: AdvancedProviderConfig = {
     ...provider,
@@ -63,21 +62,25 @@ export async function runComfyuiApp(options: RunComfyuiAppOptions): Promise<RunC
     },
   };
 
-  const result = await generateExternalImage({
+  const request: GenerateExternalImageRequest = {
     providerId: runnableProvider.id,
     provider: runnableProvider,
     providerModel: app.id,
     model: app.id,
-    prompt,
-    negativePrompt,
-    negative: negativePrompt,
     size,
     images: inputs.images || [],
     videos: inputs.videos || [],
     audios: inputs.audios || [],
     seed: Number(providerParams.seed) || undefined,
     providerParams,
-  });
+  };
+  if (prompt) request.prompt = prompt;
+  if (negativePrompt) {
+    request.negativePrompt = negativePrompt;
+    request.negative = negativePrompt;
+  }
+
+  const result = await generateExternalImage(request);
 
   return {
     imageUrls: result.imageUrls || [],

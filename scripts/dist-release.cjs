@@ -5,6 +5,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
+const pkg = require(path.join(ROOT, 'package.json'));
+const releaseApproval = `release-${pkg.version}`;
 const env = {
   ...process.env,
   T8_REQUIRE_AI_WATERMARK_RUNTIME: process.env.T8_REQUIRE_AI_WATERMARK_RUNTIME || '1',
@@ -15,6 +17,15 @@ const env = {
 
 function command(name) {
   return process.platform === 'win32' ? `${name}.cmd` : name;
+}
+
+function assertReleaseApproval() {
+  if (process.env.T8_RELEASE_APPROVAL === releaseApproval) return;
+  console.error('[dist-release] refusing to run Electron release without explicit approval.');
+  console.error(
+    `[dist-release] This command builds Electron and uploads a GitHub Release. Set T8_RELEASE_APPROVAL=${releaseApproval} only after the user explicitly asks to publish.`,
+  );
+  process.exit(1);
 }
 
 function run(label, executable, args) {
@@ -38,6 +49,8 @@ function run(label, executable, args) {
 }
 
 function main() {
+  assertReleaseApproval();
+
   const electronBuilder = path.join(
     ROOT,
     'node_modules',

@@ -14,6 +14,33 @@ test('drawing board renders rotated shapes and removes click-sized shape ghosts'
   assert.match(source, /ctx\.translate\(center\.x, center\.y\);[\s\S]*ctx\.rotate\(\(rotation \* Math\.PI\) \/ 180\);[\s\S]*drawArrowHead\(ctx, start, end, el\.size\)/);
 });
 
+test('drawing board exposes common annotation shapes and solid fill mode', () => {
+  assert.match(source, /type BoardTool = 'select' \| 'pen' \| 'eraser' \| 'text' \| 'line' \| 'arrow' \| 'rect' \| 'round-rect' \| 'circle' \| 'diamond' \| 'cutout-lasso' \| 'cutout-pen'/);
+  assert.match(source, /type BoardFillMode = 'stroke' \| 'fill'/);
+  assert.match(source, /kind: 'line' \| 'arrow' \| 'rect' \| 'round-rect' \| 'circle' \| 'diamond'/);
+  assert.match(source, /fillMode\?: BoardFillMode/);
+  assert.match(source, /const \[boardFillMode, setBoardFillMode\] = useState<BoardFillMode>/);
+  assert.match(source, /toolButton\('line', <Minus size=\{13\} \/>\)/);
+  assert.match(source, /toolButton\('round-rect', <PanelTop size=\{13\} \/>\)/);
+  assert.match(source, /toolButton\('diamond', <Diamond size=\{13\} \/>\)/);
+  assert.match(source, /aria-label="画板图形填充模式"/);
+  assert.match(source, /update\(\{ boardFillMode: next \}\)/);
+});
+
+test('drawing board shape renderer supports filled shapes and endpoint-correct arrows', () => {
+  assert.match(source, /function drawBoardRoundedRectPath\(/);
+  assert.match(source, /function drawBoardDiamondPath\(/);
+  assert.match(source, /function arrowLineEndBeforeHead\(/);
+  assert.match(source, /const lineEnd = arrowLineEndBeforeHead\(start, end, el\.size\)/);
+  assert.match(source, /if \(el\.fillMode === 'fill'\) \{[\s\S]*ctx\.fillStyle = el\.color;[\s\S]*ctx\.fill\(\);[\s\S]*\} else \{[\s\S]*ctx\.strokeStyle = el\.color;[\s\S]*ctx\.stroke\(\);[\s\S]*\}/);
+});
+
+test('drawing board shape drag uses local shift-drag aspect lock', () => {
+  assert.match(source, /function boardShapeDragSize\(start: Point, end: Point, kind: ShapeElement\['kind'\], lockAspect: boolean\)/);
+  assert.match(source, /const dragSize = boardShapeDragSize\(\{ x: el\.x, y: el\.y \}, pos, el\.kind, event\.shiftKey\)/);
+  assert.match(source, /return \{ \.\.\.el, w: dragSize\.w, h: dragSize\.h \} as ShapeElement/);
+});
+
 test('drawing board owns undo redo while focused without stealing text input undo', () => {
   assert.match(source, /const historyRef = useRef<BoardLayer\[\]\[\]>\(\[\]\)/);
   assert.match(source, /function isUndoShortcutEvent/);
@@ -66,4 +93,12 @@ test('drawing board keeps free size inputs editable and exposes original pixel s
   assert.match(source, /const applyOriginalPixelSize = useCallback/);
   assert.match(source, /originalPixelImagePlacement\(naturalW, naturalH\)/);
   assert.match(source, /> 保持原图像素尺寸/);
+});
+
+test('drawing board body fills the actual themed node frame height', () => {
+  assert.match(source, /data-drawing-board-node="true"/);
+  assert.match(source, /className=\{`t8-node relative flex flex-col transition-all/);
+  assert.match(source, /data-drawing-board-body="true"/);
+  assert.match(source, /style=\{\{ flex: '1 1 0%', minHeight: 0 \}\}/);
+  assert.doesNotMatch(source, /style=\{\{ height: NODE_H - 58 \}\}/);
 });

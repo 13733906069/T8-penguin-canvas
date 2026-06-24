@@ -37,6 +37,24 @@ test('dir packaging verification ignores stale release metadata unless update ar
   assert.match(postBuild, /skipping installer\/latest\.yml checks for dir build/);
 });
 
+test('Electron release publishing requires explicit per-version approval', () => {
+  const distRelease = read('../scripts/dist-release.cjs');
+  const githubRelease = read('../scripts/release-github.cjs');
+
+  assert.match(distRelease, /const releaseApproval = `release-\$\{pkg\.version\}`/);
+  assert.match(distRelease, /function assertReleaseApproval\(\)/);
+  assert.match(distRelease, /process\.env\.T8_RELEASE_APPROVAL === releaseApproval/);
+  assert.match(distRelease, /refusing to run Electron release without explicit approval/);
+  assert.match(distRelease, /only after the user explicitly asks to publish/);
+  assert.match(distRelease, /github release upload \+ verify/);
+
+  assert.match(githubRelease, /const releaseApproval = `release-\$\{version\}`/);
+  assert.match(githubRelease, /function assertReleaseApproval\(\)/);
+  assert.match(githubRelease, /if \(dryRun\) return/);
+  assert.match(githubRelease, /process\.env\.T8_RELEASE_APPROVAL === releaseApproval/);
+  assert.match(githubRelease, /refusing to publish GitHub Release without explicit approval/);
+});
+
 test('Electron release keeps one packaged ffmpeg runtime and excludes installer duplicate', () => {
   const packageJson = JSON.parse(read('../package.json'));
   const files = packageJson.build.files;
@@ -54,6 +72,7 @@ test('Electron release keeps one packaged ffmpeg runtime and excludes installer 
 
 test('Electron packaging verifies encrypted local extension hook points', () => {
   const postBuild = read('../electron/_post_build.cjs');
+  const encrypt = read('../electron/encrypt.cjs');
 
   assert.match(postBuild, /extensions['"], ['"]runtimeHooks\.t8c/);
   assert.match(postBuild, /routes['"], ['"]figma\.t8c/);
@@ -63,6 +82,10 @@ test('Electron packaging verifies encrypted local extension hook points', () => 
   assert.match(postBuild, /utils['"], ['"]figmaBridge\.t8c/);
   assert.match(postBuild, /checkFigmaBridgeRuntime/);
   assert.match(postBuild, /tools['"], ['"]figma-bridge/);
+  assert.match(encrypt, /const LOCAL_PRIVATE_BACKEND_DIRS = \[/);
+  assert.match(encrypt, /path\.join\(LOCAL_PRIVATE_SRC, 'extensions', 'backend'\)/);
+  assert.match(encrypt, /path\.join\(LOCAL_PRIVATE_SRC, 'recharge', 'backend'\)/);
+  assert.doesNotMatch(encrypt, /walk\(LOCAL_PRIVATE_SRC\)/);
   const packageJson = JSON.parse(read('../package.json'));
   const resources = packageJson.build.extraResources.map((item: any) => `${item.from}->${item.to}`);
   assert.ok(resources.includes('tools/figma-bridge->tools/figma-bridge'));

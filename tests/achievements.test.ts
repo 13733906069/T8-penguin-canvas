@@ -15,7 +15,7 @@ function read(rel: string) {
 test('achievement manifest gives every system theme time milestones and featured medals', () => {
   const manifest = JSON.parse(read('../shared/achievementManifest.json'));
   assert.equal(manifest.schema, 't8-achievement-manifest');
-  assert.equal(manifest.themes.length, 12);
+  assert.equal(manifest.themes.length, 13);
   assert.equal(manifest.timeMilestones.length, 5);
   for (const theme of manifest.themes) {
     assert.ok(theme.featured.length >= 3, `${theme.style} should have first-batch featured achievements`);
@@ -35,6 +35,13 @@ test('achievement manifest gives every system theme time milestones and featured
   assert.ok(tetris.featured.some((item: any) => item.idSuffix === 'chapter-five'));
   assert.ok(tetris.featured.some((item: any) => item.idSuffix === 'clean-lv30'));
   assert.ok(tetris.featured.some((item: any) => item.idSuffix === 'matrix-cinema' && item.rarity === 'hidden'));
+  const farmStory = manifest.themes.find((theme: any) => theme.style === 'farm-story');
+  assert.ok(farmStory.featured.some((item: any) => item.idSuffix === 'first-plot' && item.condition?.metric === 'farmPlotsTilled'));
+  assert.ok(farmStory.featured.some((item: any) => item.idSuffix === 'first-harvest' && item.condition?.metric === 'farmCropsHarvested'));
+  assert.ok(farmStory.featured.some((item: any) => item.idSuffix === 'rare-harvest' && item.condition?.metric === 'farmRareCrops'));
+  assert.ok(farmStory.featured.some((item: any) => item.idSuffix === 'first-order' && item.condition?.metric === 'farmOrdersCompleted'));
+  assert.ok(farmStory.featured.some((item: any) => item.idSuffix === 'farmstead-builder' && item.condition?.metric === 'farmBuildingsPlaced'));
+  assert.ok(farmStory.featured.some((item: any) => item.idSuffix === 'beauty-landmark' && item.condition?.metric === 'farmBeautyRewards'));
   assert.equal(
     manifest.films.find((film: any) => film.id === 'film-saint-seiya-01').unlockAchievementId,
     'saint-seiya-athena-return',
@@ -406,6 +413,30 @@ test('achievement backend records active time, hidden mode, and film placeholder
   }).then((res) => res.json());
   assert.equal(tetrisCleanChapter.success, true);
 
+  for (const farmEvent of [
+    { type: 'farm.plot_tilled', kind: 'plot' },
+    { type: 'farm.crop_planted', kind: 'turnip' },
+    { type: 'farm.crop_watered', kind: 'turnip' },
+    { type: 'farm.crop_harvested', kind: 'turnip' },
+    { type: 'farm.rare_crop', kind: 'giant-turnip' },
+    { type: 'farm.order_completed', kind: 'order' },
+    { type: 'farm.building_placed', kind: 'building' },
+    { type: 'farm.decor_placed', kind: 'decor' },
+    { type: 'farm.decor_placed', kind: 'decor' },
+    { type: 'farm.decor_placed', kind: 'decor' },
+    { type: 'farm.beauty_reward', kind: 'flower-sticker' },
+    { type: 'farm.beauty_reward', kind: 'lantern-trim' },
+    { type: 'farm.beauty_reward', kind: 'village-postcard' },
+    { type: 'farm.beauty_reward', kind: 'festival-arch' },
+  ]) {
+    const farmRes = await fetch(`${base}/api/achievements/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...farmEvent, theme: 'farm-story' }),
+    }).then((res) => res.json());
+    assert.equal(farmRes.success, true);
+  }
+
   const profile = await fetch(`${base}/api/achievements/profile`).then((res) => res.json());
   assert.equal(profile.success, true);
   assert.equal(profile.data.profile.themeStats.tech.activeSeconds, 600);
@@ -440,6 +471,22 @@ test('achievement backend records active time, hidden mode, and film placeholder
   assert.equal(profile.data.profile.themeStats.tetris.tetrisChapter50Completed, 1);
   assert.equal(profile.data.profile.themeStats.tetris.tetrisFinaleCompleted, 1);
   assert.equal(profile.data.profile.themeStats.tetris.tetrisCleanLv30Completed, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmPlotsTilled, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmCropsPlanted, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmCropsWatered, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmCropsHarvested, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmRareCrops, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmOrdersCompleted, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmBuildingsPlaced, 1);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmDecorPlaced, 3);
+  assert.equal(profile.data.profile.themeStats['farm-story'].farmBeautyRewards, 4);
+  assert.ok(profile.data.profile.unlockedAchievements['farm-story-first-plot']);
+  assert.ok(profile.data.profile.unlockedAchievements['farm-story-first-harvest']);
+  assert.ok(profile.data.profile.unlockedAchievements['farm-story-rare-harvest']);
+  assert.ok(profile.data.profile.unlockedAchievements['farm-story-first-order']);
+  assert.ok(profile.data.profile.unlockedAchievements['farm-story-farmstead-builder']);
+  assert.ok(profile.data.profile.unlockedAchievements['farm-story-fence-artist']);
+  assert.ok(profile.data.profile.unlockedAchievements['farm-story-beauty-landmark']);
   assert.ok(profile.data.profile.unlockedAchievements['tetris-first-drop']);
   assert.ok(profile.data.profile.unlockedAchievements['tetris-tetris-clear']);
   assert.ok(profile.data.profile.unlockedAchievements['tetris-level-10']);
@@ -577,6 +624,7 @@ test('achievement frontend and server are wired without recording prompt content
   const app = read('../src/App.tsx');
   const tracker = read('../src/components/AchievementTracker.tsx');
   const canvas = read('../src/components/Canvas.tsx');
+  const farmPanel = read('../src/components/FarmStoryPanel.tsx');
   const dragonRadar = read('../src/components/DragonBallRadar.tsx');
   const saintSanctuary = read('../src/components/SaintSeiyaSanctuary.tsx');
   const saintStore = read('../src/stores/saintSeiyaSanctuary.ts');
@@ -605,6 +653,15 @@ test('achievement frontend and server are wired without recording prompt content
   assert.match(canvas, /type:\s*'parsehub\.resolved'/);
   assert.match(canvas, /type:\s*'workflow\.saved'/);
   assert.match(canvas, /type:\s*'resource\.saved'/);
+  assert.match(canvas, /farmAchievementTypeForEvent/);
+  assert.match(canvas, /trackFarmAchievementFromEvent/);
+  assert.match(canvas, /kind === 'rare_event'[\s\S]*return 'farm\.rare_crop'/);
+  assert.match(canvas, /event\.rareEventId[\s\S]*return event\.rareEventId/);
+  assert.match(canvas, /type,\s*theme:\s*'farm-story'/);
+  assert.match(canvas, /farmAchievementEventIdsRef/);
+  assert.match(farmPanel, /trackAchievementEvent/);
+  assert.match(farmPanel, /type:\s*'farm\.beauty_reward'/);
+  assert.match(farmPanel, /newlyUnlockedBeauty\.forEach/);
   assert.match(canvas, /rhDuckDecodedUnlocked/);
   assert.match(canvas, /yyhPortraitOutputUnlocked/);
   assert.match(canvas, /rhDuckDecoded[\s\S]*hidden_mode\.used[\s\S]*kind:\s*'rh-duck'[\s\S]*mode:\s*'used'/);
@@ -682,6 +739,11 @@ test('achievement frontend and server are wired without recording prompt content
   assert.match(achievementStore, /ceremonies/);
   assert.match(api, /AchievementWeeklyPassport/);
   assert.match(api, /AchievementCreativeReview/);
+  assert.match(api, /'farm\.plot_tilled'/);
+  assert.match(api, /'farm\.crop_harvested'/);
+  assert.match(api, /'farm\.order_completed'/);
+  assert.match(api, /'farm\.rare_crop'/);
+  assert.match(api, /'farm\.beauty_reward'/);
   assert.match(nodeActionBar, /hidden_mode\.enabled[\s\S]*mode:\s*'enabled'/);
   assert.match(nodeActionBar, /rhDuckHiddenUpload:\s*enabled/);
   assert.match(nodeActionBar, /const enabled = !rhDuckMode/);
@@ -712,6 +774,12 @@ test('achievement frontend and server are wired without recording prompt content
   assert.match(store, /getFilmMediaAccess/);
   assert.match(store, /tetris\.chapter_completed/);
   assert.match(store, /tetrisCleanLv30Completed/);
+  assert.match(store, /farm\.plot_tilled/);
+  assert.match(store, /farmCropsHarvested/);
+  assert.match(store, /farmOrdersCompleted/);
+  assert.match(store, /farmRareCrops/);
+  assert.match(store, /farmBeautyRewards/);
+  assert.match(store, /farm\.beauty_reward/);
   assert.match(store, /buildDailyTasks/);
   assert.match(store, /buildWeeklyPassport/);
   assert.match(store, /buildCreativeReview/);

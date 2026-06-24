@@ -203,6 +203,10 @@ function inputOrProviderParam(input, ...keys) {
   return undefined;
 }
 
+function hasRuntimeTextValue(value) {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
 async function uploadImageToComfy(baseUrl, imageRef, options = {}) {
   if (!imageRef) return '';
   let buffer = null;
@@ -255,11 +259,11 @@ async function sourceValue(source, input, size, context = {}) {
   if (audioRef) return audioRef;
   if (key === 'prompt' || key === 'positive') {
     const prompt = inputOrProviderParam(input, 'prompt', 'positive');
-    return prompt === undefined ? '' : String(prompt);
+    return hasRuntimeTextValue(prompt) ? String(prompt) : undefined;
   }
   if (key === 'negative') {
     const negative = inputOrProviderParam(input, 'negativePrompt', 'negative');
-    return negative === undefined ? undefined : String(negative);
+    return hasRuntimeTextValue(negative) ? String(negative) : undefined;
   }
   if (key === 'width') return size.width;
   if (key === 'height') return size.height;
@@ -335,25 +339,40 @@ function isTextWorkflowField(fieldName, node) {
   return nodeLooksPromptDriven && ['text', 'prompt', 'value'].includes(key);
 }
 
+function nodeLooksImageWorkflowInputDriven(node) {
+  return /(loadimage|imageinput|image\s*input|input\s*image|mask|controlnet|ipadapter|openpose|depth|lineart|reference|inpaint|outpaint|canny|hed|scribble|softedge|pose|segmentation|segment|segment\s*anything|\bsam\b|sam2|vision)/i.test(workflowNodeText(node));
+}
+
+function nodeLooksVideoWorkflowInputDriven(node) {
+  return /(loadvideo|videoinput|video\s*input|input\s*video|vhs|wanvideo|ltxv|svd|animatediff|video\s*reference|reference\s*video)/i.test(workflowNodeText(node));
+}
+
+function nodeLooksAudioWorkflowInputDriven(node) {
+  return /(loadaudio|audioinput|audio\s*input|input\s*audio|tts|stt|voice|sound|music|speech|wav|audio\s*reference|reference\s*audio)/i.test(workflowNodeText(node));
+}
+
 function isImageWorkflowField(fieldName, node) {
   const key = normalizeWorkflowInputKey(fieldName);
-  if (/^(image|img|mask|control_image|reference_image|ref_image|source_image|input_image|init_image|start_image|end_image|face_image|person_image|pose_image|depth_image|normal_image|lineart_image|image_path|mask_image)$/.test(key)) return true;
-  if (/(^|_)(image|img|mask)(_|$)/.test(key)) return true;
-  return /(loadimage|imageinput|mask|controlnet|ipadapter|openpose|depth|lineart|reference)/i.test(workflowNodeText(node)) && ['image', 'img', 'mask', 'path', 'file'].includes(key);
+  const fieldLooksMedia = /^(image|img|mask|control_image|reference_image|ref_image|source_image|input_image|init_image|start_image|end_image|face_image|person_image|pose_image|depth_image|normal_image|lineart_image|image_path|mask_image)$/.test(key)
+    || /(^|_)(image|img|mask)(_|$)/.test(key)
+    || ['image', 'img', 'mask', 'path', 'file'].includes(key);
+  return fieldLooksMedia && nodeLooksImageWorkflowInputDriven(node);
 }
 
 function isVideoWorkflowField(fieldName, node) {
   const key = normalizeWorkflowInputKey(fieldName);
-  if (/^(video|video_path|input_video|source_video|reference_video|init_video|frames_video)$/.test(key)) return true;
-  if (/(^|_)(video|movie|frames)(_|$)/.test(key)) return true;
-  return /(loadvideo|videoinput|vhs|video|wanvideo|ltxv|svd|animatediff)/i.test(workflowNodeText(node)) && ['video', 'path', 'file'].includes(key);
+  const fieldLooksMedia = /^(video|video_path|input_video|source_video|reference_video|init_video|frames_video)$/.test(key)
+    || /(^|_)(video|movie|frames)(_|$)/.test(key)
+    || ['video', 'path', 'file'].includes(key);
+  return fieldLooksMedia && nodeLooksVideoWorkflowInputDriven(node);
 }
 
 function isAudioWorkflowField(fieldName, node) {
   const key = normalizeWorkflowInputKey(fieldName);
-  if (/^(audio|audio_path|input_audio|source_audio|reference_audio|voice|sound|music|speech|wav)$/.test(key)) return true;
-  if (/(^|_)(audio|voice|sound|music|speech|wav)(_|$)/.test(key)) return true;
-  return /(loadaudio|audioinput|audio|tts|stt|voice|sound)/i.test(workflowNodeText(node)) && ['audio', 'path', 'file', 'voice'].includes(key);
+  const fieldLooksMedia = /^(audio|audio_path|input_audio|source_audio|reference_audio|voice|sound|music|speech|wav)$/.test(key)
+    || /(^|_)(audio|voice|sound|music|speech|wav)(_|$)/.test(key)
+    || ['audio', 'path', 'file', 'voice'].includes(key);
+  return fieldLooksMedia && nodeLooksAudioWorkflowInputDriven(node);
 }
 
 const DIRECT_WORKFLOW_SOURCE_FIELDS = new Set([
@@ -827,10 +846,6 @@ async function generateImage(provider, input = {}, options = {}) {
       protocol: 'comfyui',
       error: 'ComfyUI 默认只允许本机地址；如需接入其他地址，请在后端启用远端 ComfyUI 访问。',
     };
-  }
-  const promptText = String(input.prompt || '').trim();
-  if (!promptText) {
-    return { ok: false, code: 'missing_prompt', providerId: provider.id, protocol: 'comfyui', error: '请输入 ComfyUI 工作流提示词。' };
   }
   const workflow = findWorkflow(provider, input);
   if (!workflow) {

@@ -8,6 +8,8 @@ import {
   PANORAMA_KEYFRAME_SEQUENCE_DEFAULT,
   PANORAMA_OCCLUSION_MASK_LIMIT,
   PANORAMA_FIXED_PROMPT,
+  PANORAMA_RATIO_OPTIONS,
+  PANORAMA_RATIO_PRESETS,
   PANORAMA_SHOT_CAMERA_DEFAULT,
   PANORAMA_ACTION_PLAN_SCHEMA,
   PANORAMA_AVATAR_POSES,
@@ -317,6 +319,9 @@ test('panorama 3d node exposes built-in generation and resource actions', () => 
 test('panorama storyboard prompt board defaults closed and stitches text below snapshots', async () => {
   const source = readFileSync(new URL('../src/components/nodes/Panorama3DNode.tsx', import.meta.url), 'utf8');
   const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8');
+  const farmCss = readFileSync(new URL('../src/styles/theme-farm-story.css', import.meta.url), 'utf8');
+  const utilsSource = readFileSync(new URL('../src/utils/panorama3d.ts', import.meta.url), 'utf8');
   const utils = await import('../src/utils/panorama3d.ts');
 
   assert.equal(
@@ -348,12 +353,116 @@ test('panorama storyboard prompt board defaults closed and stitches text below s
   assert.match(source, /rawPreviewUrl/);
   assert.doesNotMatch(source, /const fallbackPreviewUrl = rawPreviewUrl \|\| storyboardPromptLivePreviewUrl/);
   assert.doesNotMatch(source, /previewHasComposedPrompt/);
-  assert.match(source, /const previewFontSize = 11/);
-  assert.match(source, /style=\{\{ fontSize: previewFontSize, color: '#fff'/);
+  assert.match(source, /const previewFontSize = 15/);
+  assert.match(source, /t8-panorama-storyboard-preview-caption/);
+  assert.match(source, /t8-panorama-storyboard-preview-caption-line/);
+  assert.match(source, /data-panorama-storyboard-preview="true"/);
+  assert.match(source, /data-panorama-storyboard-preview-caption="true"/);
+  assert.match(source, /data-panorama-storyboard-preview-line="true"/);
+  assert.match(source, /data-panorama-storyboard-preview-placeholder="true"/);
+  assert.match(source, /data-panorama-storyboard-preview-day-safe="true"/);
+  assert.match(source, /data-panorama-storyboard-preview-tone="locked-white"/);
+  assert.match(source, /data-panorama-storyboard-preview-safe-color="white"/);
+  assert.match(source, /data-panorama-storyboard-preview-contrast-lock="true"/);
+  assert.match(source, /data-panorama-storyboard-live-preview-text="white"/);
+  assert.ok((source.match(/data-panorama-storyboard-live-preview-text="white"/g) || []).length >= 2);
+  assert.match(source, /data-t8-color-lock="panorama-storyboard-preview"/);
+  assert.ok((source.match(/data-t8-color-lock="panorama-storyboard-preview"/g) || []).length >= 4);
+  assert.ok((source.match(/data-panorama-storyboard-preview-contrast-lock="true"/g) || []).length >= 4);
+  assert.match(source, /lockPanoramaStoryboardPreviewTextElement/);
+  assert.match(source, /style\.setProperty\('color', '#ffffff', 'important'\)/);
+  assert.match(source, /style\.setProperty\('-webkit-text-fill-color', '#ffffff', 'important'\)/);
+  assert.match(source, /style\.setProperty\('paint-order', 'stroke fill', 'important'\)/);
+  assert.match(source, /style\.setProperty\('text-shadow', STORYBOARD_PREVIEW_READABLE_TEXT_SHADOW, 'important'\)/);
+  assert.match(source, /const storyboardPromptPreviewRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(source, /lockPanoramaStoryboardPreviewTextTree/);
+  assert.match(source, /querySelectorAll<HTMLElement>\('\[data-t8-color-lock="panorama-storyboard-preview"\], \[data-panorama-storyboard-preview-contrast-lock="true"\], \[data-panorama-storyboard-live-preview-text="white"\]'\)/);
+  assert.match(source, /storyboardPromptPreviewRef\.current/);
+  assert.match(source, /lockPanoramaStoryboardPreviewTextTree\(storyboardPromptPreviewRef\.current\)/);
+  assert.match(source, /requestAnimationFrame\(\(\) => lockPanoramaStoryboardPreviewTextTree\(storyboardPromptPreviewRef\.current\)\)/);
+  assert.match(source, /new MutationObserver/);
+  assert.match(source, /attributeFilter:\s*\['data-theme-mode', 'data-theme-visual', 'class', 'style'\]/);
+  assert.match(source, /storyboardPromptPreviewRef\.current = element/);
+  assert.match(source, /ref=\{lockPanoramaStoryboardPreviewTextElement\}/);
+  assert.match(source, /backgroundColor:\s*'#050505'/);
+  assert.match(source, /WebkitTextFillColor:\s*'#ffffff'/);
+  assert.match(source, /WebkitTextStroke:\s*'0\.22px rgba\(255,\s*255,\s*255,\s*\.76\)'/);
+  assert.match(source, /forcedColorAdjust:\s*'none'/);
+  assert.match(source, /colorScheme:\s*'dark'/);
+  assert.match(source, /fontWeight:\s*900/);
+  assert.match(source, /textRendering:\s*'geometricPrecision'/);
+  assert.match(source, /mixBlendMode:\s*'normal'/);
   assert.match(source, /等待快照预览/);
   assert.match(source, /text-white/);
   assert.match(source, /panoramaStoryboardPromptSnapshotText/);
   assert.doesNotMatch(source, /previewAlreadyIncludesPrompt/);
+  assert.match(utilsSource, /ctx\.shadowColor = 'rgba\(0, 0, 0, \.96\)'/);
+  assert.match(utilsSource, /ctx\.font = `900 \$\{panel\.fontSize\}px/);
+  assert.match(utilsSource, /ctx\.strokeText\(line \|\| ' ', panel\.paddingX, y, width - panel\.paddingX \* 2\)/);
+  assert.match(css, /\.t8-panorama-storyboard-preview-caption/);
+  assert.match(css, /-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(css, /data-theme-visual="tech"\]\[data-theme-mode="light"\][\s\S]*\.t8-panorama-storyboard-preview-caption/);
+  assert.match(css, /data-panorama-storyboard-preview-caption="true"[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-preview-line="true"/);
+  assert.match(css, /\.t8-panorama-storyboard-preview\[data-panorama-storyboard-preview="true"\][\s\S]*color:\s*#ffffff !important/);
+  assert.match(css, /data-panorama-storyboard-preview="true"[\s\S]*mix-blend-mode:\s*normal !important/);
+  assert.match(css, /data-panorama-storyboard-preview-line="true"[\s\S]*opacity:\s*1 !important/);
+  assert.match(css, /data-panorama-storyboard-preview-tone="locked-white"[\s\S]*forced-color-adjust:\s*none !important/);
+  assert.match(css, /data-panorama-storyboard-preview-tone="locked-white"[\s\S]*color-scheme:\s*dark !important/);
+  assert.match(css, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*font-size:\s*15px !important/);
+  assert.match(css, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*font-weight:\s*900 !important/);
+  assert.match(css, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*line-height:\s*1\.42 !important/);
+  assert.match(css, /Final lock for panorama storyboard live preview/);
+  assert.match(css, /\[data-panorama-storyboard-preview-caption="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*background-color:\s*#050505 !important/);
+  assert.match(css, /\[data-panorama-storyboard-preview-caption="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*color:\s*#ffffff !important/);
+  assert.match(css, /\[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(css, /\[data-panorama-storyboard-preview-placeholder="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*\.82\) !important/);
+  assert.match(css, /True final guard: keep panorama storyboard live-preview text readable in every light theme/);
+  assert.match(css, /\[data-panorama-storyboard-preview-safe-color="white"\][\s\S]*-webkit-text-stroke:\s*0\.22px rgba\(255,\s*255,\s*255,\s*\.76\) !important/);
+  assert.match(css, /\[data-panorama-storyboard-preview-caption="true"\]\[data-panorama-storyboard-preview-safe-color="white"\][\s\S]*font-weight:\s*900 !important/);
+  assert.match(css, /\[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-safe-color="white"\][\s\S]*font-weight:\s*900 !important/);
+  assert.match(css, /Day-mode hard guard: the storyboard live preview must stay black-board \/ white-text/);
+  assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-preview-day-safe="true"[\s\S]*--tw-text-opacity:\s*1 !important/);
+  assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*font-size:\s*15px !important/);
+  assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*font-weight:\s*900 !important/);
+  assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*line-height:\s*1\.42 !important/);
+  assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-preview-placeholder="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*rgba\(255,\s*255,\s*255,\s*\.84\) !important/);
+  assert.match(css, /Color-lock guard: panorama storyboard preview is a black-board \/ white-text artifact/);
+  assert.match(css, /data-t8-color-lock="panorama-storyboard-preview"[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(css, /data-t8-color-lock="panorama-storyboard-preview"[\s\S]*opacity:\s*1 !important/);
+  assert.match(css, /data-t8-color-lock="panorama-storyboard-preview"\]\[data-panorama-storyboard-preview-line="true"\][\s\S]*font-size:\s*15px !important/);
+  assert.match(css, /Runtime contrast lock for panorama storyboard live preview/);
+  assert.match(css, /data-panorama-storyboard-preview-contrast-lock="true"[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(css, /data-panorama-storyboard-preview-contrast-lock="true"\]\[data-panorama-storyboard-preview-line="true"\][\s\S]*font-weight:\s*900 !important/);
+  assert.match(css, /Readable live preview text guard for the 3D panorama storyboard board/);
+  assert.match(css, /data-panorama-storyboard-live-preview-text="white"[\s\S]*paint-order:\s*stroke fill !important/);
+  assert.match(css, /data-panorama-storyboard-live-preview-text="white"[\s\S]*0 0 0 #ffffff/);
+  assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-live-preview-text="white"[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"[\s\S]*\.t8-panorama-storyboard-preview-caption/);
+  assert.match(farmCss, /\.t8-panorama-storyboard-preview-caption-line[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(farmCss, /data-panorama-storyboard-preview-caption="true"[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"[\s\S]*color:\s*#ffffff !important/);
+  assert.match(farmCss, /data-panorama-storyboard-preview-tone="locked-white"[\s\S]*forced-color-adjust:\s*none !important/);
+  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*font-size:\s*15px !important/);
+  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*font-weight:\s*900 !important/);
+  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*line-height:\s*1\.42 !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-caption="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*background-color:\s*#050505 !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-placeholder="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*\.72\) !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*--tw-text-opacity:\s*1 !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*font-size:\s*15px !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*font-weight:\s*900 !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*line-height:\s*1\.42 !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-placeholder="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*rgba\(255,\s*255,\s*255,\s*\.84\) !important/);
+  assert.match(farmCss, /Farm day-mode final guard: keep 3D panorama storyboard live preview readable/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-t8-color-lock="panorama-storyboard-preview"\][\s\S]*--tw-text-opacity:\s*1 !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-t8-color-lock="panorama-storyboard-preview"\][\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-t8-color-lock="panorama-storyboard-preview"\]\[data-panorama-storyboard-preview-line="true"\][\s\S]*font-weight:\s*900 !important/);
+  assert.match(farmCss, /Farm runtime contrast lock for panorama storyboard live preview/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-contrast-lock="true"\][\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
+  assert.match(farmCss, /Farm readable live preview text guard for the 3D panorama storyboard board/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-live-preview-text="white"\][\s\S]*paint-order:\s*stroke fill !important/);
+  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-live-preview-text="white"\][\s\S]*0 0 0 #ffffff/);
 });
 
 test('panorama storyboard prompt board manages reusable prompt presets', async () => {
@@ -416,9 +525,29 @@ test('panorama seam score classification gives actionable labels', () => {
 });
 
 test('resolvePanoramaRatio returns presets and sanitized custom ratios', () => {
-  assert.deepEqual(resolvePanoramaRatio('wide', 1, 1), { w: 16, h: 9 });
+  assert.deepEqual(
+    PANORAMA_RATIO_OPTIONS.map((item) => item.label),
+    ['21:9', '2:1', '自定义'],
+  );
+  assert.deepEqual(
+    Object.values(PANORAMA_RATIO_PRESETS),
+    [{ w: 21, h: 9 }, { w: 2, h: 1 }],
+  );
+  assert.deepEqual(resolvePanoramaRatio('ultrawide', undefined, undefined), { w: 21, h: 9 });
+  assert.deepEqual(resolvePanoramaRatio('twoToOne', undefined, undefined), { w: 2, h: 1 });
+  assert.deepEqual(resolvePanoramaRatio('wide', 1, 1), { w: 21, h: 9 });
+  assert.deepEqual(resolvePanoramaRatio('square', undefined, undefined), { w: 21, h: 9 });
   assert.deepEqual(resolvePanoramaRatio('custom', 21, 9), { w: 21, h: 9 });
   assert.deepEqual(resolvePanoramaRatio('custom', -10, 'bad'), { w: 1, h: 9 });
+});
+
+test('panorama 3d node normalizes legacy ratio ids before rendering buttons', () => {
+  const source = readFileSync(new URL('../src/components/nodes/Panorama3DNode.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /normalizePanoramaRatioId\(d\.panoramaRatio\)/);
+  assert.doesNotMatch(source, /d\.panoramaRatio\s*\|\|\s*'wide'/);
+  assert.match(source, /className="grid grid-cols-3 gap-1\.5"/);
+  assert.doesNotMatch(source, /className="grid grid-cols-10 gap-1\.5"/);
 });
 
 test('panoramaRenderSize keeps the selected viewport aspect', () => {

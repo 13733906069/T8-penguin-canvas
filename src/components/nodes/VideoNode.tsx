@@ -128,9 +128,12 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     ? advancedProviderModelOptions(providerSelection.provider, 'video')
     : [];
   const externalProviderModel = providerSelection.providerModel || externalModelOptions[0] || '';
+  const isAgnesExternalSelected = isExternalSelected && providerSelection.provider?.protocol === 'agnes';
   const isJimengCliSelected = isExternalSelected && providerSelection.provider?.protocol === 'jimeng-cli';
   const isJimengSeedanceSelected = isJimengCliSelected && /seedance|jimeng-video|video/i.test(externalProviderModel);
   const jimengSeedanceMode = normalizeJimengSeedanceMode(providerParams.frameMode ?? d?.jimengFrameMode);
+  const agnesFrameRate = Number(providerParams.frameRate ?? providerParams.frame_rate ?? 24) || 24;
+  const agnesNumFrames = providerParams.numFrames ?? providerParams.num_frames ?? '';
   const updateProviderParams = (patch: Record<string, any>) => update({ providerParams: { ...providerParams, ...patch } });
   // 主模型 id (对应 VIDEO_MODELS 项)
   const rawModel = typeof d?.model === 'string' ? d.model : '';
@@ -161,15 +164,21 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const showGenericVideoControls = isExternalSelected || !isFal;
   const ratioOptions = isJimengSeedanceSelected
     ? ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9']
+    : isAgnesExternalSelected
+    ? ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9']
     : isGrok15New
     ? ['16:9', '9:16']
     : modelDef.ratios;
   const durationOptions = isJimengSeedanceSelected
     ? [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    : isAgnesExternalSelected
+    ? [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18]
     : isGrok15New
     ? []
     : modelDef.durations || [];
   const resolutionOptions = isJimengSeedanceSelected
+    ? ['480p', '720p', '1080p']
+    : isAgnesExternalSelected
     ? ['480p', '720p', '1080p']
     : isGrok15New
     ? []
@@ -802,6 +811,14 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                         providerSource: provider.protocol,
                         providerId: provider.id,
                         providerModel: nextModels[0] || '',
+                        ...(provider.protocol === 'agnes'
+                          ? {
+                            ratio: '16:9',
+                            duration: 5,
+                            resolution: '720p',
+                            providerParams: { ...providerParams, frameRate: 24 },
+                          }
+                          : {}),
                       });
                     }}
                     style={{ background: '#18181b', color: '#ffffff' }}
@@ -1181,6 +1198,46 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 <option key={r} value={r} className="bg-zinc-900">{r}</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {isAgnesExternalSelected && (
+          <div className="rounded border border-emerald-300/20 bg-emerald-400/[0.06] p-2 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold text-white/75">Agnes 视频参数</span>
+              <span className="text-[9px] text-emerald-100/60">/v1/videos</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">帧率</label>
+                <select
+                  value={String(agnesFrameRate)}
+                  onChange={(e) => updateProviderParams({ frameRate: Number(e.target.value) || 24 })}
+                  className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
+                >
+                  {[8, 12, 16, 24, 30].map((fps) => (
+                    <option key={fps} value={fps} className="bg-zinc-900">{fps} fps</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">帧数覆盖</label>
+                <input
+                  type="number"
+                  min={9}
+                  max={441}
+                  value={String(agnesNumFrames)}
+                  onChange={(e) => updateProviderParams({
+                    numFrames: e.target.value ? Math.max(9, Math.min(441, Number(e.target.value) || 9)) : '',
+                  })}
+                  placeholder="自动"
+                  className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30 placeholder:text-white/25"
+                />
+              </div>
+            </div>
+            <div className="text-[10px] leading-relaxed text-white/45">
+              默认由比例、分辨率和时长换算宽高与帧数；通常只需要调比例、时长和分辨率，特殊测试再覆盖帧数。
+            </div>
           </div>
         )}
 

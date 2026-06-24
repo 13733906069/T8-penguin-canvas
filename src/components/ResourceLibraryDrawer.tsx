@@ -169,6 +169,12 @@ function stopResourceControlEvent(event: { stopPropagation: () => void }) {
   event.stopPropagation();
 }
 
+type CategoryDialogState =
+  | { mode: 'add'; kind: ResourceKind; label: string; value: string }
+  | { mode: 'rename'; category: ResourceCategory; label: string; value: string };
+
+type ItemRenameDialogState = { item: ResourceItem; value: string };
+
 export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial }: ResourceLibraryDrawerProps) {
   const { theme, style } = useThemeStore();
   const isDark = theme === 'dark';
@@ -182,6 +188,8 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [hoverPreview, setHoverPreview] = useState<{ src: string; title: string; left: number; top: number } | null>(null);
+  const [categoryDialog, setCategoryDialog] = useState<CategoryDialogState | null>(null);
+  const [itemRenameDialog, setItemRenameDialog] = useState<ItemRenameDialogState | null>(null);
 
   const load = useCallback(async () => {
     if (!open) return;
@@ -218,31 +226,55 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
   useEffect(() => {
     setCategoryId('all');
     setFavoriteOnly(false);
+    setCategoryDialog(null);
+    setItemRenameDialog(null);
   }, [kind]);
 
   const activeMeta = KIND_META[kind];
   const ActiveIcon = activeMeta.icon;
   const totalText = useMemo(() => `${items.length} 个资源`, [items.length]);
 
-  const addCategory = async () => {
-    const name = window.prompt(`新建${activeMeta.label}分类`);
-    if (!name?.trim()) return;
-    const r = await api.addResourceCategory(kind, name.trim());
-    if (r.success) {
-      setMsg(`已创建分类：${name.trim()}`);
-      setCategoryId(r.data.id);
-      await load();
-    } else {
-      setMsg(r.error || '分类创建失败');
-    }
+  const openAddCategoryDialog = () => {
+    setMsg('');
+    setCategoryDialog({ mode: 'add', kind, label: activeMeta.label, value: '' });
   };
 
-  const renameCategory = async (cat: ResourceCategory) => {
+  const openRenameCategoryDialog = (cat: ResourceCategory) => {
     if (cat.system) return;
-    const name = window.prompt('重命名分类', cat.name);
-    if (!name?.trim() || name.trim() === cat.name) return;
-    const r = await api.renameResourceCategory(cat.id, name.trim());
-    setMsg(r.success ? '分类已重命名' : r.error || '分类重命名失败');
+    setMsg('');
+    setCategoryDialog({ mode: 'rename', category: cat, label: cat.name, value: cat.name });
+  };
+
+  const submitCategoryDialog = async () => {
+    if (!categoryDialog) return;
+    const name = categoryDialog.value.trim();
+    if (!name) {
+      setMsg('请输入分类名称');
+      return;
+    }
+    if (categoryDialog.mode === 'add') {
+      const r = await api.addResourceCategory(categoryDialog.kind, name);
+      if (r.success) {
+        setMsg(`已创建分类：${name}`);
+        setCategoryId(r.data.id);
+        setCategoryDialog(null);
+        await load();
+      } else {
+        setMsg(r.error || '分类创建失败');
+      }
+      return;
+    }
+    if (name === categoryDialog.category.name) {
+      setCategoryDialog(null);
+      return;
+    }
+    const r = await api.renameResourceCategory(categoryDialog.category.id, name);
+    if (r.success) {
+      setMsg('分类已重命名');
+      setCategoryDialog(null);
+    } else {
+      setMsg(r.error || '分类重命名失败');
+    }
     await load();
   };
 
@@ -260,15 +292,31 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
     if (r.success) {
       setItems((prev) => prev.map((x) => (x.id === item.id ? r.data : x)));
       window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
+      return true;
     } else {
       setMsg(r.error || '资源更新失败');
+      return false;
     }
   };
 
-  const renameItem = async (item: ResourceItem) => {
-    const title = window.prompt('资源名称', item.title);
-    if (!title?.trim() || title.trim() === item.title) return;
-    await updateItem(item, { title: title.trim() });
+  const openItemRenameDialog = (item: ResourceItem) => {
+    setMsg('');
+    setItemRenameDialog({ item, value: item.title });
+  };
+
+  const submitItemRenameDialog = async () => {
+    if (!itemRenameDialog) return;
+    const title = itemRenameDialog.value.trim();
+    if (!title) {
+      setMsg('请输入资源名称');
+      return;
+    }
+    if (title === itemRenameDialog.item.title) {
+      setItemRenameDialog(null);
+      return;
+    }
+    const ok = await updateItem(itemRenameDialog.item, { title });
+    if (ok) setItemRenameDialog(null);
   };
 
   const deleteItem = async (item: ResourceItem) => {
@@ -474,7 +522,7 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                     onMouseDown={stopResourceControlEvent}
                     onClick={(event) => {
                       stopResourceControlEvent(event);
-                      renameCategory(cat);
+                      openRenameCategoryDialog(cat);
                     }}
                     className="nodrag nopan p-1 hover:opacity-100"
                     title="重命名"
@@ -508,7 +556,7 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
             onMouseDown={stopResourceControlEvent}
             onClick={(event) => {
               stopResourceControlEvent(event);
-              addCategory();
+              openAddCategoryDialog();
             }}
             className={`nodrag nopan w-full mt-2 ${itemBtn} flex items-center justify-center gap-1`}
             title="新建分类"
@@ -714,7 +762,7 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                       <Send size={13} />
                     </button>
                     <button
-                      onClick={() => renameItem(item)}
+                      onClick={() => openItemRenameDialog(item)}
                       className="nodrag nopan t8-mini-icon-button resource-card-action"
                       style={miniActionBase}
                       title="重命名"
@@ -737,6 +785,160 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
           </div>
         </main>
       </div>
+      {categoryDialog && (
+        <div
+          data-resource-category-dialog="true"
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={categoryDialog.mode === 'add' ? `新建${categoryDialog.label}分类` : `重命名分类 ${categoryDialog.label}`}
+          onPointerDown={stopResourceControlEvent}
+          onMouseDown={stopResourceControlEvent}
+          onClick={(event) => {
+            stopResourceControlEvent(event);
+            if (event.currentTarget === event.target) setCategoryDialog(null);
+          }}
+        >
+          <form
+            className={isPixel
+              ? 'w-full max-w-sm border-2 border-[var(--px-ink)] bg-[var(--px-surface)] p-3 shadow-[4px_4px_0_var(--px-ink)]'
+              : `w-full max-w-sm rounded-xl border p-4 shadow-2xl ${isDark ? 'border-white/15 bg-zinc-950 text-white' : 'border-black/10 bg-white text-zinc-950'}`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitCategoryDialog();
+            }}
+            onPointerDown={stopResourceControlEvent}
+            onMouseDown={stopResourceControlEvent}
+            onClick={stopResourceControlEvent}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">
+                  {categoryDialog.mode === 'add' ? `新建${categoryDialog.label}分类` : '重命名分类'}
+                </div>
+                <div className={`mt-1 text-[11px] leading-relaxed ${subtle}`}>
+                  {categoryDialog.mode === 'add'
+                    ? '给当前大分类添加一个新的子分类，方便后续整理资源。'
+                    : `当前名称：${categoryDialog.label}`}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={isPixel ? 't8-mini-icon-button px-btn px-btn--icon px-btn--ghost' : `t8-mini-icon-button h-8 w-8 shrink-0 rounded-md ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
+                title="关闭"
+                onClick={() => setCategoryDialog(null)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <input
+              data-resource-category-dialog-input
+              autoFocus
+              value={categoryDialog.value}
+              onChange={(event) => setCategoryDialog((prev) => (prev ? { ...prev, value: event.target.value } : prev))}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setCategoryDialog(null);
+                }
+              }}
+              placeholder="输入分类名称"
+              className={`${inputCls} w-full`}
+            />
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className={isPixel ? 'px-btn px-btn--ghost' : `h-9 rounded-md border text-sm font-medium ${isDark ? 'border-white/10 hover:bg-white/10' : 'border-black/10 hover:bg-black/5'}`}
+                onClick={() => setCategoryDialog(null)}
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                data-resource-category-dialog-confirm
+                className={isPixel ? 'px-btn px-btn--yellow' : 'h-9 rounded-md bg-cyan-400 text-sm font-semibold text-zinc-950 hover:bg-cyan-300'}
+              >
+                {categoryDialog.mode === 'add' ? '创建' : '保存'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {itemRenameDialog && (
+        <div
+          data-resource-item-rename-dialog="true"
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`重命名资源 ${itemRenameDialog.item.title}`}
+          onPointerDown={stopResourceControlEvent}
+          onMouseDown={stopResourceControlEvent}
+          onClick={(event) => {
+            stopResourceControlEvent(event);
+            if (event.currentTarget === event.target) setItemRenameDialog(null);
+          }}
+        >
+          <form
+            className={isPixel
+              ? 'w-full max-w-sm border-2 border-[var(--px-ink)] bg-[var(--px-surface)] p-3 shadow-[4px_4px_0_var(--px-ink)]'
+              : `w-full max-w-sm rounded-xl border p-4 shadow-2xl ${isDark ? 'border-white/15 bg-zinc-950 text-white' : 'border-black/10 bg-white text-zinc-950'}`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitItemRenameDialog();
+            }}
+            onPointerDown={stopResourceControlEvent}
+            onMouseDown={stopResourceControlEvent}
+            onClick={stopResourceControlEvent}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">重命名资源</div>
+                <div className={`mt-1 truncate text-[11px] leading-relaxed ${subtle}`} title={itemRenameDialog.item.title}>
+                  当前名称：{itemRenameDialog.item.title}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={isPixel ? 't8-mini-icon-button px-btn px-btn--icon px-btn--ghost' : `t8-mini-icon-button h-8 w-8 shrink-0 rounded-md ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
+                title="关闭"
+                onClick={() => setItemRenameDialog(null)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <input
+              data-resource-item-rename-dialog-input
+              autoFocus
+              value={itemRenameDialog.value}
+              onChange={(event) => setItemRenameDialog((prev) => (prev ? { ...prev, value: event.target.value } : prev))}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setItemRenameDialog(null);
+                }
+              }}
+              placeholder="输入资源名称"
+              className={`${inputCls} w-full`}
+            />
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className={isPixel ? 'px-btn px-btn--ghost' : `h-9 rounded-md border text-sm font-medium ${isDark ? 'border-white/10 hover:bg-white/10' : 'border-black/10 hover:bg-black/5'}`}
+                onClick={() => setItemRenameDialog(null)}
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                data-resource-item-rename-dialog-confirm
+                className={isPixel ? 'px-btn px-btn--yellow' : 'h-9 rounded-md bg-cyan-400 text-sm font-semibold text-zinc-950 hover:bg-cyan-300'}
+              >
+                保存
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {hoverPreview && (
         <div
           className="resource-card-image-hover-preview"

@@ -191,8 +191,8 @@ export async function getCodexCliStatus(executablePath?: string): Promise<CodexC
   return requestJson<CodexCliStatus>(`${BASE}/status${q}`);
 }
 
-export async function startCodexCliLogin(payload: { executablePath?: string; deviceAuth?: boolean } = {}): Promise<{ started: boolean; executable?: string; message?: string }> {
-  return requestJson<{ started: boolean; executable?: string; message?: string }>(`${BASE}/login/start`, {
+export async function startCodexCliLogin(payload: { executablePath?: string; deviceAuth?: boolean } = {}): Promise<{ started: boolean; executable?: string; command?: string; mode?: string; scriptPath?: string; message?: string }> {
+  return requestJson<{ started: boolean; executable?: string; command?: string; mode?: string; scriptPath?: string; message?: string }>(`${BASE}/login/start`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

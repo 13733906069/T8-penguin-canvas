@@ -498,6 +498,63 @@
           "condition": { "type": "counter", "metric": "tetrisLinesCleared", "count": 100 }
         }
       ]
+    },
+    {
+      "style": "farm-story",
+      "label": "牧场物语主题",
+      "shortLabel": "牧场",
+      "accent": "#6fbf4a",
+      "featured": [
+        {
+          "idSuffix": "first-plot",
+          "title": "第一块田",
+          "description": "在牧场物语主题下开垦第一块田。",
+          "rarity": "bronze",
+          "condition": { "type": "counter", "metric": "farmPlotsTilled", "count": 1 }
+        },
+        {
+          "idSuffix": "first-harvest",
+          "title": "第一篮收获",
+          "description": "在牧场物语主题下收获第一份成熟作物。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "farmCropsHarvested", "count": 1 }
+        },
+        {
+          "idSuffix": "rare-harvest",
+          "title": "惊喜收获",
+          "description": "在牧场物语主题下发现第一次稀有收获事件。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "farmRareCrops", "count": 1 }
+        },
+        {
+          "idSuffix": "first-order",
+          "title": "邮差盖章",
+          "description": "在牧场物语主题下完成第一个每日订单。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "farmOrdersCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "farmstead-builder",
+          "title": "牧场建设者",
+          "description": "在牧场物语主题下建造第一座牧场建筑。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "farmBuildingsPlaced", "count": 1 }
+        },
+        {
+          "idSuffix": "fence-artist",
+          "title": "围栏艺术家",
+          "description": "在牧场物语主题下累计放置 3 件装饰。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "farmDecorPlaced", "count": 3 }
+        },
+        {
+          "idSuffix": "beauty-landmark",
+          "title": "四季名场",
+          "description": "在牧场物语主题下解锁全部漂亮度美化奖励。",
+          "rarity": "master",
+          "condition": { "type": "counter", "metric": "farmBeautyRewards", "count": 4 }
+        }
+      ]
     }
   ],
   "films": [

@@ -27,6 +27,10 @@ const { encryptBuffer } = require('./loader.cjs');
 const BACKEND_SRC = path.resolve(__dirname, '..', 'backend', 'src');
 const LOCAL_PRIVATE_SRC = path.resolve(__dirname, '..', 'local-private');
 const OUT_DIR = path.resolve(__dirname, '..', 'build', 'backend-enc');
+const LOCAL_PRIVATE_BACKEND_DIRS = [
+  path.join(LOCAL_PRIVATE_SRC, 'extensions', 'backend'),
+  path.join(LOCAL_PRIVATE_SRC, 'recharge', 'backend'),
+];
 
 function walk(dir, results = []) {
   for (const name of fs.readdirSync(dir)) {
@@ -112,7 +116,9 @@ function main() {
   const localPrivateEntry = path.join(LOCAL_PRIVATE_SRC, 'extensions', 'backend', 'index.cjs');
   if (!localPrivateDisabled && fs.existsSync(localPrivateEntry)) {
     const localOut = path.join(OUT_DIR, 'local-private');
-    const localFiles = walk(LOCAL_PRIVATE_SRC);
+    const localFiles = LOCAL_PRIVATE_BACKEND_DIRS
+      .filter((dir) => fs.existsSync(dir))
+      .flatMap((dir) => walk(dir));
     console.log(`[encrypt] local private files: ${localFiles.length}`);
     for (const f of localFiles) {
       encryptFile(f, LOCAL_PRIVATE_SRC, localOut);

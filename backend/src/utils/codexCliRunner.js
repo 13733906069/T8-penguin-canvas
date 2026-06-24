@@ -285,15 +285,93 @@ async function listCodexFeatures(options = {}) {
 
 function buildCodexLoginStartInvocation(options = {}) {
   const resolved = resolveCodexExecutable(options);
+  const args = options.deviceAuth ? ['login', '--device-auth'] : ['login'];
   return {
     ...resolved,
-    args: options.deviceAuth ? ['login', '--device-auth'] : ['login'],
+    args,
+    commandText: formatCodexCommandForDisplay(resolved.executable, args),
+  };
+}
+
+function quoteCmdArg(value) {
+  const text = String(value || '');
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function formatCodexCommandForDisplay(executable, args = []) {
+  const exe = String(executable || 'codex').trim() || 'codex';
+  const renderedExe = /\s/.test(exe) ? quoteCmdArg(exe) : exe;
+  return [renderedExe, ...args.map((arg) => {
+    const text = String(arg || '');
+    return /\s/.test(text) ? quoteCmdArg(text) : text;
+  })].join(' ');
+}
+
+function escapeCmdEchoText(value) {
+  return String(value || '').replace(/([&<>|^])/g, '^$1').replace(/%/g, '%%');
+}
+
+function writeCodexLoginCmdScript(invocation) {
+  const dir = path.join(config.DATA_DIR, 'codex-login');
+  ensureDir(dir);
+  const filePath = path.join(dir, 'open-codex-login.cmd');
+  const commandLine = formatCodexCommandForDisplay(invocation.executable || invocation.command || 'codex', invocation.args);
+  const content = [
+    '@echo off',
+    'chcp 65001 > nul',
+    'title T8 Codex CLI 登录',
+    'echo.',
+    'echo T8 Codex CLI 登录流程',
+    'echo ------------------------------------------------------------',
+    'echo 1. 如果浏览器打开 OpenAI/Codex 授权页，请在浏览器完成登录。',
+    'echo 2. 如果终端显示验证码或确认链接，请按终端提示完成授权。',
+    'echo 3. 登录完成后回到 T8 画布，点击 Codex 节点里的“刷新”。',
+    'echo.',
+    `echo 即将执行: ${escapeCmdEchoText(commandLine)}`,
+    'echo.',
+    commandLine,
+    'set T8_CODEX_LOGIN_EXIT=%ERRORLEVEL%',
+    'echo.',
+    'if "%T8_CODEX_LOGIN_EXIT%"=="0" (',
+    '  echo Codex 登录命令已结束。请回到 T8 画布点击“刷新”。',
+    ') else (',
+    '  echo Codex 登录命令返回错误码 %T8_CODEX_LOGIN_EXIT%。',
+    '  echo 如果这里没有打开浏览器，请复制节点里的 codex login 命令，在普通 CMD 或 PowerShell 中手动运行。',
+    ')',
+    'echo.',
+    'pause',
+    '',
+  ].join('\r\n');
+  fs.writeFileSync(filePath, content, 'utf8');
+  return filePath;
+}
+
+function startCodexLoginInVisibleTerminal(invocation, options = {}) {
+  const platform = options.platform || process.platform;
+  if (platform !== 'win32') return null;
+  const scriptPath = writeCodexLoginCmdScript(invocation);
+  const child = spawn('cmd.exe', ['/d', '/s', '/c', `start "" ${quoteCmdArg(scriptPath)}`], {
+    cwd: config.BASE_DIR,
+    windowsHide: false,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return {
+    started: true,
+    mode: 'visible-terminal',
+    executable: invocation.executable,
+    command: invocation.commandText,
+    scriptPath,
+    message: '已打开可见的 Codex 登录窗口；请在新窗口或浏览器完成登录，完成后回到节点点击刷新。',
   };
 }
 
 function startCodexLogin(options = {}) {
   const invocation = buildCodexLoginStartInvocation(options);
   try {
+    const visible = startCodexLoginInVisibleTerminal(invocation, options);
+    if (visible) return visible;
     const child = spawnCodexProcess(invocation.args, {
       executablePath: options.executablePath,
       cwd: config.BASE_DIR,
@@ -304,12 +382,15 @@ function startCodexLogin(options = {}) {
     return {
       started: true,
       executable: child.__codexResolved?.executable || invocation.executable,
-      message: '已打开 Codex CLI 登录流程；完成浏览器登录后回到节点点刷新。',
+      command: invocation.commandText,
+      mode: 'background',
+      message: '已打开 Codex CLI 登录流程；完成浏览器登录后回到节点点刷新。若没有任何窗口，请复制 codex login 命令到终端手动运行。',
     };
   } catch (error) {
     return {
       started: false,
       executable: invocation.executable,
+      command: invocation.commandText,
       message: `${CODEX_DISABLED_MESSAGE} ${error?.message || error}`,
     };
   }

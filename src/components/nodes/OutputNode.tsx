@@ -26,6 +26,7 @@ import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
 import ResizableCorners from './ResizableCorners';
 import { saveAssetToDisk } from '../../services/api';
+import { generateImage } from '../../services/generation';
 import {
   createOutputMediaRemovalData,
   createOutputDataFromItem,
@@ -41,6 +42,11 @@ import {
   type ImageCompareCandidate,
 } from '../../utils/imageCompare';
 import { collectMaterialSetBucketsFromData, valueOfMaterialSetItem } from '../../utils/materialSet';
+import {
+  CREATIVE_TARGET_NODE_TYPE,
+  buildAnnotationEditRequest,
+  buildAnnotationEditResultPlacement,
+} from '../../utils/canvasCreativeWorkflow';
 // v1.2.10.5: 节点落点防重叠 —— 双击编辑产出 N 节点 3 列宫格整组避让
 import { placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
@@ -664,12 +670,75 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     rf.addNodes(newNodes);
   };
 
+  const runAnnotationEditProduce = async (
+    cleanUrls: string[],
+    meta: Extract<ImageEditProduceMeta, { type: 'annotation-edit' }>,
+  ) => {
+    const logSource = `annotation-edit-output:${id}`;
+    if (cleanUrls.length < 2) {
+      logBus.warn('标注改图需要同时包含干净原图和标注图', logSource);
+      return;
+    }
+    try {
+      logBus.info('正在按标注说明生成改图结果', logSource);
+      const request = buildAnnotationEditRequest({
+        sourceNodeId: id,
+        sourceImageUrl: cleanUrls[0],
+        annotatedImageUrl: cleanUrls[1],
+        instruction: meta.instruction,
+        annotationTextCount: meta.annotationTextCount,
+        annotationShapeCount: meta.annotationShapeCount,
+        providerId: 'default-image',
+        providerModel: 'gpt-image-2',
+      });
+      const result = await generateImage({
+        model: 'gpt-image-2',
+        apiModel: 'gpt-image-2',
+        prompt: request.prompt,
+        images: request.images,
+        n: 1,
+      });
+      const resultUrls = (Array.isArray(result.urls) ? result.urls : []).map((url) => String(url || '').trim()).filter(Boolean);
+      if (resultUrls.length === 0) throw new Error('标注改图完成但没有返回图片');
+      const sourceNode = rf.getNode(id) || ({
+        id,
+        type: 'output',
+        position: { x: 0, y: 0 },
+        data: d,
+      } as Node);
+      const targetNode = rf.getNodes().find((node) => node.id !== id && node.selected && node.type === CREATIVE_TARGET_NODE_TYPE) || null;
+      const placement = buildAnnotationEditResultPlacement({
+        sourceNode,
+        targetNode,
+        targetMode: 'replace',
+        resultUrls,
+        request,
+      });
+      rf.setNodes((prev) => {
+        const patched = prev.map((node) => {
+          if (placement.targetPatch && targetNode && node.id === targetNode.id) {
+            return { ...node, data: { ...(node.data as any), ...placement.targetPatch }, selected: true };
+          }
+          return placement.outputNode ? { ...node, selected: false } : node;
+        });
+        return placement.outputNode ? [...patched, placement.outputNode] : patched;
+      });
+      logBus.success(targetNode ? '标注改图结果已填入生成目标框' : '标注改图结果已创建到右侧', logSource);
+    } catch (error: any) {
+      logBus.error(error?.message || '标注改图失败', logSource);
+    }
+  };
+
   const handleProduce = (urls: string[], _meta?: OutputProduceMeta) => {
     const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
     const isRhCapabilityOutput = _meta?.type === 'rh-capability';
     const logSource = `rh-image-output:${id}`;
     if (cleanUrls.length === 0) {
       if (isRhCapabilityOutput) logBus.warn(`${_meta.label || 'RH 图像能力'}完成但没有可创建的图像 URL`, logSource);
+      return;
+    }
+    if (_meta?.type === 'annotation-edit') {
+      void runAnnotationEditProduce(cleanUrls, _meta);
       return;
     }
     const me = rf.getNode(id);

@@ -17,6 +17,7 @@ const {
 } = await import('../src/utils/comfyuiWorkflow.ts');
 const {
   buildComfyAppFromWorkflow,
+  comfyAppInputRequirements,
   normalizeComfyAppManifest,
   paramsToProviderParams,
 } = await import('../src/utils/comfyuiApps.ts');
@@ -70,6 +71,25 @@ function jsonResponse(body: any, status = 200) {
     },
     async arrayBuffer() {
       return Buffer.from('PNG').buffer;
+    },
+  };
+}
+
+function fixedNoPromptWorkflow() {
+  return {
+    '1': {
+      class_type: 'SeedVR2Sampler',
+      inputs: {
+        seed: 123,
+        width: 1024,
+        height: 576,
+        steps: 12,
+      },
+      _meta: { title: 'SeedVR2 fixed sampler' },
+    },
+    '9': {
+      class_type: 'SaveImage',
+      inputs: { filename_prefix: 'seedvr2', images: ['1', 0] },
     },
   };
 }
@@ -361,6 +381,58 @@ test('ComfyUI field mappings ignore stale value unless source is fixed', async (
   assert.equal(promptCall.body.prompt['4'].inputs.token, 'keep-fixed-token');
 });
 
+test('ComfyUI image generation submits workflows that do not declare a prompt field', async () => {
+  const calls: any[] = [];
+  const provider = {
+    id: 'comfyui',
+    protocol: 'comfyui',
+    baseUrl: 'http://127.0.0.1:8188',
+    enabled: true,
+    comfyuiConfig: {
+      workflows: [
+        {
+          id: 'fixed-seedvr2',
+          name: 'Fixed SeedVR2',
+          workflowJson: fixedNoPromptWorkflow(),
+          fields: [
+            { nodeId: '1', fieldName: 'seed', source: 'seed' },
+            { nodeId: '1', fieldName: 'width', source: 'width' },
+            { nodeId: '1', fieldName: 'height', source: 'height' },
+          ],
+        },
+      ],
+    },
+  };
+
+  const result = await comfyui.generateImage(provider, {
+    providerModel: 'fixed-seedvr2',
+    size: '1280x720',
+    providerParams: { seed: 456 },
+  }, {
+    pollIntervalMs: 1,
+    fetchImpl: async (url: string, init: any = {}) => {
+      if (String(url).endsWith('/prompt')) {
+        calls.push({ url, init, body: JSON.parse(init.body) });
+        return jsonResponse({ prompt_id: 'pid-fixed' });
+      }
+      return jsonResponse({
+        'pid-fixed': {
+          outputs: {
+            '9': { images: [{ filename: 'fixed.png', type: 'output', subfolder: '' }] },
+          },
+        },
+      });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const promptCall = calls.find((call) => String(call.url).endsWith('/prompt'));
+  assert.equal(promptCall.body.prompt['1'].inputs.seed, 456);
+  assert.equal(promptCall.body.prompt['1'].inputs.width, 1280);
+  assert.equal(promptCall.body.prompt['1'].inputs.height, 720);
+  assert.deepEqual(result.imageUrls, ['http://127.0.0.1:8188/view?filename=fixed.png&type=output&subfolder=']);
+});
+
 test('ComfyUI image generation infers and patches custom workflow fields on submit', async () => {
   const calls: any[] = [];
   let uploadCount = 0;
@@ -508,6 +580,35 @@ test('ComfyUI workflow analyzer recognizes custom prompt, media, model and timel
   assert.equal(analysis.videoInputCount, 1);
   assert.equal(analysis.audioInputCount, 1);
   assert.equal(analysis.outputCount, 1);
+});
+
+test('ComfyUI workflow analyzer does not force plain image-named config fields into upstream image inputs', () => {
+  const workflow = {
+    '1': {
+      class_type: 'SeedVR2Sampler',
+      inputs: {
+        image: 'internal-preview-disabled',
+        image_mode: 'none',
+        seed: 123,
+        steps: 12,
+        width: 1024,
+        height: 576,
+      },
+      _meta: { title: 'SeedVR2 fixed sampler' },
+    },
+    '9': {
+      class_type: 'SaveImage',
+      inputs: { filename_prefix: 'seedvr2', images: ['1', 0] },
+    },
+  };
+  const analysis = analyzeComfyWorkflow(workflow);
+  const app = buildComfyAppFromWorkflow({ title: 'SeedVR2 fixed', workflowJson: workflow });
+  const sourceByNodeField = new Map(analysis.fields.map((field) => [`${field.nodeId}.${field.fieldName}`, field.source]));
+
+  assert.equal(analysis.imageInputCount, 0);
+  assert.equal(sourceByNodeField.get('1.image'), 'image');
+  assert.equal(sourceByNodeField.get('1.image_mode'), 'image_mode');
+  assert.deepEqual(comfyAppInputRequirements(app), { images: 0, videos: 0, audios: 0 });
 });
 
 test('ComfyUI workflow analyzer ignores display-only text outputs when finding positive prompts', () => {

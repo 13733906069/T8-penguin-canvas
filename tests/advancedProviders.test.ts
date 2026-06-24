@@ -23,6 +23,13 @@ test('normalizeAdvancedProviders migrates missing settings to disabled default p
   assert.ok(providers.every((provider: any) => provider.enabled === false));
   assert.equal(providers.find((provider: any) => provider.id === 'modelscope')?.baseUrl, 'https://api-inference.modelscope.cn/v1');
   assert.equal(providers.find((provider: any) => provider.id === 'volcengine')?.baseUrl, 'https://ark.cn-beijing.volces.com/api/v3');
+  assert.equal(providers.find((provider: any) => provider.id === 'agnes')?.baseUrl, 'https://apihub.agnes-ai.com/v1');
+  assert.deepEqual(providers.find((provider: any) => provider.id === 'agnes')?.imageModels, [
+    'agnes-image-2.1-flash',
+    'agnes-image-2.0-flash',
+  ]);
+  assert.deepEqual(providers.find((provider: any) => provider.id === 'agnes')?.videoModels, ['agnes-video-v2.0']);
+  assert.deepEqual(providers.find((provider: any) => provider.id === 'agnes')?.chatModels, ['agnes-2.0-flash']);
   assert.deepEqual(providers.find((provider: any) => provider.id === 'modelscope')?.chatModels, [
     'Qwen/Qwen3-235B-A22B',
     'Qwen/Qwen3-VL-235B-A22B-Instruct',

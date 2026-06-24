@@ -1026,6 +1026,12 @@ function clampInteger(value: any, fallback: number, min: number, max: number) {
 
 const codexLoginCommand = 'codex login';
 const codexInstallCommand = 'npm install -g @openai/codex';
+const CODEX_LOGIN_FLOW_STEPS = [
+  '1. 点击“打开登录”，T8 会在 Windows 上打开一个可见的 Codex 登录窗口。',
+  '2. 按新窗口或浏览器里的 OpenAI / Codex 授权提示完成登录；如果显示验证码或链接，请按终端提示操作。',
+  '3. 登录完成后回到 T8，点击“刷新”，看到“Codex 已就绪”后即可生成。',
+  '如果点击没有弹窗：点“复制登录命令”，在普通 CMD 或 PowerShell 里粘贴运行 codex login；未安装时先复制安装命令。',
+];
 
 function isRouteMissingMessage(message: string) {
   return /后端路由未加载|HTTP\s*404|404\s*\(Not Found\)/i.test(message || '');
@@ -1616,6 +1622,29 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
       .catch((error: any) => logBus.error(error?.message || '复制失败', `codex:${id}`));
   }, [id]);
 
+  const copyCodexSetupCommand = useCallback((value: string, label: string) => {
+    const textValue = String(value || '').trim();
+    if (!textValue) return;
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : null;
+    if (!clipboard?.writeText) {
+      const message = '当前环境不支持直接复制，请手动选中命令复制。';
+      update({ codexLastRunSummary: message });
+      logBus.warn(message, `codex:${id}`);
+      return;
+    }
+    void clipboard.writeText(textValue)
+      .then(() => {
+        const message = `已复制${label}：${textValue}`;
+        update({ codexLastRunSummary: message });
+        logBus.success(message, `codex:${id}`);
+      })
+      .catch((error: any) => {
+        const message = error?.message || `${label}复制失败，请手动选中命令复制。`;
+        update({ codexLastRunSummary: message });
+        logBus.error(message, `codex:${id}`);
+      });
+  }, [id, update]);
+
   const publishArtifact = useCallback((artifact: CodexAgentArtifact | null | undefined) => {
     const prepared = artifact ? normalizeArtifact(artifact) : null;
     if (!prepared) return;
@@ -1702,11 +1731,26 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
   const openCodexLogin = useCallback(async () => {
     if (loginBusy) return;
     setLoginBusy(true);
+    const openingMessage = '正在打开 Codex 登录窗口；如果没有弹出窗口，请复制 codex login 到 CMD 或 PowerShell 手动运行。';
+    setStatus((previous) => ({ ...(previous || { available: false }), available: false, message: openingMessage }));
+    update({ error: '', codexLastRunSummary: openingMessage });
     try {
       const result = await startCodexCliLogin({
         executablePath: String(d.codexExecutablePath || '').trim() || undefined,
       });
-      logBus.info(result.message || '已打开 Codex CLI 登录流程', `codex:${id}`);
+      const message = [
+        result.message || '已打开 Codex CLI 登录流程。',
+        result.command ? `命令：${result.command}` : '',
+        '完成登录后请回到节点点击“刷新”。',
+      ].filter(Boolean).join(' ');
+      setStatus((previous) => ({
+        ...(previous || { available: false }),
+        available: false,
+        executable: result.executable || previous?.executable,
+        message,
+      }));
+      update({ error: '', codexLastRunSummary: message });
+      logBus.info(message, `codex:${id}`);
       setTimeout(() => void refreshStatusAndSkills(), 1600);
     } catch (error: any) {
       const message = friendlyCodexErrorMessage(error?.message || '打开 Codex 登录失败');
@@ -2491,6 +2535,14 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
             ? '可以直接发送创作任务。若生成时提示未登录，请在终端执行登录命令后点刷新。'
             : '首次使用需要先在本机终端登录 Codex CLI。登录完成后回到节点点刷新。'}
       </div>
+      <div className="mt-2 rounded-lg border px-2 py-1.5 text-[10px] leading-relaxed" style={{ borderColor: border, background: bg, color: subText }}>
+        <div className="mb-1 font-black" style={{ color: text }}>登录流程</div>
+        <ol className="m-0 list-decimal space-y-0.5 pl-4">
+          {CODEX_LOGIN_FLOW_STEPS.map((step) => (
+            <li key={step}>{step.replace(/^\d+\.\s*/, '')}</li>
+          ))}
+        </ol>
+      </div>
       {statusDetailMessage && (
         <div className="mt-2 rounded-lg border px-2 py-1.5 text-[10px] leading-relaxed" style={{ borderColor: border, background: bg, color: subText }}>
           检测详情：{statusDetailMessage}
@@ -2510,13 +2562,13 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
           </button>
           <div className="flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5" style={{ borderColor: border, background: bg }}>
             <code className="truncate text-[11px]">{codexLoginCommand}</code>
-            <button type="button" className="nodrag rounded-md px-2 py-1 text-[11px] font-bold" style={buttonStyle} onClick={() => void navigator.clipboard?.writeText?.(codexLoginCommand)}>
+            <button type="button" className="nodrag rounded-md px-2 py-1 text-[11px] font-bold" style={buttonStyle} onClick={() => copyCodexSetupCommand(codexLoginCommand, '登录命令')}>
               复制登录命令
             </button>
           </div>
           <div className="flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5" style={{ borderColor: border, background: bg }}>
             <code className="truncate text-[11px]">{codexInstallCommand}</code>
-            <button type="button" className="nodrag rounded-md px-2 py-1 text-[11px] font-bold" style={buttonStyle} onClick={() => void navigator.clipboard?.writeText?.(codexInstallCommand)}>
+            <button type="button" className="nodrag rounded-md px-2 py-1 text-[11px] font-bold" style={buttonStyle} onClick={() => copyCodexSetupCommand(codexInstallCommand, '安装命令')}>
               复制安装命令
             </button>
           </div>

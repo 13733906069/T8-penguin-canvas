@@ -11,10 +11,12 @@ import {
 } from '@xyflow/react';
 import { useThemeStore } from '../../stores/theme';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
+import { getNodeInputs, getNodeOutputs, type PortType } from '../../config/portTypes';
 
 const SLAMDUNK_BASKETBALL_URL = new URL('../../assets/slamdunk-basketball-v2.png', import.meta.url).href;
 const SOCCER_BALL_URL = new URL('../../assets/soccer-ball-v2.png', import.meta.url).href;
 const DECORATIVE_EDGE_MOTION_LIMIT = 36;
+type FarmEdgeKind = 'rope' | 'water' | 'path';
 
 function isNodeSelectedFromStore(state: any, nodeId: string) {
   const fromLookup = state?.nodeLookup?.get?.(nodeId);
@@ -50,6 +52,19 @@ function edgeDelay(id: string) {
   return `${hash / 1000}s`;
 }
 
+function farmEdgeKindFromPortType(portType: PortType | null | undefined): FarmEdgeKind {
+  if (portType === 'image' || portType === 'video' || portType === 'audio' || portType === 'model3d') return 'water';
+  if (portType === 'any' || portType === 'config' || portType === 'metadata') return 'path';
+  return 'rope';
+}
+
+function inferPortTypeFromNodes(sourceNode: any, targetNode: any): PortType {
+  const outputs = getNodeOutputs(sourceNode);
+  const inputs = getNodeInputs(targetNode);
+  const matched = outputs.find((type) => inputs.includes(type) || type === 'any' || inputs.includes('any'));
+  return matched ?? 'any';
+}
+
 export default function DeletableEdge(props: EdgeProps) {
   const {
     id,
@@ -77,6 +92,9 @@ export default function DeletableEdge(props: EdgeProps) {
   );
   const sourceNode = getNode(source);
   const targetNode = getNode(target);
+  const portType = ((data as any)?.portType || inferPortTypeFromNodes(sourceNode, targetNode)) as PortType;
+  const farmEdgeKind = farmEdgeKindFromPortType(portType);
+  const farmEdgeKindClass = `t8-edge-kind-${farmEdgeKind}`;
   const isRhDuckEdge = Boolean((data as any)?.rhDuckEdge || (targetNode?.data as any)?.rhDuckDecoded);
   const isYyhPortraitHiddenEdge = Boolean(
     (data as any)?.yyhPortraitHiddenEdge ||
@@ -94,6 +112,7 @@ export default function DeletableEdge(props: EdgeProps) {
   const edgeClassName = [
     isRhDuckEdge ? 'rh-duck-edge' : '',
     isYyhPortraitHiddenEdge ? 'yyh-portrait-hidden-edge' : '',
+    farmEdgeKindClass,
     themeActiveClass,
   ].filter(Boolean).join(' ') || undefined;
 
@@ -133,6 +152,17 @@ export default function DeletableEdge(props: EdgeProps) {
   const handleCut = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('penguin:edge-cut-feedback', {
+        detail: {
+          x: e.clientX,
+          y: e.clientY,
+          count: 1,
+          edgeKind: farmEdgeKind,
+          source: 'button',
+        },
+      }));
+    }
     setEdges((eds) => eds.filter((ed) => ed.id !== id));
   };
 
@@ -143,12 +173,16 @@ export default function DeletableEdge(props: EdgeProps) {
         path={edgePath}
         style={style}
         className={edgeClassName}
+        data-t8-edge-kind={farmEdgeKind}
+        data-t8-port-type={portType}
         markerEnd={markerEnd}
         interactionWidth={24}
       />
       {!isYyhPortraitHiddenEdge && (
         <path
-          className={`t8-edge-yyh-red-segment ${themeActiveClass}`.trim()}
+          className={`t8-edge-yyh-red-segment ${farmEdgeKindClass} ${themeActiveClass}`.trim()}
+          data-t8-edge-kind={farmEdgeKind}
+          data-t8-port-type={portType}
           d={edgePath}
           fill="none"
           stroke="transparent"
@@ -201,6 +235,9 @@ export default function DeletableEdge(props: EdgeProps) {
       )}
       {/* 透明的加宽 hit area,捕捉鼠标 hover (BaseEdge 的 interactionWidth 已自带,这里再补一层,确保事件有响应) */}
       <path
+        className={`t8-edge-interaction-path ${farmEdgeKindClass}`.trim()}
+        data-t8-edge-kind={farmEdgeKind}
+        data-t8-port-type={portType}
         d={edgePath}
         fill="none"
         stroke="transparent"
@@ -212,7 +249,9 @@ export default function DeletableEdge(props: EdgeProps) {
       />
       <EdgeLabelRenderer>
         <div
-          className="t8-edge-theme-marker nodrag nopan"
+          className={`t8-edge-theme-marker ${farmEdgeKindClass} nodrag nopan`}
+          data-t8-edge-kind={farmEdgeKind}
+          data-t8-port-type={portType}
           style={{
             position: 'absolute',
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
@@ -222,7 +261,7 @@ export default function DeletableEdge(props: EdgeProps) {
           aria-hidden="true"
         />
         <div
-          className="nodrag nopan"
+          className="t8-edge-cut-label nodrag nopan"
           style={{
             position: 'absolute',
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
@@ -236,7 +275,8 @@ export default function DeletableEdge(props: EdgeProps) {
         >
           <button
             type="button"
-            className="t8-edge-cut-button"
+            className={`t8-edge-cut-button ${farmEdgeKindClass}`}
+            data-t8-edge-kind={farmEdgeKind}
             onClick={handleCut}
             onMouseDown={(e) => e.stopPropagation()}
             title="点击断开连线"

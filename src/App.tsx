@@ -26,6 +26,7 @@ import { materialSetItemsToData, type MaterialSetKind, type MaterialSetItem } fr
 import { workflowManifestToFragment } from './utils/workflowResource';
 import { matchesAnyShortcut } from './utils/keyboardShortcuts';
 import { portraitResourceToNodeData } from './utils/portraitResource';
+import { applyUiFontPreference } from './utils/uiFont';
 import { LocalModalSlot, LocalTopbarSlot } from 'virtual:t8-local-extensions';
 
 const Canvas = lazy(() => import('./components/Canvas'));
@@ -196,7 +197,16 @@ function InfiniteCanvasBootLoading() {
  * 布局: [侧边栏(画布管理 + 节点列表)] [画布主体] + 头部状态栏
  */
 function App() {
-  const { theme, style, templateId, customTemplates, toggleTheme, loadCustomTemplates } = useThemeStore();
+  const {
+    theme,
+    style,
+    templateId,
+    customTemplates,
+    uiFontPreset,
+    customUiFont,
+    toggleTheme,
+    loadCustomTemplates,
+  } = useThemeStore();
   const { load: loadSettings } = useApiKeysStore();
   const shortcuts = useShortcutStore((s) => s.shortcuts);
   const currentTemplate = useMemo(
@@ -396,11 +406,12 @@ function App() {
   useEffect(() => {
     const root = document.documentElement;
     applyThemeTemplate(currentTemplate, theme);
+    applyUiFontPreference(root, uiFontPreset, customUiFont);
     // 全局禁用拼写检查(节点提示词为中文/@变量语法,不需红色波浪线干扰)
     // spellcheck 属性 HTML 标准上是可继承的 → 根上设一次,所有后代 textarea/input 都生效
     root.setAttribute('spellcheck', 'false');
     document.body.setAttribute('spellcheck', 'false');
-  }, [currentTemplate, theme]);
+  }, [currentTemplate, customUiFont, theme, uiFontPreset]);
 
   // 全局 MutationObserver: 为动态挂载的 textarea / input 自动设置 spellcheck=false
   // (Chromium 对 textarea 默认 spellcheck=true,不会从祖先继承 → 需逐个设置)

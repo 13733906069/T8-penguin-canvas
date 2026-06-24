@@ -64,7 +64,7 @@ export interface GenerateExternalImageRequest {
   provider?: AdvancedProviderConfig;
   providerModel?: string;
   model?: string;
-  prompt: string;
+  prompt?: string;
   size?: string;
   width?: number;
   height?: number;

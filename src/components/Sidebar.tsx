@@ -345,6 +345,46 @@ const SAINT_SEIYA_ICON_BY_TYPE: Record<string, string> = {
   'panorama-3d': 'Globe2',
 };
 
+const FARM_STORY_ICON_BY_TYPE: Record<string, string> = {
+  upload: 'PackagePlus',
+  output: 'Wheat',
+  text: 'NotebookText',
+  image: 'Flower2',
+  video: 'Clapperboard',
+  seedance: 'Film',
+  audio: 'Music2',
+  llm: 'BrainCircuit',
+  runninghub: 'Network',
+  'runninghub-wallet': 'BadgeDollarSign',
+  'rh-tools': 'Hammer',
+  'rh-toolbox': 'Wrench',
+  'grok-oauth-agent': 'Bot',
+  'codex-cli-agent': 'TerminalSquare',
+  'codex-image-conjure': 'ImagePlus',
+  'artist-style-master': 'Palette',
+  'anime-tag-master': 'Tags',
+  'frame-pair': 'ScanEye',
+  loop: 'Repeat2',
+  'pick-from-set': 'PackageOpen',
+  resize: 'MoveDiagonal',
+  combine: 'Layers3',
+  'grid-crop': 'Grid3x3',
+  'grid-editor': 'LayoutGrid',
+  idea: 'Lightbulb',
+  bp: 'NotebookTabs',
+  relay: 'ArrowRightLeft',
+  cinematic: 'Clapperboard',
+  'video-motion': 'Route',
+  'multi-angle-visual': 'Orbit',
+  'text-split': 'Scissors',
+  'image-compare': 'ScanSearch',
+  'material-set': 'Package',
+  'drawing-board': 'PenTool',
+  'portrait-master': 'UserRoundCog',
+  'pose-master': 'PersonStanding',
+  'panorama-3d': 'Globe2',
+};
+
 interface SidebarProps {
   onAddNode: (type: NodeType) => void;
 }
@@ -366,6 +406,7 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
     canvases,
     activeId,
     loading: canvasLoading,
+    completionNoticeCanvasIds,
     loadCanvases,
     createCanvas,
     deleteCanvas,
@@ -376,6 +417,7 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const completionNoticeSet = useMemo(() => new Set(completionNoticeCanvasIds), [completionNoticeCanvasIds]);
 
   useEffect(() => {
     loadCanvases();
@@ -422,6 +464,8 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
         ? DRAGON_BALL_ICON_BY_TYPE[n.type] || n.icon
       : visualStyle === 'saint-seiya'
         ? SAINT_SEIYA_ICON_BY_TYPE[n.type] || n.icon
+      : visualStyle === 'farm-story'
+        ? FARM_STORY_ICON_BY_TYPE[n.type] || n.icon
         : n.icon;
     const Icon = (Icons as any)[themedIcon] || Icons.Box;
     const colorHex = COLOR_HEX[n.color] || COLOR_HEX.slate;
@@ -563,11 +607,13 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
               const isActive = c.id === activeId;
               const isEditing = editingId === c.id;
               const needConfirm = confirmDelete === c.id;
+              const hasCompletionNotice = !isActive && completionNoticeSet.has(c.id);
               return (
                 <div
                   key={c.id}
                   onClick={() => !isEditing && setActive(c.id)}
-                  className={`group px-2 py-1 cursor-pointer text-[11px] transition-colors ${
+                  data-canvas-completion-notice={hasCompletionNotice ? 'true' : undefined}
+                  className={`t8-sidebar-canvas-row group px-2 py-1 cursor-pointer text-[11px] transition-colors ${
                     isPixel
                       ? `px-row ${isActive ? 'is-active' : ''}`
                       : `rounded-md ${
@@ -600,7 +646,17 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium">{c.name}</div>
+                        <div className="t8-sidebar-canvas-title flex min-w-0 items-center gap-1">
+                          <span className="truncate font-medium">{c.name}</span>
+                          {hasCompletionNotice && (
+                            <span
+                              className="t8-sidebar-canvas-update-dot"
+                              role="img"
+                              aria-label="这个画布有新生成完成，切换后自动清除"
+                              title="这个画布有新生成完成，切换后自动清除"
+                            />
+                          )}
+                        </div>
                         <div
                           className={`text-[10px] ${
                             isDark ? 'text-white/30' : 'text-zinc-400'

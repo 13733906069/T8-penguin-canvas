@@ -1,0 +1,204 @@
+#t8-web-image-reverse-modal {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483647;
+  width: min(420px, calc(100vw - 32px));
+  color: #14342b;
+  font-family: Inter, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+}
+
+#t8-web-image-reverse-modal * {
+  box-sizing: border-box;
+}
+
+.t8-web-image-card {
+  overflow: hidden;
+  border: 1px solid rgba(92, 157, 128, 0.44);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(251, 255, 249, 0.98), rgba(235, 250, 242, 0.96));
+  box-shadow: 0 16px 40px rgba(20, 52, 43, 0.18), 0 0 0 4px rgba(159, 222, 186, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.t8-web-image-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px 10px;
+  border-bottom: 1px solid rgba(102, 169, 137, 0.22);
+}
+
+.t8-web-image-eyebrow {
+  color: #669178;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.t8-web-image-title {
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.t8-web-image-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(86, 146, 116, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #315b4a;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.t8-web-image-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.t8-web-image-source {
+  width: 100%;
+  max-height: 150px;
+  object-fit: contain;
+  border: 1px solid rgba(102, 169, 137, 0.28);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.t8-web-image-status {
+  min-height: 28px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: rgba(223, 244, 231, 0.78);
+  color: #244c3d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.t8-web-image-status.is-error {
+  background: rgba(255, 232, 224, 0.88);
+  color: #9a3426;
+}
+
+.t8-web-image-section {
+  display: grid;
+  gap: 6px;
+}
+
+.t8-web-image-label {
+  font-size: 12px;
+  font-weight: 900;
+  color: #244c3d;
+}
+
+.t8-web-image-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.t8-web-image-generate {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(66, 135, 99, 0.42);
+  border-radius: 999px;
+  background: #f8fff6;
+  color: #214c3c;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.t8-web-image-generate:not(:disabled):hover {
+  background: #dbf6df;
+  border-color: rgba(52, 128, 82, 0.64);
+}
+
+.t8-web-image-generate:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.t8-web-image-prompt {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  border: 1px solid rgba(92, 157, 128, 0.36);
+  border-radius: 10px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #16362c;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.t8-web-image-results {
+  display: flex;
+  min-height: 74px;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.t8-web-image-result {
+  display: block;
+  flex: 0 0 78px;
+  width: 78px;
+  height: 78px;
+  overflow: hidden;
+  border: 1px solid rgba(80, 142, 111, 0.38);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.t8-web-image-result img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.t8-web-image-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 70px;
+  border: 1px dashed rgba(92, 157, 128, 0.34);
+  border-radius: 10px;
+  color: #5a7c6d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.t8-web-image-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.t8-web-image-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(66, 135, 99, 0.42);
+  border-radius: 999px;
+  background: #f8fff6;
+  color: #214c3c;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.t8-web-image-actions button:not(:disabled):hover {
+  background: #dbf6df;
+  border-color: rgba(52, 128, 82, 0.64);
+}
+
+.t8-web-image-actions button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}

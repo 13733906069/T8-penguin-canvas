@@ -1121,15 +1121,58 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
     return items;
   };
 
-  const refreshStoryboardOutputs = async () => {
-    const recoverable = Object.entries(resultsRef.current).filter(([, result]) => (
-      result.status !== 'success' && result.taskId && !result.videoUrl
-    ));
+  const syncBridgeResultFromState = (bridge: DirectorStoryboardBridge, job: DirectorStoryboardJob): boolean => {
+    const existing = resultsRef.current[job.id] || {};
+    const taskId = existing.taskId || bridge.taskId || null;
+    const videoUrl = existing.videoUrl || bridge.videoUrl || null;
+    if (!taskId && !videoUrl) return false;
+    setJobPatch(job, {
+      status: videoUrl ? 'success' : (existing.status === 'error' ? 'error' : 'polling'),
+      taskId,
+      videoUrl,
+      error: videoUrl ? null : (existing.error || bridge.error || null),
+      progress: videoUrl ? '100%' : (existing.progress || '待查询'),
+    });
+    return true;
+  };
+
+  const refreshStoryboardOutputs = async (options: { bridgeId?: string } = {}) => {
+    const targetBridgeId = options.bridgeId;
+    const targetJobId = targetBridgeId ? `bridge-${targetBridgeId}` : '';
+    const jobsToRefresh = targetBridgeId
+      ? currentOutputPlan.filter((job) => job.id === targetJobId)
+      : currentOutputPlan;
+    if (targetBridgeId) {
+      const bridge = bridgesRef.current.find((item) => item.id === targetBridgeId);
+      const job = jobsToRefresh[0];
+      if (!bridge || !job) {
+        const message = '这个桥接还没有可重新获取的输出记录，请先生成一次桥接。';
+        if (bridge) patchBridge(bridge.id, { error: message });
+        update({ error: message });
+        logBus.warn(`导演分镜台桥接重新获取失败：${message}`, src);
+        return;
+      }
+      if (!syncBridgeResultFromState(bridge, job)) {
+        const message = '这个桥接还没有 taskId 或视频记录，无法重新获取；请先生成桥接。';
+        patchBridge(bridge.id, { error: message });
+        update({ error: message });
+        logBus.warn(`导演分镜台桥接重新获取失败：${message}`, src);
+        return;
+      }
+    } else {
+      for (const bridge of bridgesRef.current) {
+        const job = currentOutputPlan.find((item) => item.id === `bridge-${bridge.id}`);
+        if (job) syncBridgeResultFromState(bridge, job);
+      }
+    }
+
+    const recoverable = jobsToRefresh
+      .map((job) => [job, resultsRef.current[job.id]] as const)
+      .filter(([, result]) => result?.taskId && !result.videoUrl);
     if (recoverable.length > 0) {
       logBus.info(`导演分镜台重新获取：补查 ${recoverable.length} 个已提交任务`, src);
-      await Promise.all(recoverable.map(async ([jobId, result]) => {
-        const job = currentOutputPlan.find((item) => item.id === jobId);
-        if (!job || !result.taskId) return;
+      await Promise.all(recoverable.map(async ([job, result]) => {
+        if (!result?.taskId) return;
         try {
           const query = await querySeedance(result.taskId);
           if (query.status === 'succeeded' && query.videoUrl) {
@@ -1527,7 +1570,15 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
     const toVideo = getShotVideoUrl(activeBridge.toShotId) || activeBridge.nextVideoUrl || '';
     const missingGeneratedVideos = !fromVideo || !toVideo;
     const isActiveBridgeBusy = isBridgeBusy(activeBridge);
+    const isActiveBridgeLocallyPolling = bridgeAbortRefs.current.has(activeBridge.id);
     const readyBridgeCount = bridges.filter((bridge) => bridge.firstFrameUrl && bridge.lastFrameUrl && !isBridgeBusy(bridge)).length;
+    const activeBridgeResult = results[`bridge-${activeBridge.id}`] || {};
+    const canRefreshActiveBridgeOutput = Boolean(
+      activeBridgeResult.taskId
+        || activeBridge.taskId
+        || activeBridgeResult.videoUrl
+        || activeBridge.videoUrl,
+    );
 
     return (
       <div
@@ -1744,6 +1795,16 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
         </div>
         <div className="mt-1.5 flex items-center gap-2 text-[10px]" style={mutedStyle}>
           <span className="min-w-0 flex-1 truncate">{activeBridge.error || (activeBridge.videoUrl ? `已生成：${fileName(activeBridge.videoUrl)}` : '桥接会输出在两个分镜之间。')}</span>
+          <button
+            type="button"
+            onClick={() => void refreshStoryboardOutputs({ bridgeId: activeBridge.id })}
+            disabled={!canRefreshActiveBridgeOutput || isActiveBridgeLocallyPolling}
+            className="nodrag shrink-0 rounded border px-1.5 py-0.5 disabled:opacity-40"
+            style={{ borderColor: 'var(--t8-border-strong, rgba(255,255,255,.18))', color: 'var(--t8-text-main, #f8fafc)' }}
+            title="不重新提交任务，只按当前桥接 taskId 或已生成记录重新获取桥接视频"
+          >
+            重新获取桥接
+          </button>
           <button
             type="button"
             onClick={() => void runBridge()}

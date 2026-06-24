@@ -6,6 +6,7 @@ import { useThemeStore } from '../stores/theme';
 import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings, CloudUploadProvider, CloudUploadTargetConfig } from '../types/canvas';
 import { getRawSettings, resetTaskCompletionSound, testAdvancedProvider, testCloudUploadTarget, uploadTaskCompletionSound } from '../services/api';
 import { playTaskCompletionSound } from '../utils/taskCompletionSound';
+import { UI_FONT_PRESETS, resolveUiFontStack } from '../utils/uiFont';
 import {
   advancedProviderSummary as summarizeAdvancedProviderForm,
   normalizeModelscopeLoraStrength,
@@ -92,6 +93,7 @@ const ADVANCED_PROVIDER_LABELS: Record<AdvancedProviderProtocol, string> = {
   'openai-compatible': 'OpenAI 兼容',
   modelscope: 'ModelScope',
   volcengine: '火山引擎',
+  agnes: 'Agnes AI',
   comfyui: 'ComfyUI',
   'jimeng-cli': '即梦 CLI',
 };
@@ -132,6 +134,15 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     baseUrlPlaceholder: 'https://ark.cn-beijing.volces.com/api/v3',
     keyLabel: '方舟 Ark API Key（生成用，不是 AK/SK）',
   },
+  agnes: {
+    subtitle: '接入 Agnes AI 免费模型 API',
+    description: '适合用 Agnes AI 的免费额度接入 LLM、图像和视频节点。LLM 使用 OpenAI 兼容 /v1/chat/completions 并按长响应等待；图像使用 Agnes 的 OpenAI JSON 图片接口；视频使用 /v1/videos 提交并由 /agnesapi 查询结果。',
+    nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
+    connectionHint: 'Base URL 默认使用 https://apihub.agnes-ai.com/v1；API Key 可在 Agnes 平台的 API Keys 页面创建。填好 Key、启用平台并保存后，在节点的“高级来源”里选择 Agnes AI。',
+    modelHint: '默认模型：LLM agnes-2.0-flash；图像 agnes-image-2.1-flash / agnes-image-2.0-flash；视频 agnes-video-v2.0。图像尺寸跟随图像节点比例/尺寸，视频比例/时长/分辨率会自动换算为 Agnes 宽高和帧数；本机参考图会自动转成可提交给远端任务的 base64 图片内容。',
+    baseUrlPlaceholder: 'https://apihub.agnes-ai.com/v1',
+    keyLabel: 'Agnes AI API Key',
+  },
   comfyui: {
     subtitle: '接入 ComfyUI 工作流',
     description: '默认适合把本机 ComfyUI 的 API Workflow 接到图像节点；开启高危远端开关或由后端环境启用后，也可接入其他可信 ComfyUI 地址。',
@@ -153,6 +164,8 @@ const MODELSCOPE_TOKEN_URLS = {
   cn: 'https://www.modelscope.cn/my/access/token',
   intl: 'https://www.modelscope.ai/my/access/token',
 } as const;
+
+const AGNES_API_KEY_URL = 'https://platform.agnes-ai.com/settings/apiKeys';
 
 const JIMENG_CLI_INSTALL_COMMAND = 'curl -s https://jimeng.jianying.com/cli | bash';
 
@@ -275,7 +288,15 @@ function formatCloudError(error: string, data?: any) {
 }
 
 export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProps) {
-  const { theme, style } = useThemeStore();
+  const {
+    theme,
+    style,
+    uiFontPreset,
+    customUiFont,
+    setUiFontPreset,
+    setCustomUiFont,
+    resetUiFontPreference,
+  } = useThemeStore();
   const { settings, loading, error, load, save, loaded } = useApiKeysStore();
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
@@ -299,6 +320,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedProvidersInput, setAdvancedProvidersInput] = useState<AdvancedProviderConfig[]>([]);
   const [activeAdvancedProviderId, setActiveAdvancedProviderId] = useState<string>('');
+  const [advancedSecretShows, setAdvancedSecretShows] = useState<Record<string, boolean>>({});
   const [advancedDirty, setAdvancedDirty] = useState(false);
   const [advancedTestStatus, setAdvancedTestStatus] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({});
   const [advancedComfyDrafts, setAdvancedComfyDrafts] = useState<Record<string, { workflowJson?: string; fields?: string; excludeRules?: string }>>({});
@@ -311,6 +333,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [taskSoundMessage, setTaskSoundMessage] = useState<string>('');
   const [taskSoundBusy, setTaskSoundBusy] = useState(false);
   const [taskSoundTesting, setTaskSoundTesting] = useState(false);
+  const [customUiFontDraft, setCustomUiFontDraft] = useState<string>('');
   const backupFileInputRef = useRef<HTMLInputElement | null>(null);
   const taskCompletionSoundFileInputRef = useRef<HTMLInputElement | null>(null);
   // 眼睛预览拉取的明文（仅缓存，不提交）
@@ -336,6 +359,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         : [];
       setAdvancedProvidersInput(providers);
       setActiveAdvancedProviderId(providers[0]?.id || '');
+      setAdvancedSecretShows({});
       setAdvancedDirty(false);
       setAdvancedTestStatus({});
       setAdvancedComfyDrafts({});
@@ -350,6 +374,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setTaskSoundMessage('');
       setTaskSoundBusy(false);
       setTaskSoundTesting(false);
+      setCustomUiFontDraft(customUiFont);
       // 回填文件自动保存路径(明文字段，不脱敏)
       setFileSavePathInput((settings as any)?.fileSavePath || '');
       setCanvasAutoSavePathInput((settings as any)?.canvasAutoSavePath || '');
@@ -357,9 +382,16 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setThemeTemplatePathInput((settings as any)?.themeTemplatePath || '');
       setEagleApiBaseInput((settings as any)?.eagleApiBase || '');
     }
-  }, [open, settings]);
+  }, [customUiFont, open, settings]);
 
   if (!open) return null;
+
+  const uiFontPreviewSource = uiFontPreset === 'custom' ? customUiFontDraft : (customUiFontDraft || customUiFont);
+  const activeUiFontStack = resolveUiFontStack(uiFontPreset, uiFontPreviewSource) || 'var(--t8-font-family)';
+  const commitCustomUiFont = () => {
+    if (!customUiFontDraft.trim() && uiFontPreset !== 'custom') return;
+    setCustomUiFont(customUiFontDraft);
+  };
 
   const setInputAt = (f: KeyField, v: string) => {
     setInputs((prev) => ({ ...prev, [f]: v }));
@@ -499,6 +531,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     if (Array.isArray(patch.advancedProviders)) {
       setAdvancedProvidersInput(patch.advancedProviders);
       setActiveAdvancedProviderId(patch.advancedProviders[0]?.id || '');
+      setAdvancedSecretShows({});
       setAdvancedDirty(true);
       setAdvancedOpen(true);
     }
@@ -1262,6 +1295,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const isJimeng = provider.protocol === 'jimeng-cli';
     const isVolc = provider.protocol === 'volcengine';
     const isModelScope = provider.protocol === 'modelscope';
+    const isAgnes = provider.protocol === 'agnes';
     const sectionCls = isPixel
       ? 't8-api-settings-provider-panel border p-3 space-y-4 min-w-0'
       : 't8-api-settings-provider-panel border rounded-xl p-3 sm:p-4 space-y-4 min-w-0';
@@ -1619,22 +1653,34 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             title={isVolc ? '2. 生成连接密钥' : '2. 连接密钥'}
             note={guide?.connectionHint}
           >
-            <label className="space-y-1 block">
-              <span className={`text-[11px] ${labelCls}`}>{guide?.keyLabel || 'API Key / Token'}</span>
-              <input
-                type="password"
-                value={provider.apiKey || ''}
-                onChange={(e) => updateAdvancedProvider(provider.id, { apiKey: e.target.value })}
-                className={fieldInputCls}
-                placeholder={
-                  provider.hasApiKey || provider.apiKey
-                    ? '留空或保留 **** 表示不覆盖后端密钥'
-                    : isVolc
-                      ? '请输入方舟 Ark API Key，不要填 Access Key ID / Secret'
-                      : '请输入 API Key'
-                }
-              />
-            </label>
+            <div className="space-y-1 block">
+              <span className={`block text-[11px] ${labelCls}`}>{guide?.keyLabel || 'API Key / Token'}</span>
+              <div className="t8-api-settings-secret-field">
+                <input
+                  type={advancedSecretShows[provider.id] ? 'text' : 'password'}
+                  value={provider.apiKey || ''}
+                  onChange={(e) => updateAdvancedProvider(provider.id, { apiKey: e.target.value })}
+                  className={fieldInputCls}
+                  autoComplete="off"
+                  placeholder={
+                    provider.hasApiKey || provider.apiKey
+                      ? '留空或保留 **** 表示不覆盖后端密钥'
+                      : isVolc
+                        ? '请输入方舟 Ark API Key，不要填 Access Key ID / Secret'
+                        : '请输入 API Key'
+                  }
+                />
+                <button
+                  type="button"
+                  className="t8-api-settings-secret-toggle t8-api-settings-icon-btn"
+                  onClick={() => setAdvancedSecretShows((prev) => ({ ...prev, [provider.id]: !prev[provider.id] }))}
+                  title={advancedSecretShows[provider.id] ? '隐藏' : '显示明文'}
+                  aria-label={`${guide?.keyLabel || 'API Key / Token'}${advancedSecretShows[provider.id] ? '隐藏' : '显示明文'}`}
+                >
+                  {advancedSecretShows[provider.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
             {isVolc && (
               <div className={guideBoxCls}>
                 <div className="font-bold">该填哪个 Key？</div>
@@ -1670,6 +1716,28 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 >
                   <ExternalLink size={11} /> 获取 Token · 国外
                 </button>
+              </div>
+            )}
+            {isAgnes && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openExternal(AGNES_API_KEY_URL)}
+                    className={linkBtnCls}
+                    title="打开 Agnes AI API Keys 页面"
+                  >
+                    <ExternalLink size={11} /> 获取 Agnes API Key
+                  </button>
+                </div>
+                <div className={guideBoxCls}>
+                  <div className="font-bold">Agnes AI 使用方式</div>
+                  <p>
+                    1. 在 Agnes 平台创建 API Key；2. Base URL 保持 https://apihub.agnes-ai.com/v1；
+                    3. 启用并保存后，在图像 / 视频 / LLM 节点的「高级来源」里选择 Agnes AI。
+                    LLM 响应较慢时后端会继续等待；图像模型使用 OpenAI JSON 返回 URL；视频模型会把本机参考图转成 base64 图片内容后提交到 /v1/videos，并自动轮询 /agnesapi。
+                  </p>
+                </div>
               </div>
             )}
           </AdvancedProviderFormBlock>
@@ -2389,6 +2457,73 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
         {/* 表单 */}
         <div className="t8-api-settings-body p-5 space-y-5 overflow-y-auto">
+          <div className="t8-api-settings-divider pb-1" data-ui-font-settings="true">
+            <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
+              <Settings2 size={14} className="t8-api-settings-icon" />
+              界面字体
+              <span className={`text-[11px] font-normal ${hintCls}`}>· 缩小画布时提升中文小字号清晰度，立即生效</span>
+            </label>
+            <div className={`t8-api-settings-section mt-2 p-3 space-y-3 border ${isPixel ? '' : 'rounded-lg'}`}>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {UI_FONT_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-ui-font-preset={preset.id}
+                    data-active={uiFontPreset === preset.id}
+                    onClick={() => setUiFontPreset(preset.id)}
+                    className={
+                      isPixel
+                        ? 't8-ui-font-option px-btn !block w-full text-left p-2'
+                        : 't8-ui-font-option w-full text-left p-2 rounded-md border transition'
+                    }
+                  >
+                    <span className="block text-xs font-black">{preset.label}</span>
+                    <span className={`mt-1 block text-[10px] leading-snug ${hintCls}`}>{preset.description}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
+                <label className={`block min-w-0 ${labelCls}`}>
+                  <span className="block text-[11px] font-bold mb-1">自定义字体栈</span>
+                  <input
+                    type="text"
+                    value={customUiFontDraft}
+                    onChange={(e) => setCustomUiFontDraft(e.target.value)}
+                    onBlur={commitCustomUiFont}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        commitCustomUiFont();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                    }}
+                    placeholder={'"霞鹜文楷", "Microsoft YaHei UI", sans-serif'}
+                    className={`${inputCls} w-full`}
+                    autoComplete="off"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetUiFontPreference();
+                    setCustomUiFontDraft('');
+                  }}
+                  className={isPixel ? 't8-api-settings-secondary-btn px-btn px-3 py-2' : 't8-api-settings-secondary-btn px-3 py-2 rounded-md border text-xs'}
+                >
+                  恢复推荐
+                </button>
+              </div>
+              <div
+                className={`t8-ui-font-preview border p-3 text-xs leading-relaxed ${isPixel ? '' : 'rounded-lg'}`}
+                data-ui-font-preview="true"
+                style={{ fontFamily: activeUiFontStack }}
+              >
+                <span className="block text-[11px] font-bold">界面字体预览</span>
+                <span>贞贞无限画布 · 节点文字 12px / 14px / 16px · 缩小时看边缘是否清楚</span>
+              </div>
+            </div>
+          </div>
+
           {/* 三套通用 Key */}
           {renderKey(COMMON_KEYS[0], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE}` })}
           <LocalSettingsAddonSlot
@@ -2474,7 +2609,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   className="t8-api-settings-badge px-1.5 py-0.5 text-[10px] rounded border"
                   data-tone={advancedSummary.enabledCount > 0 ? 'success' : 'muted'}
                 >
-                  已启用 {advancedSummary.enabledCount}/{advancedProvidersInput.length || 5}
+                  已启用 {advancedSummary.enabledCount}/{advancedProvidersInput.length || 0}
                 </span>
                 <span className={`text-[10px] ${hintCls}`}>密钥 {advancedSummary.configuredKeyCount}</span>
               </span>
@@ -2491,7 +2626,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             {advancedOpen && (
               <div className="mt-3 space-y-3">
                 <div className={`text-[11px] leading-relaxed ${hintCls}`}>
-                  这里不是必填项。它只用于 ModelScope、火山引擎、ComfyUI、即梦 CLI 和 OpenAI 兼容接口；平台开启后，还需要在具体节点的“高级来源”里选择它才会生效。
+                  这里不是必填项。它只用于 ModelScope、火山引擎、Agnes AI、ComfyUI、即梦 CLI 和 OpenAI 兼容接口；平台开启后，还需要在具体节点的“高级来源”里选择它才会生效。
                   当前状态：已启用 {advancedSummary.enabledCount} 个，已配置密钥 {advancedSummary.configuredKeyCount} 个，ComfyUI {advancedSummary.comfyuiConfigured ? '已填写地址' : '未填写地址'}，即梦 CLI {advancedSummary.jimengConfigured ? '已填写路径' : '未填写路径'}。
                 </div>
                 {advancedProvidersInput.length === 0 ? (

@@ -12,11 +12,14 @@ import {
   Redo2,
   Check,
   Loader2,
+  Scissors,
   Brush,
   Paintbrush,
   Square as SquareIcon,
   Circle as CircleIcon,
   ListOrdered,
+  ArrowRight,
+  Diamond as DiamondIcon,
   Layers as LayersIcon,
   Lock as LockIcon,
   Unlock as UnlockIcon,
@@ -35,6 +38,7 @@ import {
 } from 'lucide-react';
 import { useThemeStore } from '../../stores/theme';
 import { opCrop, opGridCrop, uploadDataUrl, uploadFileBlob } from '../../services/imageOps';
+import { runRhImageCutout } from '../../services/rhToolboxCapabilities';
 import { createMaxCropBoxForAspect, fitCropBoxToAspect, resizeCropBoxWithAspect } from '../../utils/imageCropAspect';
 
 /**
@@ -58,6 +62,7 @@ export type ImageEditProduceMeta =
     }
   | { type: 'mask'; strokeCount: number }
   | { type: 'brush'; strokeCount: number }
+  | { type: 'annotation-edit'; instruction: string; strokeCount: number; annotationTextCount: number; annotationShapeCount: number }
   | { type: 'compose'; layerCount: number; canvasW: number; canvasH: number };
 
 interface Props {
@@ -69,8 +74,20 @@ interface Props {
 
 type EditMode = 'crop' | 'mask' | 'brush' | 'grid' | 'compose';
 type GridSubMode = 'preset' | 'custom';
-type BrushTool = 'free' | 'rect' | 'ellipse' | 'label';
+type BrushTool = 'free' | 'line' | 'arrow' | 'rect' | 'round-rect' | 'ellipse' | 'diamond' | 'label';
+type BrushFillMode = 'stroke' | 'fill';
 type CropAspectPreset = 'free' | '16:9' | '9:16' | '4:3' | '3:4' | '1:1' | 'custom';
+
+const IMAGE_EDIT_BRUSH_TOOLS: Array<{ id: BrushTool; label: string; title: string; icon: 'brush' | 'line' | 'arrow' | 'rect' | 'roundRect' | 'ellipse' | 'diamond' | 'label' }> = [
+  { id: 'free', label: '画笔', title: '自由笔刷', icon: 'brush' },
+  { id: 'line', label: '直线', title: '直线标注', icon: 'line' },
+  { id: 'arrow', label: '箭头', title: '箭头标注', icon: 'arrow' },
+  { id: 'rect', label: '矩形', title: '矩形', icon: 'rect' },
+  { id: 'round-rect', label: '圆角矩形', title: '圆角矩形', icon: 'roundRect' },
+  { id: 'ellipse', label: '圆形', title: '圆形 / 椭圆', icon: 'ellipse' },
+  { id: 'diamond', label: '菱形', title: '菱形标注', icon: 'diamond' },
+  { id: 'label', label: '标号', title: '数字标签', icon: 'label' },
+];
 
 const CROP_ASPECT_PRESETS: Array<{ id: CropAspectPreset; label: string }> = [
   { id: 'free', label: '自由' },
@@ -127,13 +144,18 @@ interface FRect {
   w: number;
   h: number;
 }
+type BrushShapeStrokeKind = 'brush-rect' | 'brush-round-rect' | 'brush-ellipse' | 'brush-diamond';
 /** 矢量化一笔画/一个图形 (fraction 坐标, 跨渲染不失真) */
 type DrawStroke =
   | { kind: 'mask-stroke'; size: number; points: Pt[] }
   | { kind: 'mask-erase'; size: number; points: Pt[] }
   | { kind: 'brush-free'; color: string; size: number; points: Pt[] }
-  | { kind: 'brush-rect'; color: string; size: number; rect: FRect }
-  | { kind: 'brush-ellipse'; color: string; size: number; rect: FRect }
+  | { kind: 'brush-line'; color: string; size: number; start: Pt; end: Pt }
+  | { kind: 'brush-arrow'; color: string; size: number; start: Pt; end: Pt }
+  | { kind: 'brush-rect'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
+  | { kind: 'brush-round-rect'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
+  | { kind: 'brush-ellipse'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
+  | { kind: 'brush-diamond'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
   | { kind: 'brush-label'; color: string; size: number; pos: Pt; text: string };
 
 interface Line {
@@ -150,6 +172,147 @@ interface CropBox {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const EDIT_STAGE_PADDING = 32;
 const EDIT_STAGE_MIN_PREVIEW = 180;
+
+function clampLabelCounter(value: number) {
+  return clamp(Math.round(Number.isFinite(value) ? value : 1), 1, 9999);
+}
+
+function brushShapeKindForTool(tool: BrushTool): BrushShapeStrokeKind | null {
+  if (tool === 'rect') return 'brush-rect';
+  if (tool === 'round-rect') return 'brush-round-rect';
+  if (tool === 'ellipse') return 'brush-ellipse';
+  if (tool === 'diamond') return 'brush-diamond';
+  return null;
+}
+
+function brushRectFromDrag(start: Pt, end: Pt, lockAspect: boolean, naturalSize: { w: number; h: number } | null): FRect {
+  let next = end;
+  if (lockAspect) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const signX = dx < 0 ? -1 : 1;
+    const signY = dy < 0 ? -1 : 1;
+    const maxX = signX > 0 ? 1 - start.x : start.x;
+    const maxY = signY > 0 ? 1 - start.y : start.y;
+    if (naturalSize && naturalSize.w > 0 && naturalSize.h > 0) {
+      const sidePx = Math.min(
+        Math.max(Math.abs(dx) * naturalSize.w, Math.abs(dy) * naturalSize.h),
+        maxX * naturalSize.w,
+        maxY * naturalSize.h,
+      );
+      next = {
+        x: start.x + signX * (sidePx / naturalSize.w),
+        y: start.y + signY * (sidePx / naturalSize.h),
+      };
+    } else {
+      const side = Math.min(Math.max(Math.abs(dx), Math.abs(dy)), maxX, maxY);
+      next = {
+        x: start.x + signX * side,
+        y: start.y + signY * side,
+      };
+    }
+  }
+  return {
+    x: Math.min(start.x, next.x),
+    y: Math.min(start.y, next.y),
+    w: Math.abs(next.x - start.x),
+    h: Math.abs(next.y - start.y),
+  };
+}
+
+function drawRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+) {
+  const r = Math.min(Math.abs(w) / 2, Math.abs(h) / 2, Math.max(0, radius));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawDiamondPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2, y);
+  ctx.lineTo(x + w, y + h / 2);
+  ctx.lineTo(x + w / 2, y + h);
+  ctx.lineTo(x, y + h / 2);
+  ctx.closePath();
+}
+
+function lineArrowHeadLength(size: number) {
+  return Math.max(10, size * 2.4);
+}
+
+function arrowLineEndBeforeHead(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  size: number,
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= 0) return end;
+  const inset = Math.min(length, lineArrowHeadLength(size) * 0.82);
+  return {
+    x: end.x - (dx / length) * inset,
+    y: end.y - (dy / length) * inset,
+  };
+}
+
+function drawLineArrowHead(
+  ctx: CanvasRenderingContext2D,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  size: number,
+) {
+  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  const head = lineArrowHeadLength(size);
+  ctx.beginPath();
+  ctx.moveTo(end.x, end.y);
+  ctx.lineTo(end.x - head * Math.cos(angle - Math.PI / 6), end.y - head * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(end.x - head * Math.cos(angle + Math.PI / 6), end.y - head * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function renderBrushShapePath(
+  ctx: CanvasRenderingContext2D,
+  s: Extract<DrawStroke, { rect: FRect }>,
+  W: number,
+  H: number,
+) {
+  const x = s.rect.x * W;
+  const y = s.rect.y * H;
+  const w = s.rect.w * W;
+  const h = s.rect.h * H;
+  if (s.kind === 'brush-ellipse') {
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);
+    return;
+  }
+  if (s.kind === 'brush-round-rect') {
+    drawRoundedRectPath(ctx, x, y, w, h, Math.min(Math.abs(w), Math.abs(h)) * 0.18);
+    return;
+  }
+  if (s.kind === 'brush-diamond') {
+    drawDiamondPath(ctx, x, y, w, h);
+    return;
+  }
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+}
 
 // 计算切割矩形 (natural 像素), 兼容 等分 / 自定义 两个模式
 function computeRects(
@@ -226,6 +389,9 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [workingSrcUrl, setWorkingSrcUrl] = useState(srcUrl);
+  const [rhCutoutRunning, setRhCutoutRunning] = useState(false);
+  const [rhCutoutMessage, setRhCutoutMessage] = useState<string | null>(null);
 
   // ---- mask / brush ----
   const [maskStrokes, setMaskStrokes] = useState<DrawStroke[]>([]);
@@ -239,6 +405,8 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const [brushTool, setBrushTool] = useState<BrushTool>('free');
   const [brushColor, setBrushColor] = useState('#ff2d55');
   const [brushSize, setBrushSize] = useState(14);
+  const [brushFillMode, setBrushFillMode] = useState<BrushFillMode>('stroke');
+  const [annotationInstruction, setAnnotationInstruction] = useState('');
   const [labelCounter, setLabelCounter] = useState(1);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -286,6 +454,17 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     startPt: Pt;
     pending: DrawStroke | null;
   } | null>(null);
+
+  useEffect(() => {
+    setWorkingSrcUrl(srcUrl);
+    setNaturalSize(null);
+    setRhCutoutMessage(null);
+  }, [srcUrl]);
+
+  const selectedComposeImageLayer = useMemo(() => {
+    if (mode !== 'compose' || selectedIds.length !== 1) return null;
+    return composeLayers.find((layer) => layer.id === selectedIds[0]) || null;
+  }, [composeLayers, mode, selectedIds]);
 
   const setGridGap = useCallback((value: number) => {
     setGap(clamp(Math.round(Number.isFinite(value) ? value : 0), 0, 240));
@@ -617,7 +796,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         w: Math.max(1, Math.round(crop.w * naturalSize.w)),
         h: Math.max(1, Math.round(crop.h * naturalSize.h)),
       };
-      const { imageUrl } = await opCrop(srcUrl, px.x, px.y, px.w, px.h);
+      const { imageUrl } = await opCrop(workingSrcUrl, px.x, px.y, px.w, px.h);
       onProduce([imageUrl], { type: 'crop', rect: px });
       onClose();
     } catch (e: any) {
@@ -646,7 +825,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         return;
       }
       const { urls, layout } = await opGridCrop(
-        srcUrl,
+        workingSrcUrl,
         useCustom ? Math.max(1, ...rects.map((r) => r.row + 1)) : rows,
         useCustom ? Math.max(1, ...rects.map((r) => r.col + 1)) : cols,
         gap,
@@ -813,6 +992,62 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     );
   };
 
+  async function applyRhCutoutToCurrentImage() {
+    if (mode === 'compose' && !selectedComposeImageLayer) {
+      setErrMsg('请先选中一个图像图层再抠图');
+      return;
+    }
+    if (selectedComposeImageLayer?.locked) {
+      setErrMsg('选中图层已锁定，无法抠图');
+      return;
+    }
+    const sourceUrl = selectedComposeImageLayer?.src || workingSrcUrl;
+    if (!sourceUrl) {
+      setErrMsg('缺少可抠图的图片');
+      return;
+    }
+
+    setBusy(true);
+    setRhCutoutRunning(true);
+    setErrMsg(null);
+    setRhCutoutMessage('RH工具箱抠图中...');
+    try {
+      const result = await runRhImageCutout(sourceUrl, {
+        onProgress: (progress) => setRhCutoutMessage(progress.message),
+      });
+
+      if (selectedComposeImageLayer) {
+        pushComposeHistory();
+        updateLayer(selectedComposeImageLayer.id, {
+          src: result.outputUrl,
+          name: `${selectedComposeImageLayer.name || '图层'} RH抠图`,
+        });
+        setSelectedIds([selectedComposeImageLayer.id]);
+      } else {
+        setWorkingSrcUrl(result.outputUrl);
+        const img = await loadImage(result.outputUrl).catch(() => null);
+        if (img) setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+        setMaskStrokes([]);
+        setMaskHistory([]);
+        setMaskRedo([]);
+        setBrushStrokes([]);
+        setBrushHistory([]);
+        setBrushRedo([]);
+        setCustomLines([]);
+        setHistory([]);
+        setCrop({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+      }
+
+      setRhCutoutMessage(`已完成 RH抠图：${result.tool.title}`);
+    } catch (e: any) {
+      setErrMsg(e?.message || 'RH抠图失败');
+      setRhCutoutMessage(null);
+    } finally {
+      setRhCutoutRunning(false);
+      setBusy(false);
+    }
+  }
+
   // 应用 compose: 离屏 canvas 渲染 → toDataURL → uploadDataUrl → onProduce
   async function applyCompose() {
     if (composeLayers.length === 0) {
@@ -859,14 +1094,14 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     }
   }
 
-  // ---- compose 底图初始化: 双击进来的 srcUrl 作为图层 #0 (并以其原图尺寸作为画布默认) ----
+  // ---- compose 底图初始化: 双击进来的当前图作为图层 #0 (并以其原图尺寸作为画布默认) ----
   useEffect(() => {
     if (mode !== 'compose') return;
     if (composeInited) return;
     let cancelled = false;
     (async () => {
       try {
-        const im = await loadImage(srcUrl);
+        const im = await loadImage(workingSrcUrl);
         if (cancelled) return;
         const W = im.naturalWidth || 1024;
         const H = im.naturalHeight || 1024;
@@ -876,7 +1111,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
           id: genLayerId(),
           kind: 'image',
           name: '底图',
-          src: srcUrl,
+          src: workingSrcUrl,
           x: 0,
           y: 0,
           w: cw,
@@ -901,7 +1136,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, srcUrl]);
+  }, [mode, workingSrcUrl]);
 
   // ---- compose 鼠标交互 (move / scale 4 角 / rotate 把手) ----
   const stagePointToCanvas = (clientX: number, clientY: number): { x: number; y: number } | null => {
@@ -1246,25 +1481,40 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       ctx.restore();
       return;
     }
-    if (s.kind === 'brush-rect') {
+    if (s.kind === 'brush-line' || s.kind === 'brush-arrow') {
       ctx.save();
+      const start = { x: s.start.x * W, y: s.start.y * H };
+      const end = { x: s.end.x * W, y: s.end.y * H };
+      const lineEnd = s.kind === 'brush-arrow' ? arrowLineEndBeforeHead(start, end, s.size) : end;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.lineWidth = s.size;
       ctx.strokeStyle = s.color;
-      ctx.strokeRect(s.rect.x * W, s.rect.y * H, s.rect.w * W, s.rect.h * H);
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(lineEnd.x, lineEnd.y);
+      ctx.stroke();
+      if (s.kind === 'brush-arrow') drawLineArrowHead(ctx, start, end, s.size);
       ctx.restore();
       return;
     }
-    if (s.kind === 'brush-ellipse') {
+    if (
+      s.kind === 'brush-rect' ||
+      s.kind === 'brush-round-rect' ||
+      s.kind === 'brush-ellipse' ||
+      s.kind === 'brush-diamond'
+    ) {
       ctx.save();
       ctx.lineWidth = s.size;
-      ctx.strokeStyle = s.color;
-      ctx.beginPath();
-      const cx = (s.rect.x + s.rect.w / 2) * W;
-      const cy = (s.rect.y + s.rect.h / 2) * H;
-      const rx = Math.abs(s.rect.w / 2) * W;
-      const ry = Math.abs(s.rect.h / 2) * H;
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      renderBrushShapePath(ctx, s, W, H);
+      if (s.fillMode === 'fill') {
+        ctx.fillStyle = s.color;
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = s.color;
+        ctx.stroke();
+      }
       ctx.restore();
       return;
     }
@@ -1340,35 +1590,40 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         const stroke: DrawStroke = { kind: 'brush-free', color: brushColor, size: brushSize, points: [pt] };
         setBrushStrokes((arr) => [...arr, stroke]);
         drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
-      } else if (brushTool === 'rect') {
+      } else if (brushTool === 'line' || brushTool === 'arrow') {
         const stroke: DrawStroke = {
-          kind: 'brush-rect',
+          kind: brushTool === 'arrow' ? 'brush-arrow' : 'brush-line',
           color: brushColor,
           size: brushSize,
-          rect: { x: pt.x, y: pt.y, w: 0, h: 0 },
+          start: pt,
+          end: pt,
         };
         setBrushStrokes((arr) => [...arr, stroke]);
         drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
-      } else if (brushTool === 'ellipse') {
-        const stroke: DrawStroke = {
-          kind: 'brush-ellipse',
-          color: brushColor,
-          size: brushSize,
-          rect: { x: pt.x, y: pt.y, w: 0, h: 0 },
-        };
-        setBrushStrokes((arr) => [...arr, stroke]);
-        drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
-      } else if (brushTool === 'label') {
-        const stroke: DrawStroke = {
-          kind: 'brush-label',
-          color: brushColor,
-          size: brushSize,
-          pos: pt,
-          text: String(labelCounter),
-        };
-        setBrushStrokes((arr) => [...arr, stroke]);
-        setLabelCounter((n) => n + 1);
-        drawDragRef.current = null;
+      } else {
+        const shapeKind = brushShapeKindForTool(brushTool);
+        if (shapeKind) {
+          const stroke: DrawStroke = {
+            kind: shapeKind,
+            color: brushColor,
+            size: brushSize,
+            fillMode: brushFillMode,
+            rect: { x: pt.x, y: pt.y, w: 0, h: 0 },
+          };
+          setBrushStrokes((arr) => [...arr, stroke]);
+          drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
+        } else if (brushTool === 'label') {
+          const stroke: DrawStroke = {
+            kind: 'brush-label',
+            color: brushColor,
+            size: brushSize,
+            pos: pt,
+            text: String(labelCounter),
+          };
+          setBrushStrokes((arr) => [...arr, stroke]);
+          setLabelCounter((n) => clampLabelCounter(n + 1));
+          drawDragRef.current = null;
+        }
       }
     }
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -1403,23 +1658,32 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
           next[next.length - 1] = { ...last, points: [...last.points, pt] };
           return next;
         });
-      } else if (brushTool === 'rect' || brushTool === 'ellipse') {
+      } else if (brushTool === 'line' || brushTool === 'arrow') {
+        setBrushStrokes((arr) => {
+          const last = arr[arr.length - 1];
+          if (!last || (last.kind !== 'brush-line' && last.kind !== 'brush-arrow')) return arr;
+          const next = [...arr];
+          next[next.length - 1] = { ...last, end: pt };
+          return next;
+        });
+      } else if (brushShapeKindForTool(brushTool)) {
         setBrushStrokes((arr) => {
           const last = arr[arr.length - 1];
           if (
             !last ||
-            (last.kind !== 'brush-rect' && last.kind !== 'brush-ellipse')
+            (
+              last.kind !== 'brush-rect' &&
+              last.kind !== 'brush-round-rect' &&
+              last.kind !== 'brush-ellipse' &&
+              last.kind !== 'brush-diamond'
+            )
           )
             return arr;
           const next = [...arr];
+          const brushRect = brushRectFromDrag(ctx.startPt, pt, e.shiftKey, naturalSize);
           next[next.length - 1] = {
             ...last,
-            rect: {
-              x: Math.min(ctx.startPt.x, pt.x),
-              y: Math.min(ctx.startPt.y, pt.y),
-              w: Math.abs(pt.x - ctx.startPt.x),
-              h: Math.abs(pt.y - ctx.startPt.y),
-            },
+            rect: brushRect,
           };
           return next;
         });
@@ -1454,7 +1718,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       const maskDataUrl = cv.toDataURL('image/png');
 
       // 原图转存（同步上传一份与 mask 同源）
-      const originUrl = await fetchAndUpload(srcUrl, 'mask-src');
+      const originUrl = await fetchAndUpload(workingSrcUrl, 'mask-src');
       const maskUrl = await uploadDataUrl(maskDataUrl, 'mask');
       onProduce([originUrl, maskUrl], { type: 'mask', strokeCount: maskStrokes.length });
       onClose();
@@ -1471,7 +1735,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     setBusy(true);
     setErrMsg(null);
     try {
-      const img = await loadImage(srcUrl);
+      const img = await loadImage(workingSrcUrl);
       const cv = document.createElement('canvas');
       cv.width = naturalSize.w;
       cv.height = naturalSize.h;
@@ -1485,6 +1749,44 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       onClose();
     } catch (e: any) {
       setErrMsg(e?.message || '应用画板失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyAnnotationEdit() {
+    if (!naturalSize || brushStrokes.length === 0) return;
+    const annotationTextCount = brushStrokes.filter((stroke) => stroke.kind === 'brush-label').length;
+    const annotationShapeCount = brushStrokes.filter((stroke) => stroke.kind !== 'brush-free').length;
+    const instruction = annotationInstruction.trim();
+    if (!instruction && annotationTextCount === 0) {
+      setErrMsg('请补充改图说明，或用标号文字写清楚要怎么改。');
+      return;
+    }
+    setBusy(true);
+    setErrMsg(null);
+    try {
+      const img = await loadImage(workingSrcUrl);
+      const cv = document.createElement('canvas');
+      cv.width = naturalSize.w;
+      cv.height = naturalSize.h;
+      const ctx = cv.getContext('2d');
+      if (!ctx) throw new Error('canvas 不可用');
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      for (const s of brushStrokes) drawStrokeOnCtx(ctx, s, cv.width, cv.height);
+      const dataUrl = cv.toDataURL('image/png');
+      const originUrl = await fetchAndUpload(workingSrcUrl, 'annotation-source');
+      const annotatedUrl = await uploadDataUrl(dataUrl, 'annotation-markup');
+      onProduce([originUrl, annotatedUrl], {
+        type: 'annotation-edit',
+        instruction,
+        strokeCount: brushStrokes.length,
+        annotationTextCount,
+        annotationShapeCount,
+      });
+      onClose();
+    } catch (e: any) {
+      setErrMsg(e?.message || '标注改图失败');
     } finally {
       setBusy(false);
     }
@@ -1585,6 +1887,16 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     textAlign: 'center',
   };
 
+  const renderBrushToolIcon = (icon: (typeof IMAGE_EDIT_BRUSH_TOOLS)[number]['icon']) => {
+    if (icon === 'brush') return <Paintbrush size={13} />;
+    if (icon === 'line') return <Minus size={13} />;
+    if (icon === 'arrow') return <ArrowRight size={13} />;
+    if (icon === 'ellipse') return <CircleIcon size={13} />;
+    if (icon === 'diamond') return <DiamondIcon size={13} />;
+    if (icon === 'label') return <ListOrdered size={13} />;
+    return <SquareIcon size={13} />;
+  };
+
   const ui = (
     <div
       className="img-edit-overlay"
@@ -1670,6 +1982,34 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
             fontSize: 12,
           }}
         >
+          <button
+            type="button"
+            style={btnBase}
+            onClick={applyRhCutoutToCurrentImage}
+            disabled={
+              busy ||
+              (mode === 'compose' && (!selectedComposeImageLayer || selectedComposeImageLayer.locked))
+            }
+            title={
+              mode === 'compose'
+                ? selectedComposeImageLayer
+                  ? selectedComposeImageLayer.locked
+                    ? '选中图层已锁定，无法抠图'
+                    : '调用 RH工具箱自动抠图并替换选中图层'
+                  : '请先选中一个图像图层'
+                : '调用 RH工具箱自动抠图并替换当前图片'
+            }
+          >
+            {rhCutoutRunning ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> RH抠图中...
+              </>
+            ) : (
+              <>
+                <Scissors size={13} /> RH抠图
+              </>
+            )}
+          </button>
           {mode === 'crop' && (
             <>
               <span style={{ color: subText }}>框尺寸</span>
@@ -1880,34 +2220,17 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
           )}
           {mode === 'brush' && (
             <>
-              <button
-                style={tabBtn(brushTool === 'free')}
-                onClick={() => setBrushTool('free')}
-                title="自由笔刷"
-              >
-                <Paintbrush size={13} />
-              </button>
-              <button
-                style={tabBtn(brushTool === 'rect')}
-                onClick={() => setBrushTool('rect')}
-                title="矩形"
-              >
-                <SquareIcon size={13} />
-              </button>
-              <button
-                style={tabBtn(brushTool === 'ellipse')}
-                onClick={() => setBrushTool('ellipse')}
-                title="椭圆"
-              >
-                <CircleIcon size={13} />
-              </button>
-              <button
-                style={tabBtn(brushTool === 'label')}
-                onClick={() => setBrushTool('label')}
-                title="数字标签 (点一下 +1)"
-              >
-                <ListOrdered size={13} />
-              </button>
+              {IMAGE_EDIT_BRUSH_TOOLS.map((tool) => (
+                <button
+                  key={tool.id}
+                  style={{ ...tabBtn(brushTool === tool.id), padding: '0 8px' }}
+                  onClick={() => setBrushTool(tool.id)}
+                  title={tool.id === 'label' ? `${tool.title}：当前 ${labelCounter}，点击后自动 +1` : tool.title}
+                >
+                  {renderBrushToolIcon(tool.icon)}
+                  <span>{tool.label}</span>
+                </button>
+              ))}
               <span style={{ color: subText, marginLeft: 4 }}>颜色</span>
               <input
                 type="color"
@@ -1923,6 +2246,43 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
                   cursor: 'pointer',
                 }}
               />
+              <span style={{ color: subText }}>图形</span>
+              <div role="group" aria-label="图形填充模式" style={{ display: 'inline-flex', gap: 4 }}>
+                <button
+                  type="button"
+                  style={tabBtn(brushFillMode === 'stroke')}
+                  onClick={() => setBrushFillMode('stroke')}
+                  title="形状只画描边"
+                >
+                  描边
+                </button>
+                <button
+                  type="button"
+                  style={tabBtn(brushFillMode === 'fill')}
+                  onClick={() => setBrushFillMode('fill')}
+                  title="矩形、圆形、圆角矩形、菱形使用实心填充"
+                >
+                  实心
+                </button>
+              </div>
+              {brushTool === 'label' && (
+                <>
+                  <span style={{ color: subText }}>编号</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={9999}
+                    value={labelCounter}
+                    onChange={(e) => setLabelCounter(clampLabelCounter(Number(e.target.value)))}
+                    style={{ ...inputStyle, width: 66 }}
+                    aria-label="当前标号数字"
+                    title="下一次点击图片时使用的标号"
+                  />
+                  <button type="button" style={btnBase} onClick={() => setLabelCounter(1)} title="把下一次标号重置为 1">
+                    重置1
+                  </button>
+                </>
+              )}
               <span style={{ color: subText }}>笔刷</span>
               <input
                 type="range"
@@ -2504,7 +2864,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
             {/* eslint-disable-next-line jsx-a11y/alt-text */}
             <img
               ref={imgRef}
-              src={srcUrl}
+              src={workingSrcUrl}
               draggable={false}
               crossOrigin="anonymous"
               onLoad={(e) => {
@@ -2722,6 +3082,9 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
           {errMsg && (
             <div style={{ color: '#EF4444', fontSize: 12, fontWeight: 600 }}>{errMsg}</div>
           )}
+          {!errMsg && rhCutoutMessage && (
+            <div style={{ color: subText, fontSize: 12, fontWeight: 600 }}>{rhCutoutMessage}</div>
+          )}
           <div style={{ flex: 1 }} />
           <button style={btnBase} onClick={onClose} disabled={busy}>
             取消
@@ -2756,22 +3119,54 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
               )}
             </button>
           ) : mode === 'brush' ? (
-            <button
-              style={btnPrimary}
-              onClick={applyBrush}
-              disabled={busy || !naturalSize || brushStrokes.length === 0}
-              title={brushStrokes.length === 0 ? '请先作画' : ''}
-            >
-              {busy ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> 处理中…
-                </>
-              ) : (
-                <>
-                  <Check size={14} /> 应用画板
-                </>
-              )}
-            </button>
+            <>
+              <input
+                className="nodrag"
+                style={{
+                  ...inputStyle,
+                  minWidth: 260,
+                  maxWidth: 420,
+                  flex: '1 1 260px',
+                  width: 'auto',
+                  }}
+                value={annotationInstruction}
+                onChange={(event) => setAnnotationInstruction(event.target.value)}
+                placeholder="改图说明：例如把箭头处换成木牌，移除框线和标注"
+                title="标注改图说明"
+              />
+              <button
+                style={btnBase}
+                onClick={applyBrush}
+                disabled={busy || !naturalSize || brushStrokes.length === 0}
+                title={brushStrokes.length === 0 ? '请先作画' : ''}
+              >
+                {busy ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> 处理中…
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} /> 应用画板
+                  </>
+                )}
+              </button>
+              <button
+                style={btnPrimary}
+                onClick={applyAnnotationEdit}
+                disabled={busy || !naturalSize || brushStrokes.length === 0}
+                title={brushStrokes.length === 0 ? '请先用箭头、框线或文字标注要修改的位置' : '发送干净原图和标注图进行 AI 改图'}
+              >
+                {busy ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> 处理中…
+                  </>
+                ) : (
+                  <>
+                    <Paintbrush size={14} /> 标注改图
+                  </>
+                )}
+              </button>
+            </>
           ) : mode === 'compose' ? (
             <button
               style={btnPrimary}

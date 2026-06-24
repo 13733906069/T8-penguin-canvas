@@ -42,6 +42,7 @@ export const NODE_DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
   upload: { w: 260, h: 360 },
   'model-3d-upload': { w: 260, h: 260 },
   'material-set': { w: 320, h: 300 },
+  'generation-target': { w: 360, h: 260 },
   'drawing-board': { w: 1120, h: 760 },
   video: { w: 320, h: 380 },
   seedance: { w: 320, h: 380 },

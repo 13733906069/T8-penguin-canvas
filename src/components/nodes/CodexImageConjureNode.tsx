@@ -61,6 +61,12 @@ import {
 const STORAGE_KEY = 't8.codexImageConjure.prompts.v1';
 const codexLoginCommand = 'codex login';
 const codexInstallCommand = 'npm install -g @openai/codex';
+const CODEX_LOGIN_FLOW_STEPS = [
+  '1. 点击“打开登录”，T8 会在 Windows 上打开一个可见的 Codex 登录窗口。',
+  '2. 按新窗口或浏览器里的 OpenAI / Codex 授权提示完成登录；如果显示验证码或链接，请按终端提示操作。',
+  '3. 登录完成后回到 T8，点击“刷新”，看到“Codex 已就绪”后即可生成。',
+  '如果点击没有弹窗：点“复制登录命令”，在普通 CMD 或 PowerShell 里粘贴运行 codex login；未安装时先复制安装命令。',
+];
 
 const CODEX_CONJURE_MODELS = [
   { value: 'gpt-5.5', label: 'GPT-5.5（推荐）' },
@@ -396,16 +402,43 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
     downloadJsonFile('codex-image-conjure-prompts.json', exportCodexImagePromptPack(promptState));
   }, [promptState]);
 
+  const copyCodexSetupCommand = useCallback((value: string, label: string) => {
+    const textValue = String(value || '').trim();
+    if (!textValue) return;
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : null;
+    if (!clipboard?.writeText) {
+      update({ codexConjureLastRunSummary: '当前环境不支持直接复制，请手动选中命令复制。' });
+      return;
+    }
+    void clipboard.writeText(textValue)
+      .then(() => update({ codexConjureLastRunSummary: `已复制${label}：${textValue}` }))
+      .catch((error: any) => update({ codexConjureLastRunSummary: error?.message || `${label}复制失败，请手动选中命令复制。` }));
+  }, [update]);
+
   const openCodexLogin = useCallback(async () => {
     if (loginBusy) return;
     setLoginBusy(true);
+    const openingMessage = '正在打开 Codex 登录窗口；如果没有弹出窗口，请复制 codex login 到 CMD 或 PowerShell 手动运行。';
+    setStatus((previous) => ({ ...(previous || { available: false }), available: false, message: openingMessage }));
+    update({ error: '', codexConjureLastRunSummary: openingMessage });
     try {
       const result = await startCodexCliLogin({
         executablePath: String(d.codexExecutablePath || '').trim() || undefined,
       });
+      const message = [
+        result.message || '已打开 Codex CLI 登录流程。',
+        result.command ? `命令：${result.command}` : '',
+        '完成登录后请回到节点点击“刷新”。',
+      ].filter(Boolean).join(' ');
+      setStatus((previous) => ({
+        ...(previous || { available: false }),
+        available: false,
+        executable: result.executable || previous?.executable,
+        message,
+      }));
       update({
         error: '',
-        codexConjureLastRunSummary: result.message || '已打开 Codex CLI 登录流程；完成浏览器登录后回到节点点刷新。',
+        codexConjureLastRunSummary: message,
       });
       setTimeout(() => void refreshStatus(), 1600);
     } catch (error: any) {
@@ -919,6 +952,14 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
           </div>
           <div className="mt-1 text-xs" style={{ color: subText }}>{statusText}</div>
           <div className="mt-1 text-[11px] leading-relaxed" style={{ color: subText }}>{statusHint}</div>
+          <div className="mt-2 rounded-lg border px-2 py-1.5 text-[10px] leading-relaxed" style={{ borderColor: border, background: bg, color: subText }}>
+            <div className="mb-1 font-black" style={{ color: text }}>登录流程</div>
+            <ol className="m-0 list-decimal space-y-0.5 pl-4">
+              {CODEX_LOGIN_FLOW_STEPS.map((step) => (
+                <li key={step}>{step.replace(/^\d+\.\s*/, '')}</li>
+              ))}
+            </ol>
+          </div>
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
             <input
               className="nodrag min-w-0 px-2 py-2 text-xs outline-none"
@@ -942,14 +983,14 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
               {loginBusy ? <Loader2 size={14} className="animate-spin" /> : <TerminalSquare size={14} />}
               {status?.available ? '重新登录' : '打开登录'}
             </button>
-            <button type="button" className="nodrag px-2 py-2 text-xs font-bold" style={buttonStyle} onClick={() => void navigator.clipboard?.writeText?.(codexLoginCommand)}>
+            <button type="button" className="nodrag px-2 py-2 text-xs font-bold" style={buttonStyle} onClick={() => copyCodexSetupCommand(codexLoginCommand, '登录命令')}>
               复制登录命令
             </button>
           </div>
           {!status?.available && (
             <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5" style={{ borderColor: border, background: bg }}>
               <code className="truncate text-[11px]">{codexInstallCommand}</code>
-              <button type="button" className="nodrag rounded-md px-2 py-1 text-[11px] font-bold" style={buttonStyle} onClick={() => void navigator.clipboard?.writeText?.(codexInstallCommand)}>
+              <button type="button" className="nodrag rounded-md px-2 py-1 text-[11px] font-bold" style={buttonStyle} onClick={() => copyCodexSetupCommand(codexInstallCommand, '安装命令')}>
                 复制安装
               </button>
             </div>

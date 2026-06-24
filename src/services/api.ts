@@ -743,7 +743,16 @@ export type AchievementEventType =
   | 'tetris.level_reached'
   | 'tetris.chapter_completed'
   | 'tetris.clean_chapter_completed'
-  | 'tetris.game_over';
+  | 'tetris.game_over'
+  | 'farm.plot_tilled'
+  | 'farm.crop_planted'
+  | 'farm.crop_watered'
+  | 'farm.crop_harvested'
+  | 'farm.order_completed'
+  | 'farm.building_placed'
+  | 'farm.decor_placed'
+  | 'farm.rare_crop'
+  | 'farm.beauty_reward';
 
 export interface AchievementEventPayload {
   type: AchievementEventType;

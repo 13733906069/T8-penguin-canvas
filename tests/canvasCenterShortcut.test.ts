@@ -24,3 +24,13 @@ test('Canvas handles the center shortcut outside editable and selected-node cont
   assert.match(canvas, /matchesAnyShortcut\(shortcuts\['canvas\.center-view'\],\s*e\)/);
   assert.match(canvas, /if\s*\(selectedCount\s*>\s*0\)\s*return;[\s\S]*focusCanvasCenter\(\)/);
 });
+
+test('canvas overview supports extra-small zoom for dense node boards', () => {
+  const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
+
+  assert.match(canvas, /const CANVAS_MIN_ZOOM = 0\.02/);
+  assert.match(canvas, /const CANVAS_OVERVIEW_FIT_OPTIONS = \{[\s\S]*padding:\s*0\.12,[\s\S]*minZoom:\s*CANVAS_MIN_ZOOM,[\s\S]*maxZoom:\s*1\.15,[\s\S]*\}/);
+  assert.match(canvas, /fitView\(\{ \.\.\.CANVAS_OVERVIEW_FIT_OPTIONS, duration: 420 \}\)/);
+  assert.match(canvas, /<ReactFlow[\s\S]*minZoom=\{CANVAS_MIN_ZOOM\}[\s\S]*fitViewOptions=\{CANVAS_OVERVIEW_FIT_OPTIONS\}/);
+  assert.match(canvas, /<Controls[\s\S]*fitViewOptions=\{CANVAS_OVERVIEW_FIT_OPTIONS\}/);
+});

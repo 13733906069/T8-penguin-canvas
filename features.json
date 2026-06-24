@@ -1,7 +1,629 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.2.9",
-  "lastUpdated": "2026-06-17-electron-release-v229",
+  "version": "2.3.4",
+  "lastUpdated": "2026-06-23-v234-electron-release-r510",
+  "electronReleaseV234": {
+    "version": "2.3.4",
+    "status": "electron-release",
+    "date": "2026-06-23",
+    "description": "v2.3.4 Electron 自动更新版：补齐 Cowart 启发画布创作工作流的标注改图执行链路，并增强当前画布资源包 manifest 的资源库、缩略图和生成历史摘要。",
+    "highlights": [
+      "图像编辑画板新增“标注改图”：用户可用箭头、框线、圆形、菱形、标号和文字标出修改意图，一键发送干净原图 + 标注合成图。",
+      "输出素材节点和上传素材节点接入标注改图执行链路，复用现有图像生成代理，默认在当前节点右侧创建干净结果。",
+      "如果用户同时选中生成目标框，标注改图结果会优先填入目标框，延续先摆位置再生成的轻量 Cowart 工作流。",
+      "标注改图结果保留来源节点、干净原图、标注图、说明文字、标注数量、模型信息和结果 URL 等结构化元数据，便于追踪和二次编辑。",
+      "当前画布资源包导出增强：manifest 额外包含资源库分类 / 素材索引、缩略图引用和生成历史摘要，导入时可识别并刷新资源库状态。",
+      "网页图片反推 Chrome 插件源码继续纳入公开发布边界，确保右键反推、生成图片和发送回画布链路不漏。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.4.md",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/styles/content.css",
+      "src/utils/canvasCreativeWorkflow.ts",
+      "src/components/Canvas.tsx",
+      "src/components/nodes/ImageEditModal.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/UploadNode.tsx",
+      "tests/canvasCreativeWorkflow.test.ts",
+      "tests/imageEditAnnotationTools.test.ts",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.4 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.4.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.4.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.4 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.4"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.4，且只能在用户明确要求发布后设置。",
+      "2026-06-23 R510 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.4 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\canvasCreativeWorkflow.test.ts tests\\webImageReverseToCanvas.test.ts tests\\placementShelf.test.ts tests\\themeRegistry.test.ts tests\\imageEditAnnotationTools.test.ts tests\\rhCutoutSurface.test.ts tests\\drawingBoardInteractions.test.ts tests\\drawingBoardCutout.test.ts tests\\rhToolbox.test.ts",
+      "node -c backend\\src\\routes\\externalProviders.js",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.4 npm run dist:release",
+      "npm run release:verify -- v2.3.4"
+    ]
+  },
+  "electronReleaseV233": {
+    "version": "2.3.3",
+    "status": "electron-release",
+    "date": "2026-06-23",
+    "description": "v2.3.3 Electron 自动更新版：发布 Cowart 启发的轻量画布创作工作流，新增生成目标框、选区生成图像、网页反推回填目标框和当前画布资源包 manifest。",
+    "highlights": [
+      "右上快捷栏和画布右键菜单新增“生成目标框”，用户可先摆好 AI 结果位置，再把上游文本/图像或提示词生成结果填入指定框内。",
+      "生成目标框支持替换到框内或保留版本到右侧输出节点，只保存结果 URL、版本记录和来源节点 ID，避免大素材重复写入画布状态。",
+      "网页图片反推回传时如果当前选中生成目标框，图片结果优先填入目标框，提示词模式会写入目标框 prompt，不再额外散落节点。",
+      "选中多个文本、图像或输出素材节点后，右键“选区生成图像”会在选区右侧创建已带提示词和参考图的图像生成节点。",
+      "当前画布资源包导出轻量 JSON manifest，包含画布状态、素材引用、缺失报告和可复制文件列表，不写入 base64、大文件内容、API Key 或私有配置。",
+      "标注改图请求契约会同时保留干净原图和标注合成图，要求模型应用标注意图并移除箭头、框线、标号和编辑痕迹。",
+      "网页图片反推 Chrome 插件源码继续纳入公开发布边界，确保右键反推、生成图片和发送回画布链路不漏。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.3.md",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/styles/content.css",
+      "src/utils/canvasCreativeWorkflow.ts",
+      "src/components/nodes/GenerationTargetNode.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/CanvasToolbar.tsx",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/utils/nodePlacement.ts",
+      "src/types/canvas.ts",
+      "src/styles/index.css",
+      "tests/canvasCreativeWorkflow.test.ts",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.3 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.3.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.3.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.3 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.3"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.3，且只能在用户明确要求发布后设置。",
+      "2026-06-23 R509 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.3 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\canvasCreativeWorkflow.test.ts tests\\webImageReverseToCanvas.test.ts tests\\placementShelf.test.ts tests\\themeRegistry.test.ts tests\\imageEditAnnotationTools.test.ts tests\\rhCutoutSurface.test.ts tests\\drawingBoardInteractions.test.ts tests\\drawingBoardCutout.test.ts tests\\rhToolbox.test.ts",
+      "node -c backend\\src\\routes\\externalProviders.js",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.3 npm run dist:release",
+      "npm run release:verify -- v2.3.3"
+    ]
+  },
+  "electronReleaseV232": {
+    "version": "2.3.2",
+    "status": "electron-release",
+    "date": "2026-06-23",
+    "description": "v2.3.2 Electron 自动更新版：继续收口 v2.3.1 后的网页图片反推插件、RH 自动抠图、放置栏隐藏、主题折叠避让和牧场物语连线层级反馈。",
+    "highlights": [
+      "网页图片反推插件修正发送模式：只发图片不再同时发送提示词，图文一起发送时提示词写入输出素材节点，只发提示词仍生成文本节点。",
+      "网页图片反推浮层新增“生成图片”按钮，用户可修改反推提示词后直接按当前提示词调用 T8 后端 ModelScope 生图，并把新图发送回画布。",
+      "ModelScope 网页反推后端固定使用 qwen-web 同款 Qwen/Qwen3-VL-235B-A22B-Instruct 视觉模型，并在模型返回无法读取图片时停止继续生图。",
+      "画板节点和图像编辑弹窗新增 RH 自动抠图，调用 RH 工具箱高清抠图应用层，结果直接替换选中图片或当前底图。",
+      "图像编辑按住 Shift 绘制矩形、圆形、圆角矩形和菱形时按原图自然像素比例锁定，竖图上也能画出正圆和正方形。",
+      "左下放置栏可从截图位置的小按钮隐藏，也可从左侧统一控制条展开/折叠；新加入节点会自动恢复放置栏。",
+      "侧边栏收缩后，牧场物语顶部看板 / 快捷栏 / 公告栏和圣斗士顶部栏会避让折叠按钮，不再重叠。",
+      "牧场物语主题修复 ReactFlow 端口、缩放点和连线剪裁点层级，入口/出口不会被节点内容吞掉，剪裁点不会盖在节点内容上。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.2.md",
+      "backend/src/routes/externalProviders.js",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/styles/content.css",
+      "src/components/Canvas.tsx",
+      "src/components/edges/DeletableEdge.tsx",
+      "src/components/nodes/DrawingBoardNode.tsx",
+      "src/components/nodes/ImageEditModal.tsx",
+      "src/styles/index.css",
+      "src/styles/theme-farm-story.css",
+      "src/styles/theme-saintseiya.css",
+      "tests/imageEditAnnotationTools.test.ts",
+      "tests/placementShelf.test.ts",
+      "tests/rhCutoutSurface.test.ts",
+      "tests/themeRegistry.test.ts",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.2 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.2.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.2.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.2 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.2"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "新的网页图片反推 Chrome 插件源码必须进入公开提交：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/styles/content.css；但浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.2，且只能在用户明确要求发布后设置。",
+      "2026-06-23 R507 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.2 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\webImageReverseToCanvas.test.ts tests\\placementShelf.test.ts tests\\themeRegistry.test.ts tests\\imageEditAnnotationTools.test.ts tests\\rhCutoutSurface.test.ts tests\\drawingBoardInteractions.test.ts tests\\drawingBoardCutout.test.ts tests\\rhToolbox.test.ts",
+      "node -c backend\\src\\routes\\externalProviders.js",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "T8_RELEASE_APPROVAL=release-2.3.2 npm run dist:release",
+      "npm run release:verify -- v2.3.2"
+    ]
+  },
+  "cowartInspiredCanvasWorkflow": {
+    "version": "2.3.4",
+    "status": "electron-release",
+    "date": "2026-06-23",
+    "description": "Cowart 启发的轻量画布创作工作流已随 v2.3.4 Electron 自动更新版补齐：生成目标框、选区 AI 上下文、网页反推回填目标框、标注改图执行链路和当前画布资源包增强 manifest 已形成可用闭环。",
+    "sourceFiles": [
+      "src/utils/canvasCreativeWorkflow.ts",
+      "src/components/nodes/GenerationTargetNode.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/CanvasToolbar.tsx",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/utils/nodePlacement.ts",
+      "src/styles/index.css",
+      "tests/canvasCreativeWorkflow.test.ts",
+      "src/components/nodes/ImageEditModal.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/UploadNode.tsx",
+      "tests/imageEditAnnotationTools.test.ts"
+    ],
+    "capabilities": [
+      "右上快捷栏和画布右键菜单可创建“生成目标框”，用户先摆好位置、尺寸和提示词，再选择替换到框内或保留版本到右侧输出节点。",
+      "生成目标框可接收上游文本和图像参考，运行时复用现有 /api/proxy/image 生图链路，结果只保存 URL、版本记录和来源节点 ID。",
+      "网页图片反推回传时如果当前选中生成目标框，图片结果优先填入目标框，提示词模式会写入目标框 prompt，不再额外铺开节点。",
+      "选中多个文本/图像/输出节点后，右键可在选区右侧创建已带提示词和参考图的图像生成节点，保持选区包围盒和默认落点逻辑。",
+      "图像编辑画板可直接“标注改图”，输出干净原图和标注合成图；输出素材节点与上传素材节点会调用图像生成链路生成干净改图结果。",
+      "标注改图结果默认落在来源节点右侧；如果用户选中生成目标框，则结果优先写入目标框，并保留 annotationEdit 结构化元数据。",
+      "当前画布资源包导出默认生成轻量 JSON manifest，包含 canvas、资源清单、缺失报告、资源库快照、缩略图引用和生成历史摘要，不写入 base64、大文件内容、API Key 或私有配置。"
+    ],
+    "verification": [
+      "node --test tests\\canvasCreativeWorkflow.test.ts tests\\imageEditAnnotationTools.test.ts tests\\webImageReverseToCanvas.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.4 npm run dist:release",
+      "npm run release:verify -- v2.3.4"
+    ]
+  },
+  "electronReleaseV231": {
+    "version": "2.3.1",
+    "status": "electron-release",
+    "date": "2026-06-22",
+    "description": "v2.3.1 Electron 自动更新版：集中发布 v2.3.0 后的用户反馈修复，覆盖 Agnes AI、ModelScope 网页图片反推、生成历史记录、牧场物语主题面板与画板布局、图像编辑常用形状、界面字体设置、ComfyUI 输入约束和复制粘贴落点。",
+    "highlights": [
+      "ModelScope 网页图片右键反推会先由后端下载普通 http(s) 图片并转成 data:image base64 再发送给视觉模型，避免外链不可读时生成与原图无关的提示词。",
+      "Agnes AI 扩展平台补齐 LLM、图像、视频调用链路；视频节点支持比例、分辨率、时长、帧率和帧数覆盖，并强化任务失败信息与临时限流重试。",
+      "右上快捷栏新增历史记录入口，按图像、视频、音频、文本和 3D 分类查看当前画布生成内容；记录层只保存轻量索引，避免大素材重复写入画布状态。",
+      "牧场物语主题修复右侧控制台双栏展开、折叠态顶部看板、公告栏位置、画布提示气泡、画板节点底部高度和快捷工具独立操作等问题。",
+      "牧场物语主题建筑美术资源与可放置预览继续美化，减少默认几何占位感，更贴近轻量牧场经营画风。",
+      "图像编辑与画板节点补齐直线、箭头、矩形、圆角矩形、圆形、菱形等常用形状，支持实心填充和 Shift 等比例绘制，并修正箭头三角端点位置。",
+      "3D 全景节点比例选项收敛为 21:9、2:1 和自定义，减少生成全景时的无关比例干扰。",
+      "设置页新增界面字体设置能力，支持更适合大画布缩放阅读的默认字体与自定义字体。",
+      "ComfyUI 超市 / 工作流导入不再强制要求上游图片或提示词，按工作流映射配置决定需要的输入。",
+      "跨画布生成完成时，非当前画布在左侧列表显示轻量红点提醒，切换到对应画布后自动清除。",
+      "复制 / 连边粘贴到鼠标位置时，复制内容包围盒左上角对齐鼠标，不再让节点中心落在鼠标处。",
+      "修复高层弹窗上方残留左侧快捷栏搜索按钮的问题，避免浮层被画布悬浮控件穿透。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.1.md",
+      "backend/src/providers/agnes.js",
+      "backend/src/providers/adapters.js",
+      "backend/src/providers/comfyui.js",
+      "backend/src/providers/registry.js",
+      "backend/src/routes/externalProviders.js",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/styles/content.css",
+      "src/App.tsx",
+      "src/components/ApiSettings.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/CanvasToolbar.tsx",
+      "src/components/FarmCanvasLayer.tsx",
+      "src/components/FarmStoryPanel.tsx",
+      "src/components/GenerationHistoryPanel.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/nodes/DrawingBoardNode.tsx",
+      "src/components/nodes/ImageEditModal.tsx",
+      "src/components/nodes/Panorama3DNode.tsx",
+      "src/components/nodes/VideoNode.tsx",
+      "src/components/nodes/useUpdateNodeData.ts",
+      "src/services/comfyuiApps.ts",
+      "src/services/generation.ts",
+      "src/stores/canvas.ts",
+      "src/stores/theme.ts",
+      "src/styles/index.css",
+      "src/styles/theme-farm-story.css",
+      "src/types/canvas.ts",
+      "src/utils/advancedProviders.ts",
+      "src/utils/canvasClipboard.ts",
+      "src/utils/comfyuiWorkflow.ts",
+      "src/utils/farmCanvas.ts",
+      "src/utils/generationHistory.ts",
+      "src/utils/panorama3d.ts",
+      "src/utils/uiFont.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.1 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.1.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.1.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.1 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.1"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.1，且只能在用户明确要求发布后设置。",
+      "2026-06-22 R506 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.1 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\canvasClipboard.test.ts",
+      "node --test tests\\webImageReverseToCanvas.test.ts tests\\agnesProvider.test.ts tests\\generationHistory.test.ts tests\\imageEditAnnotationTools.test.ts tests\\drawingBoardInteractions.test.ts tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\advancedProviders.test.ts tests\\advancedProviderFrontend.test.ts tests\\comfyuiProvider.test.ts tests\\comfyuiAppsManifest.test.ts tests\\panorama3d.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "T8_RELEASE_APPROVAL=release-2.3.1 npm run dist:release",
+      "npm run release:verify -- v2.3.1"
+    ]
+  },
+  "canvasPasteTopLeftAnchor": {
+    "version": "2.3.0-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-22",
+    "description": "修复画布节点复制粘贴到鼠标位置时以节点中心对齐的问题，普通粘贴和连边粘贴现在以复制内容包围盒左上角对齐鼠标落点。",
+    "sourceFiles": [
+      "src/utils/canvasClipboard.ts",
+      "tests/canvasClipboard.test.ts",
+      "features.json",
+      "skill.md"
+    ],
+    "capabilities": [
+      "Ctrl+V / Ctrl+Shift+V 粘贴到鼠标位置时，复制包围盒左上角对齐当前画布鼠标锚点，不再让节点中心落在鼠标处。",
+      "多选节点、整组节点和未测量尺寸节点仍保持原相对间距，整体作为一个视觉单元移动。",
+      "Ctrl+D 快速复制继续使用旧的 40x40 固定偏移，避免影响快速复制肌肉记忆。"
+    ],
+    "verification": [
+      "node --test tests\\canvasClipboard.test.ts"
+    ]
+  },
+  "webImageReverseVisionDataUrlFix": {
+    "version": "2.3.0-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-22",
+    "description": "网页图片右键反推修复：普通 http(s) 图片进入 ModelScope 视觉模型前，后端先下载校验并转为 data:image base64，避免视觉模型拿不到原图后生成无关提示词。",
+    "sourceFiles": [
+      "backend/src/routes/externalProviders.js",
+      "tests/webImageReverseToCanvas.test.ts",
+      "features.json",
+      "skill.md"
+    ],
+    "capabilities": [
+      "保持浮层和返回画布使用原始 sourceImageUrl 展示来源图，但视觉模型实际收到的是后端读取后的 data URL。",
+      "远程图片下载带 30 秒超时、image content-type / 扩展名校验和 20MB 上限，避免把不可识别内容或过大文件送入反推链路。",
+      "默认反推指令补充“必须基于可见内容，读不到不要编造”，减少无法取图时产生与原图无关的提示词。",
+      "回归测试新增普通 http 图片场景，断言 /v1/chat/completions 的 image_url.url 不再是原始 URL，而是 data:image/png;base64。"
+    ],
+    "verification": [
+      "node --test tests\\webImageReverseToCanvas.test.ts"
+    ]
+  },
+  "farmPanelClosedParityDrawingBoardFrame": {
+    "version": "2.3.0-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-22",
+    "description": "牧场物语主题修复右侧控制台折叠后顶部牧场看板异常展开的问题，并让画板节点主体按真实主题头部高度自适应，避免最后一层区域比前面短。",
+    "sourceFiles": [
+      "src/components/FarmStoryPanel.tsx",
+      "src/styles/theme-farm-story.css",
+      "src/components/nodes/DrawingBoardNode.tsx",
+      "tests/farmCanvas.test.ts",
+      "tests/themeRegistry.test.ts",
+      "tests/drawingBoardInteractions.test.ts"
+    ],
+    "capabilities": [
+      "顶部牧场看板在右侧控制台展开和折叠时都保持 monitor 信息白名单，只额外通过 panel-state 标记 open / closed，不再因折叠态显示木材、石头、工具等二级信息。",
+      "折叠态顶部牧场看板继续避让右侧控制台宽度和顶部工具栏，避免切到右侧快捷栏或异常撑宽。",
+      "画板节点主体改为 flex 填充剩余高度，不再硬编码扣除 58px 头部高度，牧场物语主题下左侧图层 / 当前图层 / 底部操作区高度保持一致。"
+    ],
+    "verification": [
+      "node --test tests\\drawingBoardInteractions.test.ts",
+      "node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts",
+      "node --test tests\\themeRegistry.test.ts",
+      "npm run type-check"
+    ]
+  },
+  "generationHistoryShortcut": {
+    "version": "2.3.0-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-22",
+    "description": "快捷栏新增历史记录入口，按图像、视频、音频、文本和 3D 分类查看当前画布已生成内容，并以轻量索引方式避免大素材重复写入画布状态。",
+    "sourceFiles": [
+      "src/utils/generationHistory.ts",
+      "src/components/GenerationHistoryPanel.tsx",
+      "src/components/CanvasToolbar.tsx",
+      "src/components/Canvas.tsx",
+      "src/styles/index.css",
+      "tests/generationHistory.test.ts"
+    ],
+    "capabilities": [
+      "右上快捷栏新增历史记录按钮，按钮显示当前画布可查看的历史数量，打开后只控制历史抽屉，不联动展开右侧工具栏或其他面板。",
+      "历史记录从当前画布节点数据派生轻量索引，只保存 URL、来源节点、标题和短文本预览，不复制图片、视频、音频、3D 文件本体或长文本正文。",
+      "历史抽屉支持全部、图像、视频、音频、文本、3D 分类；图片懒加载，视频仅 metadata 预载，音频不预载，长列表分页显示更多。",
+      "每条历史记录支持定位来源节点，复用画布节点中心定位能力并选中来源节点，方便从历史内容回到生成位置。",
+      "索引层设置总量、单分类和首屏可见上限，避免大量生成记录导致抽屉一次性渲染过多内容。"
+    ],
+    "verification": [
+      "node --test tests\\generationHistory.test.ts",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "webImageReverseToCanvas": {
+    "version": "2.3.0-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-22",
+    "description": "新增 Chrome 扩展式网页图片右键反推生图链路：网页图片右键可调用 T8 后端 ModelScope 视觉模型反推提示词，再调用 ModelScope 生图，并把提示词、生成图片或两者一起发送回当前画布。",
+    "sourceFiles": [
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/styles/content.css",
+      "backend/src/routes/externalProviders.js",
+      "src/components/Canvas.tsx",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "capabilities": [
+      "Chrome Manifest V3 扩展新增图片右键菜单，注入网页浮层展示原图、反推提示词、生成图像和发送按钮。",
+      "后端新增 /api/proxy/external/web-image，默认使用已启用的 ModelScope 扩展平台配置，先走 Qwen/Qwen3-VL-235B-A22B-Instruct 多模态 chat/completions 反推，再复用现有 ModelScope images/generations 异步生图和本地输出保存链路。",
+      "网页浮层支持三种发送模式：只发送提示词、只发送生成图片、提示词和生成图片一起发送。",
+      "发送回画布通过受控 window postMessage 完成，Canvas 端只接收 source=t8-web-image-extension 的 t8:web-image-result 消息，并按 messageId 去重；提示词生成文本节点，图片生成输出素材节点。",
+      "对 blob: 网页图片做内容脚本侧 data URL 转换；普通 http(s) 图片由后端下载校验并转为 data:image base64 后再发送给视觉模型，data:image 保持直传。"
+    ],
+    "verification": [
+      "node --test tests\\webImageReverseToCanvas.test.ts",
+      "node --test tests\\webImageReverseToCanvas.test.ts tests\\externalProvidersGenerationRoute.test.ts tests\\advancedProviders.test.ts tests\\advancedProviderFrontend.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "真实 ModelScope Key 通过本地环境变量完成 /api/proxy/external/web-image 联调：Qwen/Qwen3-VL-235B-A22B-Instruct 成功反推中文提示词，Tongyi-MAI/Z-Image-Turbo 成功生成 1 张图并保存本地输出；Key 未写入源码、配置或测试文件。",
+      "Headless Chrome CDP 冒烟通过：打开 http://127.0.0.1:11422 后模拟 t8:web-image-result，ReactFlow 节点数从 2 增至 4，并可见网页反推提示词。"
+    ]
+  },
+  "agnesAdvancedProvider": {
+    "version": "2.3.0-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-22",
+    "description": "扩展 API 新增 Agnes AI 免费模型 API 接入，覆盖 LLM、图像和视频节点；设置页提供 Base URL、API Keys 页面、模型与基础使用说明，视频节点增加 Agnes 专用帧率 / 帧数参数控制。",
+    "sourceFiles": [
+      "backend/src/providers/agnes.js",
+      "backend/src/providers/adapters.js",
+      "backend/src/providers/registry.js",
+      "src/components/ApiSettings.tsx",
+      "src/components/nodes/VideoNode.tsx",
+      "src/types/canvas.ts",
+      "src/utils/advancedProviders.ts",
+      "tests/agnesProvider.test.ts",
+      "tests/advancedProviderFrontend.test.ts",
+      "tests/advancedProviders.test.ts"
+    ],
+    "capabilities": [
+      "内置 Agnes AI 扩展提供商，默认 Base URL 为 https://apihub.agnes-ai.com/v1，默认模型为 agnes-2.0-flash、agnes-image-2.1-flash / agnes-image-2.0-flash、agnes-video-v2.0。",
+      "LLM 节点走 OpenAI 兼容 /v1/chat/completions，图像节点走 /v1/images/generations 并使用 OpenAI JSON URL 返回模式。",
+      "视频节点走 /v1/videos 提交异步任务，轮询 /agnesapi，并兼容 Agnes 官方 completed 结果字段 remixed_from_video_id 作为最终 video/mp4 URL；本机 /files/input 或 127.0.0.1 参考图会先转成 Agnes 视频接口接受的 base64 图片内容，避免远端任务访问不到本地地址。",
+      "设置页新增 Agnes AI 使用说明和 API Keys 页面入口；保存并启用后，用户可在图像 / 视频 / LLM 节点的高级来源选择 Agnes AI。",
+      "Agnes 视频参数支持比例、分辨率、时长、帧率和 8n+1 帧数覆盖，默认按节点设置自动换算 width、height、num_frames 和 frame_rate。",
+      "Agnes LLM 适配按长响应等待，不再落回 OpenAI 兼容适配器 8 秒默认超时；视频任务失败会展开上游 error/message 对象，避免显示 [object Object]，轮询遇到 HTTP 429/临时 5xx 时继续等待下一轮。",
+      "真实外部验证已使用本地配置 Key 完成，Key 未写入源码、配置或测试文件。"
+    ],
+    "verification": [
+      "node --test tests\\agnesProvider.test.ts tests\\advancedProviders.test.ts tests\\advancedProviderFrontend.test.ts tests\\advancedProviderSettingsRoute.test.ts tests\\externalProvidersGenerationRoute.test.ts tests\\openaiCompatibleProvider.test.ts",
+      "node -c backend\\src\\providers\\agnes.js; node -c backend\\src\\providers\\registry.js; node -c backend\\src\\providers\\adapters.js",
+      "真实 Agnes LLM adapter 调用 agnes-2.0-flash 返回 T8 Agnes adapter LLM OK（验证长超时有效）",
+      "真实 Agnes 图像 adapter 调用 agnes-image-2.1-flash 返回 platform-outputs.agnes-ai.space 图片 URL",
+      "真实 Agnes 视频 adapter 调用 agnes-video-v2.0 + 本机 /files/input 参考图任务轮询 completed 后返回 platform-outputs.agnes-ai.space video/mp4，HEAD 200 且 content-type 为 video/mp4；本机参考图 base64 转换与 429 轮询重试由 tests\\agnesProvider.test.ts 锁定"
+    ]
+  },
+  "electronReleaseV230": {
+    "version": "2.3.0",
+    "status": "electron-release",
+    "date": "2026-06-22",
+    "description": "v2.3.0 Electron 自动更新版：牧场物语主题阶段性可玩版本已完成本地验收、Electron 打包与 GitHub Release 发布；v2.3.0 现在作为 latest.yml 自动更新源，安装继续使用前台 NSIS 向导。",
+    "highlights": [
+      "新增第 13 套强识别主题「牧场物语主题」：草地网格、木牌节点、农具端口、麻绳 / 水渠 / 田埂连线、镰刀剪线、牧场 MiniMap 标记和主题音乐 preset。",
+      "新增全画布牧场养成层：用户可在 ReactFlow 世界坐标里开垦、播种、浇水、过天、收获、完成订单、建造建筑、放置装饰和移动对象，不限制在小面板内。",
+      "牧场玩法形成 10 分钟闭环：初始资源、4 种作物、金币 / 种子 / 水量 / 木材 / 石头、每日订单、天气 / 节庆、轻量惊喜事件、长期目标、漂亮度评分和成就摘要。",
+      "牧场控制台重排为“上方监控看板 + 右侧可折叠控制台 + 顶部快捷工具”，减少面板堆叠和找按钮成本；右侧栏目默认折叠并持久化用户习惯。",
+      "顶部快捷工具新增牧场控制台按钮，并把常用操作映射到信息栏下方：选择、锄地、播种、浇水、收获、铲除、建造、装饰、移动、删除。",
+      "修复牧场主题点击落点漂移，牧场对象使用 ReactFlow 世界坐标和视口转换，画布缩放 / 平移后点击位置与实际落点一致。",
+      "道路和木栅栏支持自动衔接视觉，单个对象和连续对象显示更自然，减少相邻对象叠得杂乱的问题。",
+      "缺水、成熟、枯萎、订单、来访、建筑收益等状态支持从面板自动跳转到最近目标，并通过短闪、MiniMap 路线和低遮挡反馈确认位置。",
+      "牧场 HUD 和反馈系统加强：短反馈、今日小目标、每日总结、连击奖励、奖励印章、建筑收益、稻草人守护、资源预期标签和完成回执都可见可读。",
+      "浅色 / 深色主题可读性统一加固，顶部监控栏、快捷工具、右侧控制台、按钮、TAB、展开卡片和小字号标签都避免灰字、重叠和裁切。",
+      "顶部监控看板新增优先卡白名单护栏，防止主优先入口被降噪规则隐藏，并用单行 grid 固定图标、短标题、目标和进度标签的排版。",
+      "真实浏览器最终复核补齐右侧控制台 header 品牌字可读性护栏，FARM STORY 从 9px 提升到 11px，浅色 / 夜间都无低于阈值小字、无顶部重叠。",
+      "大画布性能护栏继续收口：牧场渲染层输出可见对象数、虚拟化状态和渲染 margin 诊断属性，方便验收时确认远处对象没有全量挂 DOM。",
+      "大画布稻草人守护性能继续收口：守护候选按可视区加渲染 margin 和 6 格守护半径裁剪，并输出 scarecrow object count / render margin 诊断属性。",
+      "非牧场主题性能护栏继续收口：FarmCanvasLayer 外层先判断 farm-story，再挂运行时组件，避免普通主题进入牧场大画布重计算。",
+      "非牧场主题性能护栏继续收口：FarmStoryPanel 外层先判断 farm-story，再挂右侧控制台运行时组件，避免普通主题进入牧场控制台重计算。",
+      "第五阶段非发布最终验收补齐：修正 themeRegistry 中过期稻草人全量扫描断言，组合回归 28/28 通过，并完成真实 Chrome 浅色 / 夜间冒烟。",
+      "第五阶段状态审计完成：farmStoryCanvasTheme 从 roadmap-development 切到 user-acceptance，当前只等待用户验收反馈或明确发布授权。",
+      "第五阶段完成审计复核完成：2026-06-22 R496 新鲜复跑非发布组合回归 28/28、type-check、features.json parse 和 git diff --check，并复核 R494 浏览器 QA 产物仍为浅色 / 夜间 pass。",
+      "2026-06-22 R498 正式发布：用户明确授权打包 Electron 并发布 v2.3.0 自动更新版，发布链路允许设置 T8_RELEASE_APPROVAL=release-2.3.0 通过确认闸。",
+      "完成真实浏览器截图验收：浅色 / 深色均确认顶部监控看板不和右上快捷栏重叠，顶部快捷工具不被垂直裁切，右侧控制台不越界。",
+      "公开版本同步到 2.3.0：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.3.0.md 同步；本次生成 Electron 安装包、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.0.md",
+      "src/theme/types.ts",
+      "src/theme/defaultTemplates.ts",
+      "src/components/ThemeTemplateManager.tsx",
+      "src/components/ThemeMusicToggle.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/FarmCanvasLayer.tsx",
+      "src/components/FarmStoryPanel.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/edges/DeletableEdge.tsx",
+      "src/styles/theme-farm-story.css",
+      "src/utils/farmCanvas.ts",
+      "src/utils/farmSound.ts",
+      "backend/src/routes/canvas.js",
+      "backend/src/routes/themes.js",
+      "backend/src/achievements/store.js",
+      "shared/achievementManifest.json",
+      "tests/farmCanvas.test.ts",
+      "tests/themeRegistry.test.ts",
+      "tests/themeRoutes.test.ts",
+      "tests/achievements.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.0 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.0.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.0.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.0 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.0"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.0，且只能在用户明确要求发布后设置。",
+      "2026-06-22 R498 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.0 运行 Electron 打包与 GitHub Release 上传链路。",
+      "2026-06-21 R489 仅补牧场可视区渲染诊断属性和测试记录；不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R490 仅补牧场道路 / 栅栏连接 map 可视区裁剪和测试记录；不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R491 仅补牧场稻草人守护候选可视区 + 半径裁剪和测试记录；不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R492 仅补 FarmCanvasLayer 非牧场主题轻量 wrapper 和测试记录；不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R493 仅补 FarmStoryPanel 非牧场主题轻量 wrapper 和测试记录；不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R494 仅补陈旧测试契约修正、组合回归、Chrome/CDP 浏览器冒烟和记录；不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R495 仅补 user-acceptance 状态切换、验收护栏测试和记录；不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R496 仅补完成审计复核、非发布验收命令和记录；不运行 Electron 打包、GitHub Release、tag 或 push，不触碰 3D 全景。"
+    ],
+    "verification": [
+      "2026-06-22 R498: node --test tests\\electronPackaging.test.ts tests\\resourceLibraryDrawer.test.ts (7/7 pass)",
+      "2026-06-22 R498: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts tests\\achievements.test.ts (38/38 pass)",
+      "2026-06-22 R498: npm run rh-toolbox:check (pass: 11 tools / 9 categories)",
+      "2026-06-22 R498: npm run public:check (pass)",
+      "2026-06-22 R498: npm run type-check (pass)",
+      "2026-06-22 R498: git diff --check (pass with LF/CRLF warnings only)",
+      "2026-06-22 R498: npm run build (pass; retained empty react-vendor and chunk-size warnings)",
+      "2026-06-22 R498: T8_REQUIRE_AI_WATERMARK_RUNTIME=1 T8_REQUIRE_PARSEHUB_RUNTIME=1 T8_REQUIRE_RUNTIME_ARCHIVES=1 T8_REQUIRE_UPDATE_ARTIFACTS=1 npm run dist (pass; generated installer 1178230140 bytes, blockmap 1228827 bytes, latest.yml 2.3.0)",
+      "2026-06-22 R498: win-unpacked T8-PenguinCanvas.exe 15s smoke alive; title=贞贞的无限画布（企鹅共创版）",
+      "2026-06-22 R496: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, fresh completion audit)",
+      "2026-06-22 R496: npm run type-check (pass)",
+      "2026-06-22 R496: features.json parse check (pass)",
+      "2026-06-22 R496: git diff --check (pass with LF/CRLF warnings only)",
+      "2026-06-22 R496: inspected artifacts\\farm-story-r494-browser\\farm-story-browser-qa-r494.json (light/dark pass; no toolbar overlap, no panel offscreen, tinyTextCount 0)",
+      "2026-06-22 R495: node --test --test-name-pattern \"Farm Story phase 5 acceptance guard\" tests\\themeRegistry.test.ts (red before status switch; expected roadmap-development mismatch)",
+      "2026-06-22 R495: node --test --test-name-pattern \"Farm Story phase 5 acceptance guard\" tests\\themeRegistry.test.ts (pass after user-acceptance switch)",
+      "2026-06-22 R495: features.json parse check (pass)",
+      "2026-06-22 R494: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (first run 27/28 pass; stale scarecrow assertion exposed)",
+      "2026-06-22 R494: node --test --test-name-pattern \"Farm Story theme mounts canvas chrome\" tests\\themeRegistry.test.ts (pass, ~458s)",
+      "2026-06-22 R494: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, ~595s)",
+      "2026-06-22 R494: Chrome/CDP browser QA artifacts/farm-story-r494-browser/farm-story-browser-qa-r494.json (light/dark pass; screenshots farm-story-r494-light.png / farm-story-r494-dark.png)",
+      "2026-06-22 R494: npm run type-check (pass)",
+      "2026-06-22 R493: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~655s)",
+      "2026-06-22 R493: npm run type-check (pass)",
+      "2026-06-21 R492: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~637s)",
+      "2026-06-21 R492: npm run type-check (pass)",
+      "2026-06-21 R491: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~643s)",
+      "2026-06-21 R491: npm run type-check (pass)",
+      "2026-06-21 R490: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~616s)",
+      "2026-06-21 R490: npm run type-check (pass)",
+      "2026-06-21 R489: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~640s)",
+      "2026-06-21 R489: npm run type-check (pass)",
+      "2026-06-21 R488: Chrome Playwright browser QA artifacts/farm-story-r488-browser/farm-story-browser-qa-r488.json (light/dark pass; screenshots farm-story-light-r488.png / farm-story-dark-r488.png)",
+      "2026-06-21 R488: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~256s)",
+      "2026-06-21 R488: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, ~859s)",
+      "2026-06-21 R488: npm run type-check (pass)",
+      "node --test --test-name-pattern \"Farm Story phase 5 acceptance guard|Farm Story browser QA keeps top quick actions\" tests\\themeRegistry.test.ts",
+      "node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass)",
+      "node --test tests\\achievements.test.ts (10/10 pass)",
+      "node --test tests\\electronPackaging.test.ts (6/6 pass)",
+      "node -c backend\\src\\routes\\canvas.js && node -c backend\\src\\routes\\themes.js && node -c backend\\src\\achievements\\store.js",
+      "npm run rh-toolbox:check",
+      "npm run public:check",
+      "npm run type-check",
+      "npm run build",
+      "git diff --check",
+      "npm run encrypt",
+      "npm run dist:release 曾误创建远端 v2.3.0，随后已按用户要求删除 release 并清理远端 tag；latest 已确认回到 v2.2.9",
+      "scripts/dist-release.cjs 与 scripts/release-github.cjs 已加 T8_RELEASE_APPROVAL=release-2.3.0 发布确认闸，防止未授权误发布",
+      "2026-06-22 R498: 发布前确认 gh 已登录 T8mars、远端 v2.3.0 tag 不存在、GitHub latest 为 v2.2.9；本轮将按用户授权发布 v2.3.0。"
+    ]
+  },
   "electronReleaseV229": {
     "version": "2.2.9",
     "status": "electron-release",
@@ -906,6 +1528,150 @@
       "node -c backend\\src\\achievements\\store.js",
       "npm run type-check",
       "npm run build"
+    ]
+  },
+  "farmStoryCanvasTheme": {
+    "status": "electron-release",
+    "date": "2026-06-18",
+    "description": "牧场物语主题已随 v2.3.0 Electron 自动更新版发布：新增第 13 套强识别 Farm Story Canvas 主题，把主题色、木牌节点、牧场地图底纹、端口/连线/剪线语义、MiniMap 摘要标记、牧场 HUD、右侧控制台和全画布种植/建造/装饰养成层组合成一套可玩的画布牧场体验。",
+    "protocol": {
+      "visualStyle": "farm-story",
+      "iconPack": "farm-tools",
+      "canvasPattern": "pasture-map",
+      "nodeFrame": "farm-sign-card",
+      "musicPreset": "farm-breeze"
+    },
+    "highlights": [
+      "新增 visualStyle=farm-story、iconPack=farm-tools、canvasPattern=pasture-map、nodeFrame=farm-sign-card 和 farm-breeze 合成主题音乐 preset；前端类型、内置模板、主题管理器、主题音乐、后端主题导入白名单和路由行为测试均已覆盖。",
+      "FarmCanvasState 使用 ReactFlow 世界坐标和稀疏存档，支持开垦、播种、浇水、过一天、收获、订单、建筑、装饰、移动、资源库图片转招牌/画架/海报墙装饰，并通过前后端 sanitizer 保留安全摘要。",
+      "牧场玩法层已形成 10 分钟闭环：初始资源、4 种作物、天气/节庆、每日总结、动物每日产出、NPC 来访委托、轻量惊喜池、长期目标卡、漂亮度评分与等级奖励、成就事件和轻音效占位。",
+      "牧场强主题覆盖画布部件：木牌节点 7 态、端口类型分型、连接线 rope/water/path 三语义、SHIFT 镰刀剪线和中点切断反馈、MiniMap 单地图叠加标记和高密度聚合、重负载拖动降级、HUD live ticker 和最近农活反馈。",
+      "本阶段 v2.3.0 已正式作为 Electron 自动更新版发布：2026-06-21 R483 完成真实浏览器浅色/深色截图验收并修复顶部快捷栏垂直裁切，R484 同步 release notes、公开版本号和本地 Electron 打包验证，R498 在用户明确授权后发布 GitHub Release v2.3.0 / latest.yml 自动更新资产。",
+      "2026-06-21 R486 继续收口顶部监控看板：每日路线从长串文本改为低占用焦点胶囊，按开始 / 下一步 / 收尾 / 明日开局显示当前行动，保留旧路线摘要数据并补齐浅色 / 夜间可读样式。",
+      "2026-06-21 R487 修复顶部监控降噪白名单：monitor-brief 主优先卡进入白名单，并显式 inline-grid 排版，避免左侧优先入口空白或图标 / 文字挤乱。",
+      "2026-06-21 R488 完成真实浏览器浅色 / 夜间最终复核：右侧控制台 header 的 FARM STORY 品牌字从 9px 提升到 11px，并补 CSS 护栏；Chrome QA 确认顶部看板、快捷栏和右上工具栏不重叠、不裁切，夜间无灰字小字回归。",
+      "2026-06-21 R489 完成 Phase 7 非发布性能护栏：FarmCanvasLayer 根层输出可见对象数、虚拟化状态和渲染 margin，并继续只用 visibleObjects.map() 挂载可视区对象。",
+      "2026-06-21 R490 继续 Phase 7 非发布性能收口：道路 / 栅栏连接 map 改为从 visibleObjects 构建，并输出 connection object count 诊断。",
+      "2026-06-21 R491 继续 Phase 7 非发布性能收口：稻草人守护候选改为可视区 + 渲染 margin + 6 格守护半径裁剪，并输出 scarecrow object count / render margin 诊断。",
+      "2026-06-21 R492 继续 Phase 7 非发布性能收口：FarmCanvasLayer 拆出非牧场主题轻量 wrapper，普通主题不再进入牧场 runtime 重计算。",
+      "2026-06-22 R493 继续 Phase 7 非发布性能收口：FarmStoryPanel 拆出非牧场主题轻量 wrapper，普通主题不再进入牧场控制台 runtime 重计算。",
+      "2026-06-22 R494 完成 Phase 7 非发布最终验收：修正 themeRegistry 中过期稻草人全量扫描断言，组合回归 28/28 通过，并完成真实 Chrome 浅色 / 夜间冒烟。",
+      "2026-06-22 R495 完成非发布完成态审计：当前剩余硬边界只包含用户验收反馈和明确发布授权，主题状态切换为 user-acceptance。",
+      "2026-06-22 R496 完成非发布完成审计复核：新鲜复跑组合回归、type-check、features.json parse 与 git diff --check，并复核 R494 浏览器 QA 产物，确认第五阶段仍处于可用户验收状态。",
+      "2026-06-22 R498 正式发布：用户明确授权打包 Electron 并发布自动更新版，v2.3.0 GitHub Release 成为桌面端 latest 更新源。"
+    ],
+    "files": [
+      "src/theme/types.ts",
+      "src/theme/defaultTemplates.ts",
+      "src/components/ThemeTemplateManager.tsx",
+      "src/components/ThemeMusicToggle.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/FarmCanvasLayer.tsx",
+      "src/components/FarmStoryPanel.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/edges/DeletableEdge.tsx",
+      "src/styles/theme-farm-story.css",
+      "src/utils/farmCanvas.ts",
+      "src/utils/farmSound.ts",
+      "backend/src/routes/canvas.js",
+      "backend/src/routes/themes.js",
+      "backend/src/achievements/store.js",
+      "shared/achievementManifest.json",
+      "tests/farmCanvas.test.ts",
+      "tests/themeRegistry.test.ts",
+      "tests/themeRoutes.test.ts",
+      "tests/achievements.test.ts"
+    ],
+    "verification": [
+      "2026-06-22 R498: node --test tests\\electronPackaging.test.ts tests\\resourceLibraryDrawer.test.ts (7/7 pass)",
+      "2026-06-22 R498: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts tests\\achievements.test.ts (38/38 pass)",
+      "2026-06-22 R498: npm run rh-toolbox:check (pass: 11 tools / 9 categories)",
+      "2026-06-22 R498: npm run public:check (pass)",
+      "2026-06-22 R498: npm run type-check (pass)",
+      "2026-06-22 R498: git diff --check (pass with LF/CRLF warnings only)",
+      "2026-06-22 R498: npm run build (pass; retained empty react-vendor and chunk-size warnings)",
+      "2026-06-22 R498: T8_REQUIRE_AI_WATERMARK_RUNTIME=1 T8_REQUIRE_PARSEHUB_RUNTIME=1 T8_REQUIRE_RUNTIME_ARCHIVES=1 T8_REQUIRE_UPDATE_ARTIFACTS=1 npm run dist (pass; generated installer 1178230140 bytes, blockmap 1228827 bytes, latest.yml 2.3.0)",
+      "2026-06-22 R498: win-unpacked T8-PenguinCanvas.exe 15s smoke alive; title=贞贞的无限画布（企鹅共创版）",
+      "2026-06-22 R496: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, fresh completion audit)",
+      "2026-06-22 R496: npm run type-check (pass)",
+      "2026-06-22 R496: features.json parse check (pass)",
+      "2026-06-22 R496: git diff --check (pass with LF/CRLF warnings only)",
+      "2026-06-22 R496: inspected artifacts\\farm-story-r494-browser\\farm-story-browser-qa-r494.json (light/dark pass; no toolbar overlap, no panel offscreen, tinyTextCount 0)",
+      "2026-06-22 R495: node --test --test-name-pattern \"Farm Story phase 5 acceptance guard\" tests\\themeRegistry.test.ts (red before status switch; expected roadmap-development mismatch)",
+      "2026-06-22 R495: node --test --test-name-pattern \"Farm Story phase 5 acceptance guard\" tests\\themeRegistry.test.ts (pass after user-acceptance switch)",
+      "2026-06-22 R495: features.json parse check (pass)",
+      "2026-06-22 R494: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (first run 27/28 pass; stale scarecrow assertion exposed)",
+      "2026-06-22 R494: node --test --test-name-pattern \"Farm Story theme mounts canvas chrome\" tests\\themeRegistry.test.ts (pass, ~458s)",
+      "2026-06-22 R494: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, ~595s)",
+      "2026-06-22 R494: Chrome/CDP browser QA artifacts/farm-story-r494-browser/farm-story-browser-qa-r494.json (light/dark pass; screenshots farm-story-r494-light.png / farm-story-r494-dark.png)",
+      "2026-06-22 R494: npm run type-check (pass)",
+      "2026-06-22 R493: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~655s)",
+      "2026-06-22 R493: npm run type-check (pass)",
+      "2026-06-21 R492: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~637s)",
+      "2026-06-21 R492: npm run type-check (pass)",
+      "2026-06-21 R491: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~643s)",
+      "2026-06-21 R491: npm run type-check (pass)",
+      "2026-06-21 R490: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~616s)",
+      "2026-06-21 R490: npm run type-check (pass)",
+      "2026-06-21 R489: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~640s)",
+      "2026-06-21 R489: npm run type-check (pass)",
+      "2026-06-21 R488: Chrome Playwright browser QA artifacts/farm-story-r488-browser/farm-story-browser-qa-r488.json (light/dark pass; no tiny text below 10.5px)",
+      "2026-06-21 R488: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~256s)",
+      "2026-06-21 R488: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, ~859s)",
+      "2026-06-21 R488: npm run type-check (pass)",
+      "2026-06-21 R487: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~240s)",
+      "2026-06-21 R487: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, ~318s)",
+      "node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts",
+      "node --test tests\\achievements.test.ts",
+      "node -c backend\\src\\routes\\canvas.js",
+      "node -c backend\\src\\routes\\themes.js",
+      "node -c backend\\src\\achievements\\store.js",
+      "npm run type-check (2026-06-21 R487 pass)",
+      "2026-06-22 R498: 发布前确认 gh 已登录 T8mars、远端 v2.3.0 tag 不存在、GitHub latest 为 v2.2.9；本轮将按用户授权发布 v2.3.0。"
+    ],
+    "releaseBoundary": [
+      "features.json、README.md、release-notes/v2.3.0.md 和 docs/theme-design-guide.md 只记录公开主题协议、源码文件和验收边界。",
+      "skill.md 与 roadmap.md 仍为私有协作文档，不进入公开提交；local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现仍禁止进入公开源码。",
+      "浏览器截图验收已在 2026-06-21 R483 完成：Chrome Headless/CDP 在 127.0.0.1:11422/18766 下覆盖浅色与深色，确认 FarmStoryPanel、顶部看板、快捷工具、右上快捷栏和夜间可读性不重叠、不裁切。",
+      "release-notes/v2.3.0.md、README.md、package/lock、vite、Electron main、后端 APP_VERSION 和本地 Electron 打包验证已在 2026-06-21 R484 完成；2026-06-22 R498 已获用户明确发布授权，允许发布 GitHub Release v2.3.0 / latest.yml 自动更新资产。",
+      "2026-06-21 R486 仅调整 FarmStoryPanel 顶部每日路线显示和主题 CSS，不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R487 仅补顶部监控优先卡白名单、CSS 版式护栏和静态测试记录；不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R488 仅补右侧控制台 header 品牌字可读性 CSS 护栏、真实浏览器截图 QA 和私有/公开记录；不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R489 仅补 FarmCanvasLayer 可视区渲染诊断属性和测试记录；不新增存档字段、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R490 仅补 FarmCanvasLayer 连接 map 可视区裁剪、connection count 诊断属性和测试记录；不新增存档字段、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R491 仅补 FarmCanvasLayer 稻草人守护候选可视区 + 半径裁剪、scarecrow count / margin 诊断属性和测试记录；不新增存档字段、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-21 R492 仅补 FarmCanvasLayer 非牧场主题轻量 wrapper、runtime 拆分和测试记录；不新增存档字段、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R493 仅补 FarmStoryPanel 非牧场主题轻量 wrapper、runtime 拆分和测试记录；不新增存档字段、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R494 仅补陈旧测试契约修正、组合回归、Chrome/CDP 浏览器冒烟和记录；不新增存档字段、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R495 仅补 user-acceptance 状态切换、验收护栏测试和记录；不新增存档字段、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R496 仅补完成审计复核、非发布验收命令和记录；不新增存档字段、不改运行逻辑、不改后端、不碰 3D 全景、不运行 Electron 打包、GitHub Release、tag 或 push。",
+      "2026-06-22 R498 正式发布：本轮允许设置 T8_RELEASE_APPROVAL=release-2.3.0 打包 Electron 并上传 GitHub Release；公开源码仍禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/** 和私有计费/支付/充值实现。"
+    ]
+  },
+  "resourceLibraryDrawerPromptFix": {
+    "status": "source-only",
+    "date": "2026-06-22",
+    "description": "R497 资源库抽屉交互热修：将 7 个资源库大分类下的子分类新增 / 重命名，以及资源条目重命名，从浏览器原生 window.prompt 改为抽屉内应用弹窗，避免部分 Electron / 浏览器环境里 prompt 被拦截、失焦或表现为点击无反应；删除分类仍保留原确认流程。",
+    "rootCause": "分类新增和重命名依赖 window.prompt，而删除依赖 window.confirm；用户环境中原生 prompt 可能被窗口策略或焦点策略拦截，因此会出现删除可用但新增 / 重命名无反应。",
+    "highlights": [
+      "ResourceLibraryDrawer 新增 categoryDialog 状态：新建分类和重命名分类都在资源库抽屉内弹出输入框，支持回车提交、Esc / 点击遮罩取消、空名提示和成功后刷新分类。",
+      "新建分类成功后自动选中新分类；重命名分类保持当前分类上下文并刷新列表。",
+      "资源条目重命名同步改为 itemRenameDialog 应用内弹窗，资源库抽屉内不再依赖 window.prompt，避免同类环境问题复发。",
+      "新增 tests/resourceLibraryDrawer.test.ts 静态回归，锁定资源库抽屉不得出现 window.prompt，并要求分类弹窗和条目重命名弹窗的测试标记存在。"
+    ],
+    "files": [
+      "src/components/ResourceLibraryDrawer.tsx",
+      "tests/resourceLibraryDrawer.test.ts",
+      "features.json"
+    ],
+    "releaseBoundary": [
+      "本次只推公开源码，不打包 Electron，不运行 dist / dist:release，不创建 GitHub Release，不创建 tag，不上传 latest.yml。",
+      "skill.md 已本地补充私有协作记录，但按项目规范不进入公开提交；roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录和 artifacts/** 仍禁止进入公开源码。"
+    ],
+    "verification": [
+      "2026-06-22 R497: node --test tests\\resourceLibraryDrawer.test.ts (red before item prompt removal, pass after in-app dialogs)",
+      "2026-06-22 R497: npm run type-check (pass)",
+      "2026-06-22 R497: git diff --check -- src\\components\\ResourceLibraryDrawer.tsx tests\\resourceLibraryDrawer.test.ts (pass with LF/CRLF warnings only)"
     ]
   },
   "batchProcessorNode": {
@@ -2423,11 +3189,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.2.9",
-    "semverVersion": "2.2.9",
+    "version": "2.3.4",
+    "semverVersion": "2.3.4",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.2.9 Electron 自动更新版：继续收口导演分镜台首尾帧桥接、分镜输入复用、RH 工具箱持久化、上传/输出图像能力轨、Codex 生图工作台登录入口和模型注意事项；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.2.9 是 Electron 自动更新版本：本次通过 npm run dist:release 生成 dist_electron/T8-PenguinCanvas-Setup-2.2.9.exe、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.4，发布标注改图执行链路、资源包 manifest 增强和网页反推插件公开提交确认；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.3.4 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.4 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
@@ -6258,6 +7024,73 @@
       "node --test tests\\panorama3d.test.ts",
       "npm run type-check",
       "npm run build"
+    ]
+  },
+  "webImageReversePluginV232": {
+    "version": "2.3.2-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-23",
+    "description": "网页图片反推插件补齐发送模式隔离和按当前提示词重新生成图片，并固定使用 qwen-web 同款 ModelScope VL 模型。",
+    "sourceFiles": [
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/styles/content.css",
+      "backend/src/routes/externalProviders.js",
+      "src/components/Canvas.tsx",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "capabilities": [
+      "发提示词、发图片、图+提示词三种按钮生成的画布节点严格按模式区分：只发图片不会额外生成文本节点或提示词字段。",
+      "浮层生成提示词 textarea 可编辑；点击“生成图片”后按用户当前输入调用 /api/proxy/external/image 生成新图。",
+      "后端 /api/proxy/external/web-image 固定视觉模型为 Qwen/Qwen3-VL-235B-A22B-Instruct，不再受普通 chatModel/model 参数覆盖。",
+      "识别到视觉模型返回无法读取图片、未检测到图像数据等不可读文本时，接口返回 unreadable_image_prompt，不再继续调用生图。"
+    ],
+    "verification": [
+      "node --test tests\\webImageReverseToCanvas.test.ts",
+      "node -c backend\\src\\routes\\externalProviders.js"
+    ]
+  },
+  "rhCutoutBoardImageEdit": {
+    "version": "2.3.2-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-23",
+    "description": "画板节点与图像编辑弹窗新增 RH 自动抠图按钮，复用 RH 工具箱高清抠图应用层并替换原图。",
+    "sourceFiles": [
+      "src/components/nodes/DrawingBoardNode.tsx",
+      "src/components/nodes/ImageEditModal.tsx",
+      "tests/rhCutoutSurface.test.ts"
+    ],
+    "capabilities": [
+      "画板节点选中图片后可点 RH自动抠图，返回结果直接替换同一个图片元素并保持选中。",
+      "图像编辑弹窗普通模式抠图后替换当前底图，后续裁剪、遮罩、画板和宫格切分都继续使用抠图结果。",
+      "图像编辑组合模式抠图会替换当前选中的图片图层，并保留图层位置、尺寸、旋转、透明度等编辑属性。"
+    ],
+    "verification": [
+      "node --test tests\\rhCutoutSurface.test.ts",
+      "node --test tests\\rhToolbox.test.ts tests\\drawingBoardInteractions.test.ts tests\\drawingBoardCutout.test.ts tests\\imageEditAnnotationTools.test.ts tests\\rhCutoutSurface.test.ts"
+    ]
+  },
+  "placementShelfAndThemeOverlayV232": {
+    "version": "2.3.2-dev",
+    "status": "implemented-dev",
+    "date": "2026-06-23",
+    "description": "放置栏新增隐藏/恢复控制，侧边栏折叠时主题顶部栏统一避让折叠按钮，牧场物语端口和剪裁点层级恢复正常。",
+    "sourceFiles": [
+      "src/components/Canvas.tsx",
+      "src/components/edges/DeletableEdge.tsx",
+      "src/styles/index.css",
+      "src/styles/theme-farm-story.css",
+      "src/styles/theme-saintseiya.css",
+      "tests/placementShelf.test.ts",
+      "tests/themeRegistry.test.ts"
+    ],
+    "capabilities": [
+      "放置栏右上角可直接隐藏，左侧控制条新增同一套主题风格的展开/折叠按钮。",
+      "侧边栏收缩时，牧场物语顶部看板、快捷栏、公告栏和圣斗士顶部栏按统一变量避让按钮区域。",
+      "牧场物语主题下 ReactFlow handle、resize control、edge label renderer 分层修复，端口不再被节点内容隐藏，剪裁点不再盖到节点上。"
+    ],
+    "verification": [
+      "node --test tests\\placementShelf.test.ts tests\\themeRegistry.test.ts"
     ]
   }
 }

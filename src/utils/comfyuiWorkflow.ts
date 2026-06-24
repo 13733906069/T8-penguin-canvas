@@ -417,25 +417,40 @@ function isTextLikeField(fieldName: string, node: any): boolean {
   return nodeLooksPromptDriven && ['text', 'prompt', 'value'].includes(key);
 }
 
+function nodeLooksImageInputDriven(node: any): boolean {
+  return /(loadimage|imageinput|image\s*input|input\s*image|mask|controlnet|ipadapter|openpose|depth|lineart|reference|inpaint|outpaint|canny|hed|scribble|softedge|pose|segmentation|segment|segment\s*anything|\bsam\b|sam2|vision)/i.test(textAroundNode(node));
+}
+
+function nodeLooksVideoInputDriven(node: any): boolean {
+  return /(loadvideo|videoinput|video\s*input|input\s*video|vhs|wanvideo|ltxv|svd|animatediff|video\s*reference|reference\s*video)/i.test(textAroundNode(node));
+}
+
+function nodeLooksAudioInputDriven(node: any): boolean {
+  return /(loadaudio|audioinput|audio\s*input|input\s*audio|tts|stt|voice|sound|music|speech|wav|audio\s*reference|reference\s*audio)/i.test(textAroundNode(node));
+}
+
 function isImageLikeField(fieldName: string, node: any): boolean {
   const key = normalizeInputKey(fieldName);
-  if (/^(image|img|mask|control_image|reference_image|ref_image|source_image|input_image|init_image|start_image|end_image|face_image|person_image|pose_image|depth_image|normal_image|lineart_image|image_path|mask_image)$/.test(key)) return true;
-  if (/(^|_)(image|img|mask)(_|$)/.test(key)) return true;
-  return /(loadimage|imageinput|mask|controlnet|ipadapter|openpose|depth|lineart|reference)/i.test(textAroundNode(node)) && ['image', 'img', 'mask', 'path', 'file'].includes(key);
+  const fieldLooksMedia = /^(image|img|mask|control_image|reference_image|ref_image|source_image|input_image|init_image|start_image|end_image|face_image|person_image|pose_image|depth_image|normal_image|lineart_image|image_path|mask_image)$/.test(key)
+    || /(^|_)(image|img|mask)(_|$)/.test(key)
+    || ['image', 'img', 'mask', 'path', 'file'].includes(key);
+  return fieldLooksMedia && nodeLooksImageInputDriven(node);
 }
 
 function isVideoLikeField(fieldName: string, node: any): boolean {
   const key = normalizeInputKey(fieldName);
-  if (/^(video|video_path|input_video|source_video|reference_video|init_video|frames_video)$/.test(key)) return true;
-  if (/(^|_)(video|movie|frames)(_|$)/.test(key)) return true;
-  return /(loadvideo|videoinput|vhs|video|wanvideo|ltxv|svd|animatediff)/i.test(textAroundNode(node)) && ['video', 'path', 'file'].includes(key);
+  const fieldLooksMedia = /^(video|video_path|input_video|source_video|reference_video|init_video|frames_video)$/.test(key)
+    || /(^|_)(video|movie|frames)(_|$)/.test(key)
+    || ['video', 'path', 'file'].includes(key);
+  return fieldLooksMedia && nodeLooksVideoInputDriven(node);
 }
 
 function isAudioLikeField(fieldName: string, node: any): boolean {
   const key = normalizeInputKey(fieldName);
-  if (/^(audio|audio_path|input_audio|source_audio|reference_audio|voice|sound|music|speech|wav)$/.test(key)) return true;
-  if (/(^|_)(audio|voice|sound|music|speech|wav)(_|$)/.test(key)) return true;
-  return /(loadaudio|audioinput|audio|tts|stt|voice|sound)/i.test(textAroundNode(node)) && ['audio', 'path', 'file', 'voice'].includes(key);
+  const fieldLooksMedia = /^(audio|audio_path|input_audio|source_audio|reference_audio|voice|sound|music|speech|wav)$/.test(key)
+    || /(^|_)(audio|voice|sound|music|speech|wav)(_|$)/.test(key)
+    || ['audio', 'path', 'file', 'voice'].includes(key);
+  return fieldLooksMedia && nodeLooksAudioInputDriven(node);
 }
 
 const DIRECT_SOURCE_FIELDS = new Set([

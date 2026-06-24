@@ -8,6 +8,7 @@ import {
   Circle,
   ChevronDown,
   ChevronRight,
+  Diamond,
   Download,
   Eraser,
   Eye,
@@ -20,7 +21,9 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  Minus,
   MousePointer2,
+  PanelTop,
   PenLine,
   PenTool,
   Pencil,
@@ -41,6 +44,7 @@ import {
 } from 'lucide-react';
 import { PORT_COLOR } from '../../config/portTypes';
 import { uploadDataUrl, uploadFileBlob } from '../../services/imageOps';
+import { runRhImageCutout } from '../../services/rhToolboxCapabilities';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
@@ -65,7 +69,8 @@ import {
   originalPixelImagePlacement,
 } from '../../utils/drawingBoardSizing';
 
-type BoardTool = 'select' | 'pen' | 'eraser' | 'text' | 'rect' | 'circle' | 'arrow' | 'cutout-lasso' | 'cutout-pen';
+type BoardTool = 'select' | 'pen' | 'eraser' | 'text' | 'line' | 'arrow' | 'rect' | 'round-rect' | 'circle' | 'diamond' | 'cutout-lasso' | 'cutout-pen';
+type BoardFillMode = 'stroke' | 'fill';
 type BoardRatio = 'free' | '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
 
 interface Point {
@@ -108,13 +113,14 @@ interface TextElement {
 
 interface ShapeElement {
   id: string;
-  kind: 'rect' | 'circle' | 'arrow';
+  kind: 'line' | 'arrow' | 'rect' | 'round-rect' | 'circle' | 'diamond';
   x: number;
   y: number;
   w: number;
   h: number;
   color: string;
   size: number;
+  fillMode?: BoardFillMode;
   rotation?: number;
 }
 
@@ -168,9 +174,12 @@ const TOOL_LABEL: Record<BoardTool, string> = {
   pen: '画笔',
   eraser: '擦除',
   text: '文字',
-  rect: '矩形',
-  circle: '圆形',
+  line: '直线',
   arrow: '箭头',
+  rect: '矩形',
+  'round-rect': '圆角矩形',
+  circle: '圆形',
+  diamond: '菱形',
   'cutout-lasso': '套索',
   'cutout-pen': '钢笔',
 };
@@ -180,7 +189,9 @@ const TOOL_SHORTCUTS: Array<{ tool: BoardTool; shortcut: string; key: string; sh
   { tool: 'text', shortcut: 'T', key: 't' },
   { tool: 'eraser', shortcut: 'E', key: 'e' },
   { tool: 'pen', shortcut: 'B', key: 'b' },
+  { tool: 'line', shortcut: 'I', key: 'i' },
   { tool: 'arrow', shortcut: 'A', key: 'a' },
+  { tool: 'diamond', shortcut: 'D', key: 'd' },
   { tool: 'cutout-pen', shortcut: 'P', key: 'p' },
   { tool: 'cutout-lasso', shortcut: 'L', key: 'l' },
   { tool: 'circle', shortcut: 'R', key: 'r' },
@@ -213,6 +224,18 @@ function clamp(v: number, min: number, max: number) {
 
 function isCutoutTool(value: BoardTool) {
   return value === 'cutout-lasso' || value === 'cutout-pen';
+}
+
+const BOARD_SHAPE_KINDS = ['line', 'arrow', 'rect', 'round-rect', 'circle', 'diamond'] as const;
+
+type BoardShapeKind = (typeof BOARD_SHAPE_KINDS)[number];
+
+function isBoardShapeKind(value: unknown): value is BoardShapeKind {
+  return typeof value === 'string' && BOARD_SHAPE_KINDS.includes(value as BoardShapeKind);
+}
+
+function isShapeElement(el: BoardElement): el is ShapeElement {
+  return isBoardShapeKind(el.kind);
 }
 
 function createBlankLayer(index = 1, groupId: string | null = null): BoardLayer {
@@ -280,7 +303,7 @@ function normalizeElements(value: unknown): BoardElement[] {
           size: Math.max(10, Number(item.size) || 32),
         };
       }
-      if (['rect', 'circle', 'arrow'].includes(item.kind)) {
+      if (isBoardShapeKind(item.kind)) {
         return {
           id,
           kind: item.kind,
@@ -290,6 +313,7 @@ function normalizeElements(value: unknown): BoardElement[] {
           h: Number(item.h) || 80,
           color: typeof item.color === 'string' ? item.color : '#fb923c',
           size: Math.max(1, Number(item.size) || 5),
+          fillMode: item.fillMode === 'fill' ? 'fill' : 'stroke',
           rotation: Number.isFinite(Number(item.rotation)) ? Number(item.rotation) : 0,
         } as ShapeElement;
       }
@@ -396,7 +420,7 @@ function pointInBounds(p: Point, b: { x: number; y: number; w: number; h: number
 }
 
 function isBoxElement(el: BoardElement): el is BoxElement {
-  return el.kind === 'image' || el.kind === 'rect' || el.kind === 'circle' || el.kind === 'arrow';
+  return el.kind === 'image' || isShapeElement(el);
 }
 
 function rotationOf(el: BoardElement) {
@@ -504,7 +528,7 @@ function resizeBoxElement(original: BoardElement, pointer: Point, corner: Resize
 }
 
 function normalizeShape(el: BoardElement): BoardElement {
-  if (!['image', 'rect', 'circle'].includes(el.kind)) return el;
+  if (el.kind !== 'image' && (!isBoardShapeKind(el.kind) || el.kind === 'line' || el.kind === 'arrow')) return el;
   const shape = el as ImageElement | ShapeElement;
   if (shape.w >= 0 && shape.h >= 0) return el;
   return {
@@ -517,29 +541,110 @@ function normalizeShape(el: BoardElement): BoardElement {
 }
 
 function isDegenerateShapeElement(el: BoardElement) {
-  if (el.kind === 'arrow') return Math.hypot(el.w, el.h) < 8;
-  if (el.kind === 'rect' || el.kind === 'circle') return Math.abs(el.w) < 8 || Math.abs(el.h) < 8;
+  if (el.kind === 'line' || el.kind === 'arrow') return Math.hypot(el.w, el.h) < 8;
+  if (el.kind === 'rect' || el.kind === 'round-rect' || el.kind === 'circle' || el.kind === 'diamond') return Math.abs(el.w) < 8 || Math.abs(el.h) < 8;
   return false;
+}
+
+function boardShapeDragSize(start: Point, end: Point, kind: ShapeElement['kind'], lockAspect: boolean) {
+  const w = end.x - start.x;
+  const h = end.y - start.y;
+  if (!lockAspect || kind === 'line' || kind === 'arrow') return { w, h };
+  const side = Math.max(Math.abs(w), Math.abs(h));
+  return {
+    w: (w < 0 ? -1 : 1) * side,
+    h: (h < 0 ? -1 : 1) * side,
+  };
+}
+
+function boardArrowHeadLength(size: number) {
+  return Math.max(12, size * 3.2);
+}
+
+function arrowLineEndBeforeHead(start: Point, end: Point, size: number) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= 0) return end;
+  const inset = Math.min(length, boardArrowHeadLength(size) * 0.82);
+  return {
+    x: end.x - (dx / length) * inset,
+    y: end.y - (dy / length) * inset,
+  };
 }
 
 function drawArrowHead(ctx: CanvasRenderingContext2D, from: Point, to: Point, size: number) {
   const angle = Math.atan2(to.y - from.y, to.x - from.x);
-  const len = Math.max(12, size * 4);
+  const len = boardArrowHeadLength(size);
   ctx.beginPath();
   ctx.moveTo(to.x, to.y);
   ctx.lineTo(to.x - len * Math.cos(angle - Math.PI / 6), to.y - len * Math.sin(angle - Math.PI / 6));
-  ctx.moveTo(to.x, to.y);
   ctx.lineTo(to.x - len * Math.cos(angle + Math.PI / 6), to.y - len * Math.sin(angle + Math.PI / 6));
-  ctx.stroke();
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawBoardRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+) {
+  const r = Math.min(Math.abs(w) / 2, Math.abs(h) / 2, Math.max(0, radius));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawBoardDiamondPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2, y);
+  ctx.lineTo(x + w, y + h / 2);
+  ctx.lineTo(x + w / 2, y + h);
+  ctx.lineTo(x, y + h / 2);
+  ctx.closePath();
+}
+
+function drawBoardShapePath(ctx: CanvasRenderingContext2D, el: ShapeElement, b: { w: number; h: number }) {
+  const x = -b.w / 2;
+  const y = -b.h / 2;
+  if (el.kind === 'round-rect') {
+    drawBoardRoundedRectPath(ctx, x, y, b.w, b.h, Math.min(b.w, b.h) * 0.18);
+    return;
+  }
+  if (el.kind === 'circle') {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, Math.abs(b.w / 2), Math.abs(b.h / 2), 0, 0, Math.PI * 2);
+    return;
+  }
+  if (el.kind === 'diamond') {
+    drawBoardDiamondPath(ctx, x, y, b.w, b.h);
+    return;
+  }
+  ctx.beginPath();
+  ctx.rect(x, y, b.w, b.h);
 }
 
 function labelForElement(el: BoardElement) {
   if (el.kind === 'image') return el.name || '图片元素';
   if (el.kind === 'path') return '笔迹元素';
   if (el.kind === 'text') return el.text.slice(0, 18) || '文字元素';
+  if (el.kind === 'line') return '直线元素';
+  if (el.kind === 'arrow') return '箭头元素';
   if (el.kind === 'rect') return '矩形元素';
+  if (el.kind === 'round-rect') return '圆角矩形元素';
   if (el.kind === 'circle') return '圆形元素';
-  return '箭头元素';
+  return '菱形元素';
 }
 
 function isEditableEventTarget(target: EventTarget | null) {
@@ -619,6 +724,7 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
   const [boardHDraft, setBoardHDraft] = useState(() => String(clampBoardDimension(Number(d.boardHeight), DEFAULT_BOARD_H)));
   const [strokeColor, setStrokeColor] = useState(typeof d.boardColor === 'string' ? d.boardColor : '#111827');
   const [strokeSize, setStrokeSize] = useState(Math.max(1, Number(d.boardStrokeSize) || 5));
+  const [boardFillMode, setBoardFillMode] = useState<BoardFillMode>(d.boardFillMode === 'fill' ? 'fill' : 'stroke');
   const [textDraft, setTextDraft] = useState(typeof d.boardTextDraft === 'string' ? d.boardTextDraft : '文字');
   const [cutoutDraft, setCutoutDraft] = useState<CutoutDraft | null>(null);
   const [cutoutSmooth, setCutoutSmooth] = useState(Math.max(0, Number(d.boardCutoutSmooth) || 2));
@@ -634,6 +740,7 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
   }));
   const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'error'>((d.status as any) || 'idle');
   const [error, setError] = useState<string | null>(typeof d.error === 'string' ? d.error : null);
+  const [rhCutoutRunning, setRhCutoutRunning] = useState(false);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [, forceRender] = useState(0);
 
@@ -661,6 +768,10 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
     setTool(value);
     if (!isCutoutTool(value)) setCutoutDraft(null);
   }, []);
+  const applyBoardFillMode = useCallback((next: BoardFillMode) => {
+    setBoardFillMode(next);
+    update({ boardFillMode: next });
+  }, [update]);
   const boardHasKeyboardFocus = useCallback(() => {
     const root = rootRef.current;
     const focusOverlay = focusOverlayRef.current;
@@ -859,24 +970,35 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
         const rotation = rotationOf(el);
         const start = { x: el.x - center.x, y: el.y - center.y };
         const end = { x: el.x + el.w - center.x, y: el.y + el.h - center.y };
-        ctx.strokeStyle = el.color;
         ctx.lineWidth = el.size;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.translate(center.x, center.y);
         ctx.rotate((rotation * Math.PI) / 180);
-        if (el.kind === 'rect') {
-          ctx.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h);
-        } else if (el.kind === 'circle') {
-          ctx.beginPath();
-          ctx.ellipse(0, 0, Math.abs(b.w / 2), Math.abs(b.h / 2), 0, 0, Math.PI * 2);
-          ctx.stroke();
-        } else {
+        if (el.kind === 'line') {
+          ctx.strokeStyle = el.color;
           ctx.beginPath();
           ctx.moveTo(start.x, start.y);
           ctx.lineTo(end.x, end.y);
           ctx.stroke();
+        } else if (el.kind === 'arrow') {
+          const lineEnd = arrowLineEndBeforeHead(start, end, el.size);
+          ctx.strokeStyle = el.color;
+          ctx.fillStyle = el.color;
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(lineEnd.x, lineEnd.y);
+          ctx.stroke();
           drawArrowHead(ctx, start, end, el.size);
+        } else {
+          drawBoardShapePath(ctx, el, b);
+          if (el.fillMode === 'fill') {
+            ctx.fillStyle = el.color;
+            ctx.fill();
+          } else {
+            ctx.strokeStyle = el.color;
+            ctx.stroke();
+          }
         }
       }
       ctx.restore();
@@ -1248,13 +1370,14 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
     }
     const el: ShapeElement = {
       id: uid(tool),
-      kind: tool,
+      kind: tool as ShapeElement['kind'],
       x: pos.x,
       y: pos.y,
       w: 1,
       h: 1,
       color: strokeColor,
       size: strokeSize,
+      fillMode: boardFillMode,
     };
     actionRef.current = { type: 'shape', layerId: activeLayer.id, id: el.id };
     appendToActiveLayer(el);
@@ -1295,8 +1418,9 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
               if (last && Math.hypot(pos.x - last.x, pos.y - last.y) < 2) return el;
               return { ...el, points: [...el.points, pos] };
             }
-            if (action.type === 'shape' && (el.kind === 'rect' || el.kind === 'circle' || el.kind === 'arrow')) {
-              return { ...el, w: pos.x - el.x, h: pos.y - el.y } as ShapeElement;
+            if (action.type === 'shape' && isShapeElement(el)) {
+              const dragSize = boardShapeDragSize({ x: el.x, y: el.y }, pos, el.kind, event.shiftKey);
+              return { ...el, w: dragSize.w, h: dragSize.h } as ShapeElement;
             }
             if (action.type === 'move') {
               const original = action.originals.find((x) => x.id === el.id);
@@ -1536,6 +1660,68 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
       setStatus('error');
     }
   }, [applyTool, cutoutDraft, cutoutFeather, cutoutInvert, cutoutSmooth, layers, loadImage, patchLayers, pushHistorySnapshot]);
+
+  const applyRhCutoutToSelectedImage = useCallback(async () => {
+    if (!selectedCutoutSource) {
+      setError('请先选中一张可编辑图片再自动抠图');
+      return;
+    }
+    const { layer: sourceLayer, element: source } = selectedCutoutSource;
+    if (!isLayerEditable(layers, sourceLayer)) {
+      setError('源图片图层已隐藏、锁定或不存在，无法自动抠图');
+      return;
+    }
+
+    setRhCutoutRunning(true);
+    setStatus('running');
+    setError(null);
+    try {
+      const result = await runRhImageCutout(source.url, {
+        onProgress: (progress) => {
+          if (progress.stage === 'error') setError(progress.message);
+        },
+      });
+      let naturalW = source.naturalW;
+      let naturalH = source.naturalH;
+      try {
+        const img = await loadImage(result.outputUrl);
+        naturalW = Math.max(1, Math.round(img.naturalWidth || naturalW || source.w));
+        naturalH = Math.max(1, Math.round(img.naturalHeight || naturalH || source.h));
+      } catch {
+        // The RH result URL is still written back; preview loading can retry naturally.
+      }
+
+      pushHistorySnapshot();
+      patchLayers((prev) => prev.map((layer) => (
+        layer.id === sourceLayer.id && layer.kind === 'layer'
+          ? {
+              ...layer,
+              elements: layer.elements.map((el) => (
+                el.id === source.id && el.kind === 'image'
+                  ? {
+                      ...el,
+                      url: result.outputUrl,
+                      name: `${source.name || '图片'} RH抠图`,
+                      naturalW,
+                      naturalH,
+                    }
+                  : el
+              )),
+            }
+          : layer
+      )));
+      setActiveLayerId(sourceLayer.id);
+      setSelectedElementId(source.id);
+      applyTool('select');
+      setStatus('success');
+    } catch (e: any) {
+      const msg = e?.message || 'RH 自动抠图失败';
+      setError(msg);
+      setStatus('error');
+    } finally {
+      setRhCutoutRunning(false);
+    }
+  }, [applyTool, layers, loadImage, patchLayers, pushHistorySnapshot, selectedCutoutSource]);
 
   const upstreamSig = useMemo(() => upstream.images.map((m) => m.url).join('|'), [upstream.images]);
 
@@ -2013,6 +2199,25 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
     );
   };
 
+  const renderBoardFillModeControls = () => (
+    <div className="grid grid-cols-2 gap-1" role="group" aria-label="画板图形填充模式">
+      {(['stroke', 'fill'] as const).map((mode) => {
+        const next: BoardFillMode = mode;
+        return (
+          <button
+            key={next}
+            type="button"
+            className={`t8-btn min-h-7 px-2 text-[10px] ${boardFillMode === next ? 't8-btn-primary' : ''}`}
+            onClick={() => applyBoardFillMode(next)}
+            title={next === 'fill' ? '新建闭合图形使用实心填充' : '新建图形只画描边'}
+          >
+            {next === 'fill' ? '实心' : '描边'}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   const getCutoutToolbarPosition = useCallback((size: { w: number; h: number }) => {
     if (!cutoutDraft?.closed || cutoutDraft.points.length < 3) return null;
     const xs = cutoutDraft.points.map((p) => p.x);
@@ -2435,9 +2640,12 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
                 {toolButton('pen', <PenLine size={13} />)}
                 {toolButton('eraser', <Eraser size={13} />)}
                 {toolButton('text', <Type size={13} />)}
-                {toolButton('rect', <RectangleHorizontal size={13} />)}
-                {toolButton('circle', <Circle size={13} />)}
+                {toolButton('line', <Minus size={13} />)}
                 {toolButton('arrow', <Send size={13} />)}
+                {toolButton('rect', <RectangleHorizontal size={13} />)}
+                {toolButton('round-rect', <PanelTop size={13} />)}
+                {toolButton('circle', <Circle size={13} />)}
+                {toolButton('diamond', <Diamond size={13} />)}
                 {toolButton('cutout-lasso', <Scissors size={13} />)}
                 {toolButton('cutout-pen', <PenTool size={13} />)}
               </div>
@@ -2466,6 +2674,7 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
                 />
                 <div className="text-right text-[11px] opacity-70">{strokeSize}px</div>
               </div>
+              {renderBoardFillModeControls()}
               {tool === 'text' && (
                 <input
                   className="t8-input nodrag nowheel h-8 w-full px-2 text-[11px]"
@@ -2522,6 +2731,16 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
               <button type="button" className="t8-btn min-h-8 w-full px-2 text-[11px]" onClick={() => imageInputRef.current?.click()}>
                 <ImagePlus size={13} /> 载入图片
               </button>
+              <button
+                type="button"
+                className="t8-btn min-h-8 w-full px-2 text-[11px]"
+                onClick={() => void applyRhCutoutToSelectedImage()}
+                disabled={!selectedCutoutSource || rhCutoutRunning || status === 'running'}
+                title={selectedCutoutSource ? '调用 RH工具箱自动抠图并替换选中图片' : '请先选中一张图片'}
+              >
+                {rhCutoutRunning ? <Loader2 size={13} className="animate-spin" /> : <Scissors size={13} />}
+                {rhCutoutRunning ? 'RH抠图中...' : 'RH自动抠图'}
+              </button>
             </aside>
 
             <main
@@ -2560,7 +2779,8 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
       ref={rootRef}
       tabIndex={0}
       onKeyDownCapture={handleRootKeyDownCapture}
-      className={`t8-node relative transition-all ${selected ? 'ring-2 ring-orange-300' : ''}`}
+      data-drawing-board-node="true"
+      className={`t8-node relative flex flex-col transition-all ${selected ? 'ring-2 ring-orange-300' : ''}`}
       style={{ width: NODE_W, height: NODE_H, overflow: 'visible' }}
     >
       <Handle type="target" position={Position.Left} style={{ background: PORT_COLOR.image, border: 0, zIndex: 40 }} />
@@ -2597,8 +2817,9 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
       </div>
 
       <div
+        data-drawing-board-body="true"
         className="nodrag nowheel grid min-h-0 grid-cols-[330px_1fr] gap-3 overflow-hidden p-3"
-        style={{ height: NODE_H - 58 }}
+        style={{ flex: '1 1 0%', minHeight: 0 }}
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         onWheelCapture={(e) => e.stopPropagation()}
@@ -2610,9 +2831,12 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
               {toolButton('pen', <PenLine size={13} />)}
               {toolButton('eraser', <Eraser size={13} />)}
               {toolButton('text', <Type size={13} />)}
-              {toolButton('rect', <RectangleHorizontal size={13} />)}
-              {toolButton('circle', <Circle size={13} />)}
+              {toolButton('line', <Minus size={13} />)}
               {toolButton('arrow', <Send size={13} />)}
+              {toolButton('rect', <RectangleHorizontal size={13} />)}
+              {toolButton('round-rect', <PanelTop size={13} />)}
+              {toolButton('circle', <Circle size={13} />)}
+              {toolButton('diamond', <Diamond size={13} />)}
               {toolButton('cutout-lasso', <Scissors size={13} />)}
               {toolButton('cutout-pen', <PenTool size={13} />)}
             </div>
@@ -2672,6 +2896,16 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
               >
                 <Ruler size={12} /> 保持原图像素尺寸
               </button>
+              <button
+                type="button"
+                className="t8-btn col-span-3 min-h-7 px-2 text-[10px]"
+                onClick={() => void applyRhCutoutToSelectedImage()}
+                disabled={!selectedCutoutSource || rhCutoutRunning || status === 'running'}
+                title={selectedCutoutSource ? '调用 RH工具箱自动抠图并替换选中图片' : '请先选中一张图片'}
+              >
+                {rhCutoutRunning ? <Loader2 size={12} className="animate-spin" /> : <Scissors size={12} />}
+                {rhCutoutRunning ? 'RH抠图中...' : 'RH自动抠图'}
+              </button>
             </div>
             <div className="grid grid-cols-[38px_1fr_46px] items-center gap-2">
               <input
@@ -2698,6 +2932,7 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
               />
               <div className="text-right text-[11px] opacity-70">{strokeSize}px</div>
             </div>
+            {renderBoardFillModeControls()}
             {tool === 'text' && (
               <input
                 className="t8-input nodrag nowheel h-8 w-full px-2 text-[11px]"

@@ -22,10 +22,19 @@ const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
 const draft = args.has('--draft');
 const prerelease = args.has('--prerelease');
+const releaseApproval = `release-${version}`;
 
 function fail(message) {
   console.error(`[release] ${message}`);
   process.exit(1);
+}
+
+function assertReleaseApproval() {
+  if (dryRun) return;
+  if (process.env.T8_RELEASE_APPROVAL === releaseApproval) return;
+  fail(
+    `refusing to publish GitHub Release without explicit approval. Set T8_RELEASE_APPROVAL=${releaseApproval} only after the user explicitly asks to publish.`,
+  );
 }
 
 function formatBytes(bytes) {
@@ -129,6 +138,8 @@ function editLatestFlag() {
 }
 
 function main() {
+  assertReleaseApproval();
+
   console.log(`[release] repo=${repo} tag=${tag}`);
   warnDirtyTree();
 

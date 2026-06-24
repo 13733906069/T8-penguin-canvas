@@ -112,9 +112,15 @@ test('Codex image conjure frontend only uses Codex CLI image generation and reso
   assert.match(node, /提示词持久化/);
   assert.match(node, /素材持久化/);
   assert.match(node, /startCodexCliLogin/);
+  assert.match(node, /正在打开 Codex 登录窗口/);
+  assert.match(node, /CODEX_LOGIN_FLOW_STEPS/);
+  assert.match(node, /copyCodexSetupCommand/);
   assert.match(node, /登录 Codex CLI/);
   assert.match(node, /打开登录/);
   assert.match(node, /复制登录命令/);
+  assert.match(node, /普通 CMD 或 PowerShell/);
+  assert.match(node, /登录流程/);
+  assert.match(node, /复制安装/);
   assert.match(node, /codexExecutablePath/);
   assert.match(node, /模板工坊/);
   assert.match(node, /片段工坊/);

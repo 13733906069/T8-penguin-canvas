@@ -217,9 +217,9 @@ export interface AdvancedProviderSelection {
   available: boolean;
 }
 
-const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'comfyui', 'jimeng-cli']);
-const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'volcengine', 'jimeng-cli']);
-const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine']);
+const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes', 'comfyui', 'jimeng-cli']);
+const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'volcengine', 'agnes', 'jimeng-cli']);
+const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes']);
 
 const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, string[]>>> = {
   image: {
@@ -231,6 +231,7 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
       'black-forest-labs/FLUX.2-klein-9B',
     ],
     volcengine: ['doubao-seedream-4-0-250828'],
+    agnes: ['agnes-image-2.1-flash', 'agnes-image-2.0-flash'],
     'jimeng-cli': [
       'seedream-4.7',
       'seedream-4.6',
@@ -242,6 +243,7 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
   },
   video: {
     'openai-compatible': [],
+    agnes: ['agnes-video-v2.0'],
     volcengine: [
       'doubao-seedance-2-0-260128',
       'doubao-seedance-2-0-fast-260128',
@@ -267,6 +269,7 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
       'MiniMax/MiniMax-M2.7:MiniMax',
     ],
     volcengine: ['doubao-seed-1-6-250615'],
+    agnes: ['agnes-2.0-flash'],
   },
 };
 

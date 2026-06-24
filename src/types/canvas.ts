@@ -78,6 +78,7 @@ export type NodeType =
   // Input/Output 素材 (2) - 上传素材(图像/视频/音频三合一) + 输出素材(文本/图像/视频/音频预览)
   | 'upload'
   | 'material-set'
+  | 'generation-target'
   | 'output';
 
 // 节点分类
@@ -118,6 +119,7 @@ export type AdvancedProviderProtocol =
   | 'openai-compatible'
   | 'modelscope'
   | 'volcengine'
+  | 'agnes'
   | 'comfyui'
   | 'jimeng-cli';
 
@@ -352,6 +354,281 @@ export interface CreativeDeskState {
   items: CreativeDeskItem[];
 }
 
+export type FarmSeason = 'spring' | 'summer' | 'autumn' | 'winter';
+export type FarmWeather = 'sunny' | 'cloudy' | 'rainy' | 'festival';
+
+export type FarmTool =
+  | 'select'
+  | 'hoe'
+  | 'seed'
+  | 'water'
+  | 'harvest'
+  | 'shovel'
+  | 'build'
+  | 'decor'
+  | 'move'
+  | 'delete';
+
+export type FarmCropId = 'turnip' | 'potato' | 'tomato' | 'sunflower';
+export type FarmAnimalKind = 'chicken' | 'cow' | 'sheep';
+export type FarmAnimalProductId = 'egg' | 'milk' | 'wool';
+export type FarmAnimalMood = 'happy' | 'calm' | 'hungry';
+export type FarmNpcVisitorId = 'mira' | 'taro' | 'lina';
+export type FarmNpcRequestKind = 'crop' | 'animal-product';
+export type FarmRareEventId = 'giant-turnip' | 'rainbow-sunflower' | 'meteor-seed';
+
+export type FarmCropStage =
+  | 'seed'
+  | 'sprout'
+  | 'growing'
+  | 'flowering'
+  | 'mature'
+  | 'withered';
+
+export interface FarmCropState {
+  cropId: FarmCropId;
+  plantedDay: number;
+  daysGrown: number;
+  wateredToday: boolean;
+  dryDays: number;
+  stage: FarmCropStage;
+  quality?: 'normal' | 'silver' | 'gold' | 'rainbow';
+}
+
+export type FarmObjectKind = 'plot' | 'building' | 'decor' | 'path' | 'obstacle';
+export type FarmDecorObjectType = 'sign' | 'banner' | 'poster-wall' | 'tile';
+
+export interface FarmSelectedResourceDecor {
+  resourceId: string;
+  skinId: string;
+  objectType: FarmDecorObjectType;
+}
+
+export interface FarmCanvasObject {
+  id: string;
+  kind: FarmObjectKind;
+  x: number;
+  y: number;
+  widthCells: number;
+  heightCells: number;
+  rotation?: 0 | 90 | 180 | 270;
+  crop?: FarmCropState;
+  buildingId?: string;
+  decorId?: string;
+  resourceId?: string;
+  skinId?: string;
+  objectType?: FarmDecorObjectType;
+  createdDay: number;
+}
+
+export interface FarmAnimalState {
+  id: string;
+  kind: FarmAnimalKind;
+  name: string;
+  mood: FarmAnimalMood;
+  placedDay: number;
+  lastProducedDay?: number;
+  productCount: number;
+}
+
+export interface FarmCanvasResources {
+  gold: number;
+  wood: number;
+  stone: number;
+  water: number;
+  experience: number;
+  seeds: Partial<Record<FarmCropId, number>>;
+}
+
+export interface FarmCanvasInventory {
+  crops: Partial<Record<FarmCropId, number>>;
+  animalProducts: Partial<Record<FarmAnimalProductId, number>>;
+  decorIds: string[];
+}
+
+export interface FarmOrderRequirement {
+  kind: 'crop';
+  cropId: FarmCropId;
+  amount: number;
+}
+
+export interface FarmOrderReward {
+  gold?: number;
+  wood?: number;
+  stone?: number;
+  experience?: number;
+  seeds?: Partial<Record<FarmCropId, number>>;
+  decorIds?: string[];
+}
+
+export interface FarmOrder {
+  id: string;
+  title: string;
+  requirements: FarmOrderRequirement[];
+  rewards: FarmOrderReward;
+  completed?: boolean;
+}
+
+export type FarmFestivalTaskKind = 'complete-orders';
+
+export interface FarmFestivalTask {
+  id: string;
+  festivalId: string;
+  title: string;
+  description: string;
+  kind: FarmFestivalTaskKind;
+  target: number;
+  progress: number;
+  rewards: FarmOrderReward;
+  completed?: boolean;
+  completedDay?: number;
+}
+
+export interface FarmNpcVisitState {
+  id: string;
+  visitorId: FarmNpcVisitorId;
+  visitorName: string;
+  day: number;
+  title: string;
+  message: string;
+  requestKind: FarmNpcRequestKind;
+  cropId?: FarmCropId;
+  animalProductId?: FarmAnimalProductId;
+  amount: number;
+  rewards: FarmOrderReward;
+  completed?: boolean;
+  completedDay?: number;
+}
+
+export interface FarmRareEventState {
+  id: string;
+  eventId: FarmRareEventId;
+  title: string;
+  message: string;
+  day: number;
+  cropId?: FarmCropId;
+  rewards: FarmOrderReward;
+}
+
+export type FarmEventKind =
+  | 'plot_tilled'
+  | 'crop_planted'
+  | 'crop_watered'
+  | 'crop_harvested'
+  | 'order_completed'
+  | 'npc_request_completed'
+  | 'rare_event'
+  | 'building_placed'
+  | 'decor_placed'
+  | 'day_advanced'
+  | 'tool_feedback';
+
+export interface FarmEventLogItem {
+  id: string;
+  kind: FarmEventKind;
+  day: number;
+  message: string;
+  amount?: number;
+  cropId?: FarmCropId;
+  objectKind?: FarmObjectKind;
+  orderId?: string;
+  npcVisitId?: string;
+  rareEventId?: string;
+  createdAt: number;
+}
+
+export interface FarmDailySummary {
+  id: string;
+  fromDay: number;
+  toDay: number;
+  weather: FarmWeather;
+  festivalId?: string;
+  message: string;
+  harvestedCrops: number;
+  ordersCompleted: number;
+  goldEarned: number;
+  rainWateredCrops: number;
+  festivalBonusGold: number;
+  animalProductsProduced: number;
+  animalProductSummary?: string;
+  npcVisitsCompleted: number;
+  rareEventsFound: number;
+  rareEventSummary?: string;
+  readyOrders: number;
+  readyNpcVisits: number;
+  dailyWaterCapacity: number;
+  scarecrowProtectedCrops: number;
+  wateredCrops: number;
+  dryCrops: number;
+  witheredCrops: number;
+  newMatureCrops: number;
+  matureCrops: number;
+  nextMatureCrops: number;
+  highlights: string[];
+  createdAt: number;
+}
+
+export interface FarmCanvasStats {
+  plotsTilled: number;
+  cropsPlanted: number;
+  cropsWatered: number;
+  cropsHarvested: number;
+  ordersCompleted: number;
+  npcVisitsCompleted: number;
+  rareEventsFound: number;
+  objectsPlaced: number;
+  buildingsPlaced: number;
+  decorPlaced: number;
+  daysAdvanced: number;
+}
+
+export type FarmLongTermGoalId =
+  | 'starter-route'
+  | 'crop-catalog'
+  | 'farmstead-buildings'
+  | 'orders-10'
+  | 'decor-30'
+  | 'days-7';
+
+export interface FarmLongTermGoal {
+  id: FarmLongTermGoalId;
+  title: string;
+  hint: string;
+  current: number;
+  target: number;
+  unit: string;
+  percent: number;
+  done: boolean;
+}
+
+export interface FarmCanvasState {
+  version: 1;
+  coordinateMode: 'flow';
+  gridSize: number;
+  day: number;
+  season: FarmSeason;
+  weather: FarmWeather;
+  festivalId?: string;
+  resources: FarmCanvasResources;
+  inventory: FarmCanvasInventory;
+  objects: FarmCanvasObject[];
+  animals: FarmAnimalState[];
+  orders: FarmOrder[];
+  festivalTasks: FarmFestivalTask[];
+  npcVisits: FarmNpcVisitState[];
+  rareEvents: FarmRareEventState[];
+  eventLog: FarmEventLogItem[];
+  lastDailySummary?: FarmDailySummary;
+  discoveredCropIds: FarmCropId[];
+  unlockedDecorIds: string[];
+  stats: FarmCanvasStats;
+  selectedTool?: FarmTool;
+  selectedBuildingId?: string;
+  selectedDecorId?: string;
+  selectedResourceDecor?: FarmSelectedResourceDecor;
+  selectedObjectId?: string;
+}
+
 // 画布完整数据
 export interface CanvasData {
   nodes: any[];
@@ -359,6 +636,7 @@ export interface CanvasData {
   viewport: { x: number; y: number; zoom: number };
   nextNodeSerialId?: number;
   creativeDesk?: CreativeDeskState;
+  farmCanvas?: FarmCanvasState;
 }
 
 // API Key 设置(对应后端 settings)

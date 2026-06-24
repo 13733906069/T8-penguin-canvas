@@ -57,6 +57,15 @@ const EVENT_TYPES = new Set([
   'tetris.chapter_completed',
   'tetris.clean_chapter_completed',
   'tetris.game_over',
+  'farm.plot_tilled',
+  'farm.crop_planted',
+  'farm.crop_watered',
+  'farm.crop_harvested',
+  'farm.order_completed',
+  'farm.building_placed',
+  'farm.decor_placed',
+  'farm.rare_crop',
+  'farm.beauty_reward',
 ]);
 const CREATIVE_EVENT_TYPES = new Set([
   'hidden_mode.enabled',
@@ -80,6 +89,15 @@ const CREATIVE_EVENT_TYPES = new Set([
   'tetris.chapter_completed',
   'tetris.clean_chapter_completed',
   'tetris.game_over',
+  'farm.plot_tilled',
+  'farm.crop_planted',
+  'farm.crop_watered',
+  'farm.crop_harvested',
+  'farm.order_completed',
+  'farm.building_placed',
+  'farm.decor_placed',
+  'farm.rare_crop',
+  'farm.beauty_reward',
 ]);
 
 function nowIso(ts = Date.now()) {
@@ -180,6 +198,15 @@ function emptyThemeStats() {
     tetrisCleanChaptersCompleted: 0,
     tetrisCleanLv30Completed: 0,
     tetrisGameOvers: 0,
+    farmPlotsTilled: 0,
+    farmCropsPlanted: 0,
+    farmCropsWatered: 0,
+    farmCropsHarvested: 0,
+    farmOrdersCompleted: 0,
+    farmBuildingsPlaced: 0,
+    farmDecorPlaced: 0,
+    farmRareCrops: 0,
+    farmBeautyRewards: 0,
     nodeTypeCounts: {},
     nodeRunCounts: {},
     hiddenModes: {},
@@ -684,6 +711,42 @@ function applyEventToStats(data, event) {
   }
   if (event.type === 'tetris.game_over') {
     stats.tetrisGameOvers += 1;
+    return;
+  }
+  if (event.type === 'farm.plot_tilled') {
+    stats.farmPlotsTilled += 1;
+    return;
+  }
+  if (event.type === 'farm.crop_planted') {
+    stats.farmCropsPlanted += 1;
+    return;
+  }
+  if (event.type === 'farm.crop_watered') {
+    stats.farmCropsWatered += 1;
+    return;
+  }
+  if (event.type === 'farm.crop_harvested') {
+    stats.farmCropsHarvested += 1;
+    return;
+  }
+  if (event.type === 'farm.order_completed') {
+    stats.farmOrdersCompleted += 1;
+    return;
+  }
+  if (event.type === 'farm.building_placed') {
+    stats.farmBuildingsPlaced += 1;
+    return;
+  }
+  if (event.type === 'farm.decor_placed') {
+    stats.farmDecorPlaced += 1;
+    return;
+  }
+  if (event.type === 'farm.rare_crop') {
+    stats.farmRareCrops += 1;
+    return;
+  }
+  if (event.type === 'farm.beauty_reward') {
+    stats.farmBeautyRewards += 1;
   }
 }
 

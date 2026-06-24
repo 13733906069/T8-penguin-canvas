@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import {
@@ -80,6 +80,7 @@ import {
   isLikelyPanoramaImage,
   markPanoramaDefaultCameraView,
   measurePanoramaStoryboardPromptPanel,
+  normalizePanoramaRatioId,
   normalizePanoramaStoryboardPrompt,
   normalizePanoramaYaw,
   insertPanoramaStoryboardPresetPrompt,
@@ -150,6 +151,26 @@ import SmartImage from '../SmartImage';
 import PromptTextarea from '../PromptTextarea';
 
 const COLOR = '#38bdf8';
+const STORYBOARD_PREVIEW_READABLE_TEXT_SHADOW =
+  '0 0 0 #ffffff, 0 1px 0 #000000, 1px 0 0 #000000, -1px 0 0 #000000, 0 -1px 0 #000000, 0 0 4px rgba(0,0,0,.98)';
+const STORYBOARD_PREVIEW_LOCKED_WHITE_TEXT_STYLE: CSSProperties = {
+  color: '#ffffff',
+  colorScheme: 'dark',
+  forcedColorAdjust: 'none',
+  WebkitTextFillColor: '#ffffff',
+  WebkitTextStroke: '0.22px rgba(255, 255, 255, .76)',
+  paintOrder: 'stroke fill',
+  opacity: 1,
+  filter: 'none',
+  mixBlendMode: 'normal',
+  textRendering: 'geometricPrecision',
+  textShadow: STORYBOARD_PREVIEW_READABLE_TEXT_SHADOW,
+};
+const STORYBOARD_PREVIEW_LOCKED_PLACEHOLDER_STYLE: CSSProperties = {
+  ...STORYBOARD_PREVIEW_LOCKED_WHITE_TEXT_STYLE,
+  color: 'rgba(255,255,255,.82)',
+  WebkitTextFillColor: 'rgba(255,255,255,.82)',
+};
 
 type ThreeModule = typeof import('three');
 
@@ -1054,6 +1075,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const directorStageRef = useRef<HTMLDivElement | null>(null);
   const refInputRef = useRef<HTMLInputElement | null>(null);
   const storyboardPresetImportRef = useRef<HTMLInputElement | null>(null);
+  const storyboardPromptPreviewRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<PanoramaRuntime>({ loadToken: 0 });
   const dragRef = useRef<DragState | null>(null);
   const avatarDragRef = useRef<AvatarDragState | null>(null);
@@ -1064,6 +1086,42 @@ const Panorama3DNode = (p: NodeProps) => {
   const viewRef = useRef({ yaw: 0, pitch: 0, fov: 75 });
   const avatarsRef = useRef<PanoramaAvatar[]>([]);
   const d = (p.data as any) || {};
+  const lockPanoramaStoryboardPreviewTextElement = useCallback((element: HTMLElement | null) => {
+    if (!element) return;
+    const style = element.style;
+    style.setProperty('--tw-text-opacity', '1', 'important');
+    style.setProperty('color', '#ffffff', 'important');
+    style.setProperty('-webkit-text-fill-color', '#ffffff', 'important');
+    style.setProperty('-webkit-text-stroke', '0.22px rgba(255, 255, 255, .78)', 'important');
+    style.setProperty('color-scheme', 'dark', 'important');
+    style.setProperty('forced-color-adjust', 'none', 'important');
+    style.setProperty('filter', 'none', 'important');
+    style.setProperty('mix-blend-mode', 'normal', 'important');
+    style.setProperty('opacity', '1', 'important');
+    style.setProperty('text-rendering', 'geometricPrecision', 'important');
+    style.setProperty('paint-order', 'stroke fill', 'important');
+    style.setProperty('text-shadow', STORYBOARD_PREVIEW_READABLE_TEXT_SHADOW, 'important');
+    if (element.dataset.panoramaStoryboardPreview === 'true' || element.dataset.panoramaStoryboardPreviewCaption === 'true') {
+      style.setProperty('background-color', '#050505', 'important');
+      style.setProperty('background-image', 'none', 'important');
+    }
+    if (element.dataset.panoramaStoryboardPreviewPlaceholder === 'true') {
+      style.setProperty('background-color', '#020617', 'important');
+    }
+    if (element.dataset.panoramaStoryboardPreviewLine === 'true' || element.dataset.panoramaStoryboardPreviewCaption === 'true') {
+      style.setProperty('font-size', '15px', 'important');
+      style.setProperty('font-weight', '900', 'important');
+      style.setProperty('line-height', '1.42', 'important');
+      style.setProperty('letter-spacing', '0', 'important');
+    }
+  }, []);
+  const lockPanoramaStoryboardPreviewTextTree = useCallback((root: HTMLElement | null) => {
+    if (!root) return;
+    lockPanoramaStoryboardPreviewTextElement(root);
+    root
+      .querySelectorAll<HTMLElement>('[data-t8-color-lock="panorama-storyboard-preview"], [data-panorama-storyboard-preview-contrast-lock="true"], [data-panorama-storyboard-live-preview-text="white"]')
+      .forEach((element) => lockPanoramaStoryboardPreviewTextElement(element));
+  }, [lockPanoramaStoryboardPreviewTextElement]);
 
   const connectedSource = upstream.images[0];
   const generationMode = safePanoramaGenerationMode(d.panoramaGenerationMode);
@@ -1095,7 +1153,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const generatedHistory: PanoramaGenerationHistoryItem[] = Array.isArray(d.panoramaGeneratedHistory)
     ? d.panoramaGeneratedHistory.filter((item: any) => item && typeof item.url === 'string')
     : [];
-  const ratioId: PanoramaRatioId = (d.panoramaRatio || 'wide') as PanoramaRatioId;
+  const ratioId: PanoramaRatioId = normalizePanoramaRatioId(d.panoramaRatio);
   const customW = clampPanoramaNumber(d.panoramaCustomW, 1, 999, 16);
   const customH = clampPanoramaNumber(d.panoramaCustomH, 1, 999, 9);
   const yaw = clampPanoramaNumber(d.panoramaYaw, -99999, 99999, 0);
@@ -1189,6 +1247,36 @@ const Panorama3DNode = (p: NodeProps) => {
     () => measurePanoramaStoryboardPromptPanel(storyboardPromptText, Math.max(420, renderSize.width)),
     [renderSize.width, storyboardPromptText],
   );
+  useEffect(() => {
+    if (!storyboardPromptEnabled) return;
+    const relockPreview = () => lockPanoramaStoryboardPreviewTextTree(storyboardPromptPreviewRef.current);
+    relockPreview();
+    let frame = window.requestAnimationFrame(() => lockPanoramaStoryboardPreviewTextTree(storyboardPromptPreviewRef.current));
+    const observer = typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(() => {
+          relockPreview();
+          window.cancelAnimationFrame(frame);
+          frame = window.requestAnimationFrame(() => lockPanoramaStoryboardPreviewTextTree(storyboardPromptPreviewRef.current));
+        })
+      : null;
+    observer?.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme-mode', 'data-theme-visual', 'class', 'style'],
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [
+    storyboardPromptEnabled,
+    storyboardPromptText,
+    storyboardPromptPreviewPanel,
+    sourceUrl,
+    outputUrl,
+    d.panoramaSceneSnapshot?.snapshotUrl,
+    d.panoramaSceneSnapshot?.controlSnapshotUrl,
+    lockPanoramaStoryboardPreviewTextTree,
+  ]);
   const isLikely = useMemo(
     () => isLikelyPanoramaImage({ url: sourceUrl, label: connectedSource?.label, title: d.title, prompt: d.prompt }),
     [d.prompt, d.title, connectedSource?.label, sourceUrl],
@@ -3623,7 +3711,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const generatedSubtitle = isGenerating
     ? `生成中 · 21:9 · ${sizeLevel}`
     : hasSource
-    ? `${PANORAMA_RATIO_OPTIONS.find((x) => x.id === ratioId)?.label || '16:9'} · ${isGeneratedPreview ? `${sizeLevel} · GPT Image 2` : `FOV ${Math.round(fov)}°`}`
+    ? `${PANORAMA_RATIO_OPTIONS.find((x) => x.id === ratioId)?.label || '21:9'} · ${isGeneratedPreview ? `${sizeLevel} · GPT Image 2` : `FOV ${Math.round(fov)}°`}`
     : '文生 / 图生 720VR';
   const hasConnectedReference = Boolean(connectedSource?.url);
   const hasLocalReference = Boolean(localReferenceUrl);
@@ -3732,9 +3820,32 @@ const Panorama3DNode = (p: NodeProps) => {
     const sceneSnapshotUrl = typeof d.panoramaSceneSnapshot?.snapshotUrl === 'string' ? d.panoramaSceneSnapshot.snapshotUrl : '';
     const controlSnapshotUrl = typeof d.panoramaSceneSnapshot?.controlSnapshotUrl === 'string' ? d.panoramaSceneSnapshot.controlSnapshotUrl : '';
     const rawPreviewUrl = sourceUrl || sceneSnapshotUrl || controlSnapshotUrl || outputUrl;
-    const previewFontSize = 11;
+    const previewFontSize = 15;
     return (
-      <div className="overflow-hidden rounded-md border border-white/15 bg-black shadow-inner">
+      <div
+        className="t8-panorama-storyboard-preview overflow-hidden rounded-md border border-white/15 bg-black shadow-inner"
+        ref={(element) => {
+          storyboardPromptPreviewRef.current = element;
+          lockPanoramaStoryboardPreviewTextElement(element);
+        }}
+        data-t8-color-lock="panorama-storyboard-preview"
+        data-panorama-storyboard-preview="true"
+        data-panorama-storyboard-preview-day-safe="true"
+        data-panorama-storyboard-preview-tone="locked-white"
+        data-panorama-storyboard-preview-safe-color="white"
+        data-panorama-storyboard-preview-contrast-lock="true"
+        style={{
+          backgroundColor: '#050505',
+          ...STORYBOARD_PREVIEW_LOCKED_WHITE_TEXT_STYLE,
+          color: '#ffffff',
+          colorScheme: 'dark',
+          forcedColorAdjust: 'none',
+          isolation: 'isolate',
+          opacity: 1,
+          filter: 'none',
+          mixBlendMode: 'normal',
+        }}
+      >
         {rawPreviewUrl ? (
           <SmartImage
             src={rawPreviewUrl}
@@ -3744,16 +3855,79 @@ const Panorama3DNode = (p: NodeProps) => {
             thumbSize={720}
           />
         ) : (
-          <div className="flex h-24 items-center justify-center bg-slate-950 text-[10px] font-semibold text-white/60">
+          <div
+            className="t8-panorama-storyboard-preview-placeholder flex h-24 items-center justify-center bg-slate-950 text-[10px] font-semibold"
+            ref={lockPanoramaStoryboardPreviewTextElement}
+            data-t8-color-lock="panorama-storyboard-preview"
+            data-panorama-storyboard-preview-placeholder="true"
+            data-panorama-storyboard-preview-day-safe="true"
+            data-panorama-storyboard-preview-tone="locked-white"
+            data-panorama-storyboard-preview-safe-color="white"
+            data-panorama-storyboard-preview-contrast-lock="true"
+            style={{
+              ...STORYBOARD_PREVIEW_LOCKED_PLACEHOLDER_STYLE,
+              color: 'rgba(255,255,255,.82)',
+              colorScheme: 'dark',
+              forcedColorAdjust: 'none',
+              WebkitTextFillColor: 'rgba(255,255,255,.82)',
+            }}
+          >
             等待快照预览
           </div>
         )}
         <div
-          className="space-y-1 bg-black px-3 py-2 font-bold leading-snug text-white"
-          style={{ fontSize: previewFontSize, color: '#fff', textShadow: '0 1px 1px rgba(0,0,0,.8)' }}
+          className="t8-panorama-storyboard-preview-caption space-y-1 bg-black px-3 py-2 font-bold leading-snug"
+          ref={lockPanoramaStoryboardPreviewTextElement}
+          data-t8-color-lock="panorama-storyboard-preview"
+          data-panorama-storyboard-preview-caption="true"
+          data-panorama-storyboard-preview-day-safe="true"
+          data-panorama-storyboard-preview-tone="locked-white"
+          data-panorama-storyboard-preview-safe-color="white"
+          data-panorama-storyboard-preview-contrast-lock="true"
+          data-panorama-storyboard-live-preview-text="white"
+          style={{
+            backgroundColor: '#050505',
+            backgroundImage: 'none',
+            fontSize: previewFontSize,
+            fontWeight: 900,
+            ...STORYBOARD_PREVIEW_LOCKED_WHITE_TEXT_STYLE,
+            color: '#ffffff',
+            colorScheme: 'dark',
+            forcedColorAdjust: 'none',
+            WebkitTextFillColor: '#ffffff',
+            opacity: 1,
+            filter: 'none',
+            mixBlendMode: 'normal',
+            lineHeight: 1.42,
+            textShadow: STORYBOARD_PREVIEW_READABLE_TEXT_SHADOW,
+          }}
         >
           {storyboardPromptPreviewPanel.lines.map((line, index) => (
-            <div key={`${line}-${index}`} className="whitespace-pre-wrap break-words">
+            <div
+              key={`${line}-${index}`}
+              className="t8-panorama-storyboard-preview-caption-line whitespace-pre-wrap break-words"
+              ref={lockPanoramaStoryboardPreviewTextElement}
+              data-t8-color-lock="panorama-storyboard-preview"
+              data-panorama-storyboard-preview-line="true"
+              data-panorama-storyboard-preview-day-safe="true"
+              data-panorama-storyboard-preview-tone="locked-white"
+              data-panorama-storyboard-preview-safe-color="white"
+              data-panorama-storyboard-preview-contrast-lock="true"
+              data-panorama-storyboard-live-preview-text="white"
+              style={{
+                ...STORYBOARD_PREVIEW_LOCKED_WHITE_TEXT_STYLE,
+                fontWeight: 900,
+                color: '#ffffff',
+                colorScheme: 'dark',
+                forcedColorAdjust: 'none',
+                WebkitTextFillColor: '#ffffff',
+                opacity: 1,
+                filter: 'none',
+                mixBlendMode: 'normal',
+                fontSize: previewFontSize,
+                lineHeight: 1.42,
+              }}
+            >
               {line || '\u00a0'}
             </div>
           ))}
@@ -4383,7 +4557,7 @@ const Panorama3DNode = (p: NodeProps) => {
             </div>
           )}
 
-          <div className="grid grid-cols-10 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5">
             {PANORAMA_RATIO_OPTIONS.map((item) => (
               <button
                 key={item.id}

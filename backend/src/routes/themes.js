@@ -6,12 +6,12 @@ const config = require('../config');
 const router = express.Router();
 const SCHEMA = 't8-theme-template';
 const VERSION = 2;
-const VISUAL_STYLES = new Set(['plain', 'tech', 'pixel', 'op', 'rh', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer-hero', 'dragon-ball', 'saint-seiya']);
+const VISUAL_STYLES = new Set(['plain', 'tech', 'pixel', 'op', 'rh', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer-hero', 'dragon-ball', 'saint-seiya', 'tetris', 'farm-story']);
 const INTENSITIES = new Set(['subtle', 'medium', 'strong']);
-const ICON_PACKS = new Set(['default', 'op', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer', 'dragon-ball', 'saint-seiya']);
-const CANVAS_PATTERNS = new Set(['none', 'dots', 'map', 'circuit', 'confetti', 'hub', 'chakra', 'eva-grid', 'spirit-map', 'court', 'pitch', 'dragon-radar', 'sanctuary-zodiac']);
-const NODE_FRAMES = new Set(['plain', 'glass', 'sticker', 'wanted', 'hub-card', 'shinobi-scroll', 'eva-panel', 'spirit-case', 'scoreboard-card', 'match-card', 'capsule-card', 'cloth-box-card']);
-const MUSIC_PRESETS = new Set(['tech-pulse', 'pixel-pop', 'grand-line-adventure', 'rh-pulse', 'shinobi-flame', 'eva-sync', 'spirit-gun', 'buzzer-beater', 'golden-goal', 'ki-burst', 'shenron-aura', 'pegasus-cosmos', 'hades-eclipse']);
+const ICON_PACKS = new Set(['default', 'op', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer', 'dragon-ball', 'saint-seiya', 'tetromino-well', 'farm-tools']);
+const CANVAS_PATTERNS = new Set(['none', 'dots', 'map', 'circuit', 'confetti', 'hub', 'chakra', 'eva-grid', 'spirit-map', 'court', 'pitch', 'dragon-radar', 'sanctuary-zodiac', 'tetris-stack', 'pasture-map']);
+const NODE_FRAMES = new Set(['plain', 'glass', 'sticker', 'wanted', 'hub-card', 'shinobi-scroll', 'eva-panel', 'spirit-case', 'scoreboard-card', 'match-card', 'capsule-card', 'cloth-box-card', 'arcade-cabinet-card', 'farm-sign-card']);
+const MUSIC_PRESETS = new Set(['tech-pulse', 'pixel-pop', 'grand-line-adventure', 'rh-pulse', 'shinobi-flame', 'eva-sync', 'spirit-gun', 'buzzer-beater', 'golden-goal', 'ki-burst', 'shenron-aura', 'pegasus-cosmos', 'hades-eclipse', 'block-drop', 'farm-breeze']);
 const MUSIC_SOURCES = new Set(['synth', 'url', 'upload']);
 
 function loadSettings() {
@@ -77,6 +77,10 @@ function normalizeVisuals(raw, legacyStyle) {
           ? 'dragon-ball'
         : style === 'saint-seiya'
           ? 'saint-seiya'
+        : style === 'tetris'
+          ? 'tetromino-well'
+        : style === 'farm-story'
+          ? 'farm-tools'
           : 'default',
     canvasPattern: CANVAS_PATTERNS.has(source.canvasPattern)
       ? source.canvasPattern
@@ -98,6 +102,10 @@ function normalizeVisuals(raw, legacyStyle) {
           ? 'dragon-radar'
         : style === 'saint-seiya'
           ? 'sanctuary-zodiac'
+        : style === 'tetris'
+          ? 'tetris-stack'
+        : style === 'farm-story'
+          ? 'pasture-map'
         : style === 'tech'
           ? 'circuit'
           : 'dots',
@@ -121,6 +129,10 @@ function normalizeVisuals(raw, legacyStyle) {
           ? 'capsule-card'
         : style === 'saint-seiya'
           ? 'cloth-box-card'
+        : style === 'tetris'
+          ? 'arcade-cabinet-card'
+        : style === 'farm-story'
+          ? 'farm-sign-card'
         : style === 'tech'
           ? 'glass'
           : 'sticker',
@@ -220,6 +232,26 @@ function defaultMusicFor(legacyStyle, visuals) {
       volume: 0.16,
       bpm: 148,
       copyrightNote: '原创圣域小宇宙合成循环；冥界篇使用隐藏合成 preset，可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'tetris') {
+    return {
+      title: 'Korobeiniki Block Drop',
+      preset: 'block-drop',
+      source: 'synth',
+      volume: 0.15,
+      bpm: 132,
+      copyrightNote: '俄罗斯方块主题默认音乐由前端内置模板提供；后端导入规范化缺少可用 URL 时使用 block-drop 合成兜底，可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'farm-story') {
+    return {
+      title: 'Farm Breeze Loop',
+      preset: 'farm-breeze',
+      source: 'synth',
+      volume: 0.12,
+      bpm: 92,
+      copyrightNote: '原创牧场微风氛围合成循环；可替换为已授权音频 URL。',
     };
   }
   if (legacyStyle === 'tech' || style === 'tech') {

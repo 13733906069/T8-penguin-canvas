@@ -11,9 +11,19 @@ const {
   generateVideoWithProvider,
   testProviderConnection,
 } = require('../providers/adapters');
+const { resolveMediaRef } = require('../providers/mediaResolver');
 
 const router = express.Router();
 const EXTERNAL_GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
+const WEB_IMAGE_FETCH_TIMEOUT_MS = 30 * 1000;
+const WEB_IMAGE_FETCH_MAX_BYTES = 20 * 1024 * 1024;
+const DEFAULT_WEB_IMAGE_PROVIDER_ID = 'modelscope';
+const DEFAULT_WEB_IMAGE_VISION_MODEL = 'Qwen/Qwen3-VL-235B-A22B-Instruct';
+const DEFAULT_WEB_IMAGE_PROMPT_INSTRUCTION = [
+  '你是资深 AI 图像提示词反推助手。请严格观察这张网页图片，输出一段可直接用于文生图的高质量中文提示词。',
+  '必须完全基于图片可见内容，不要补写图中不存在的主体、场景、风格或抽象概念；如果无法识别图片，请明确说明无法读取图片，不要编造。',
+  '要求：描述主体、构图、场景、光线、材质、色彩、风格和镜头语言；不要解释过程，不要输出 Markdown，只输出提示词正文。',
+].join('\n');
 
 function generationTimeoutMs(value) {
   const n = Number(value);
@@ -144,6 +154,131 @@ function resultResponse(res, result, provider, dataPatch = {}) {
   });
 }
 
+function cleanWebText(value, maxLen = 4000) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+}
+
+function cleanWebImageUrl(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 8 * 1024 * 1024) return '';
+  if (/^(https?:\/\/|data:image\/)/i.test(text)) return text;
+  if (text.startsWith('/files/') || text.startsWith('/input/') || text.startsWith('/output/')) return text;
+  return '';
+}
+
+function imageMimeFromUrl(value) {
+  const ext = outputExtFromUrl(value, '').toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.bmp') return 'image/bmp';
+  if (ext === '.avif') return 'image/avif';
+  return '';
+}
+
+function cleanImageMime(value, fallback = '') {
+  const mime = String(value || '').split(';')[0].trim().toLowerCase();
+  if (mime.startsWith('image/')) return mime;
+  return fallback;
+}
+
+async function fetchWebImageAsDataUrl(imageUrl, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs || WEB_IMAGE_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(imageUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'User-Agent': 'T8-PenguinCanvas-WebImageReverse/2.3',
+      },
+    });
+    if (!response.ok) throw new Error(`读取网页图片失败：HTTP ${response.status}`);
+
+    const contentLength = Number(response.headers?.get?.('content-length') || 0);
+    if (contentLength > WEB_IMAGE_FETCH_MAX_BYTES) {
+      throw new Error(`网页图片过大，最大支持 ${Math.round(WEB_IMAGE_FETCH_MAX_BYTES / 1024 / 1024)}MB。`);
+    }
+
+    const fallbackMime = imageMimeFromUrl(imageUrl);
+    const mime = cleanImageMime(response.headers?.get?.('content-type'), fallbackMime);
+    if (!mime) throw new Error('网页图片返回的内容不是可识别的图片。');
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) throw new Error('网页图片内容为空。');
+    if (buffer.length > WEB_IMAGE_FETCH_MAX_BYTES) {
+      throw new Error(`网页图片过大，最大支持 ${Math.round(WEB_IMAGE_FETCH_MAX_BYTES / 1024 / 1024)}MB。`);
+    }
+    return `data:${mime};base64,${buffer.toString('base64')}`;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('读取网页图片超时，请重试或换一张图片。');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveWebImageForVision(imageUrl, options = {}) {
+  const text = String(imageUrl || '').trim();
+  if (/^data:image\/[^;,]+;base64,/i.test(text)) return text;
+  if (/^https?:\/\//i.test(text)) return fetchWebImageAsDataUrl(text, options);
+
+  const resolved = await resolveMediaRef(text, {
+    target: 'data-url',
+    baseUrl: options.baseUrl,
+  });
+  if (resolved?.dataUrl && /^data:image\/[^;,]+;base64,/i.test(resolved.dataUrl)) return resolved.dataUrl;
+  throw new Error('无法读取网页图片内容，请换用可访问的图片地址。');
+}
+
+function resolveWebImageProvider(body, currentProviders) {
+  const explicit = resolveProvider(body, currentProviders);
+  if (explicit) return explicit;
+  const providerId = cleanWebText(body?.providerId || body?.provider_id || DEFAULT_WEB_IMAGE_PROVIDER_ID, 80) || DEFAULT_WEB_IMAGE_PROVIDER_ID;
+  return currentProviders.find((provider) => provider.id === providerId) ||
+    currentProviders.find((provider) => provider.id === DEFAULT_WEB_IMAGE_PROVIDER_ID) ||
+    null;
+}
+
+function webImagePromptFromChatText(value) {
+  return cleanWebText(value, 4000)
+    .replace(/^```(?:\w+)?\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
+}
+
+function webImagePromptLooksUnreadable(value) {
+  const text = cleanWebText(value, 1200);
+  if (!text) return false;
+  return [
+    /无法读取(?:该|这张|当前)?(?:网页)?图片/,
+    /未检测到(?:可分析的)?图像数据/,
+    /无法(?:识别|分析)(?:该|这张|当前)?(?:图片|图像)/,
+    /不能(?:读取|识别|查看|看到|分析)(?:该|这张|当前)?(?:图片|图像)/,
+    /没有(?:收到|提供|检测到)(?:图片|图像)/,
+    /看不到(?:图片|图像)/,
+    /unable to (?:read|view|access|analy[sz]e) (?:the )?image/i,
+    /cannot (?:read|view|access|see|analy[sz]e) (?:the )?image/i,
+    /no image (?:data|provided|attached|available)/i,
+  ].some((pattern) => pattern.test(text));
+}
+
+function webImageChatMessages(imageUrl, instruction) {
+  return [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: instruction || DEFAULT_WEB_IMAGE_PROMPT_INSTRUCTION },
+        { type: 'image_url', image_url: { url: imageUrl } },
+      ],
+    },
+  ];
+}
+
 router.post('/test-provider', async (req, res) => {
   try {
     const settings = settingsRouter.loadSettings({ persistMigrations: false });
@@ -235,6 +370,184 @@ router.post('/image', async (req, res) => {
     return res.status(500).json({
       success: false,
       code: 'external_image_failed',
+      error: e?.message || String(e),
+    });
+  }
+});
+
+router.post('/web-image', async (req, res) => {
+  try {
+    const settings = settingsRouter.loadSettings({ persistMigrations: false });
+    const currentProviders = normalizeAdvancedProviders(settings.advancedProviders);
+    const provider = resolveWebImageProvider(req.body || {}, currentProviders);
+    if (!provider) {
+      return res.json({
+        success: false,
+        code: 'provider_not_found',
+        error: '未找到 ModelScope 扩展平台配置。',
+      });
+    }
+    if (!provider.enabled) {
+      return res.json({
+        success: false,
+        code: 'provider_disabled',
+        error: 'ModelScope 扩展平台未启用，请先在 API 设置中启用。',
+        data: { provider: safeProviderForResponse(provider) },
+      });
+    }
+
+    const imageUrl = cleanWebImageUrl(req.body?.imageUrl || req.body?.image_url || req.body?.url);
+    if (!imageUrl) {
+      return res.json({
+        success: false,
+        code: 'missing_image_url',
+        error: '请提供要反推的网页图片地址。',
+        data: { provider: safeProviderForResponse(provider) },
+      });
+    }
+
+    const instruction = cleanWebText(req.body?.promptInstruction || req.body?.instruction, 2000) || DEFAULT_WEB_IMAGE_PROMPT_INSTRUCTION;
+    const visionModel = DEFAULT_WEB_IMAGE_VISION_MODEL;
+
+    const visionImageUrl = await resolveWebImageForVision(imageUrl, {
+      baseUrl: `http://127.0.0.1:${config.PORT}`,
+    });
+
+    const chatResult = await generateChatWithProvider(provider, {
+      model: visionModel,
+      messages: webImageChatMessages(visionImageUrl, instruction),
+      temperature: req.body?.temperature ?? 0.2,
+      maxTokens: req.body?.maxTokens || req.body?.max_tokens || 900,
+    }, {
+      timeoutMs: Number(req.body?.llmTimeoutMs || req.body?.timeoutMs) || undefined,
+      baseUrl: `http://127.0.0.1:${config.PORT}`,
+    });
+    if (!chatResult.ok) return resultResponse(res, chatResult, provider);
+
+    const prompt = webImagePromptFromChatText(chatResult.text);
+    if (!prompt) {
+      return res.json({
+        success: false,
+        code: 'empty_prompt',
+        error: 'ModelScope 反推成功但没有返回提示词。',
+        data: {
+          ...chatResult,
+          provider: safeProviderForResponse(provider),
+          prompt: '',
+          sourceImageUrl: imageUrl,
+        },
+      });
+    }
+    if (webImagePromptLooksUnreadable(prompt)) {
+      return res.json({
+        success: false,
+        code: 'unreadable_image_prompt',
+        error: 'ModelScope 视觉模型没有读到这张网页图片，已停止生图。请换一张可访问图片，或先下载图片后上传到画布。',
+        data: {
+          ...chatResult,
+          provider: safeProviderForResponse(provider),
+          prompt: '',
+          sourceImageUrl: imageUrl,
+          imageUrls: [],
+          remoteImageUrls: [],
+          visionModel,
+          visionFailureText: prompt,
+          chat: {
+            model: chatResult.model,
+            finishReason: chatResult.finishReason,
+            truncated: chatResult.truncated,
+          },
+        },
+      });
+    }
+
+    const shouldGenerateImage = req.body?.generateImage !== false && req.body?.generate_image !== false;
+    if (!shouldGenerateImage) {
+      return res.json({
+        success: true,
+        code: 'completed',
+        data: {
+          ok: true,
+          kind: 'web-image',
+          code: 'completed',
+          providerId: provider.id,
+          protocol: provider.protocol,
+          provider: safeProviderForResponse(provider),
+          prompt,
+          sourceImageUrl: imageUrl,
+          imageUrls: [],
+          remoteImageUrls: [],
+          chat: {
+            model: chatResult.model,
+            finishReason: chatResult.finishReason,
+            truncated: chatResult.truncated,
+          },
+        },
+      });
+    }
+
+    const imageModel = cleanWebText(
+      req.body?.imageModel ||
+      req.body?.providerModel ||
+      provider.defaults?.imageModel ||
+      provider.imageModels?.[0],
+      240,
+    );
+    const imageResult = await generateImageWithProvider(provider, {
+      ...req.body,
+      prompt,
+      model: imageModel || req.body?.providerModel || req.body?.model,
+      providerModel: imageModel || req.body?.providerModel,
+      size: req.body?.size || req.body?.imageSize || req.body?.image_size || provider.defaults?.size || '1024x1024',
+    }, {
+      timeoutMs: generationTimeoutMs(req.body?.imageTimeoutMs || req.body?.timeoutMs),
+      pollIntervalMs: Number(req.body?.pollIntervalMs) || undefined,
+      baseUrl: `http://127.0.0.1:${config.PORT}`,
+    });
+    if (!imageResult.ok) {
+      return res.json({
+        success: false,
+        code: imageResult.code,
+        error: imageResult.error,
+        data: {
+          ...imageResult,
+          provider: safeProviderForResponse(provider),
+          prompt,
+          sourceImageUrl: imageUrl,
+          imageUrls: [],
+          remoteImageUrls: [],
+          chat: {
+            model: chatResult.model,
+            finishReason: chatResult.finishReason,
+            truncated: chatResult.truncated,
+          },
+        },
+      });
+    }
+
+    const remoteImageUrls = Array.isArray(imageResult.imageUrls) ? imageResult.imageUrls : [];
+    const imageUrls = await saveImageOutputs(remoteImageUrls);
+    return res.json({
+      success: true,
+      code: 'completed',
+      data: {
+        ...imageResult,
+        provider: safeProviderForResponse(provider),
+        prompt,
+        sourceImageUrl: imageUrl,
+        remoteImageUrls,
+        imageUrls,
+        chat: {
+          model: chatResult.model,
+          finishReason: chatResult.finishReason,
+          truncated: chatResult.truncated,
+        },
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      code: 'web_image_reverse_failed',
       error: e?.message || String(e),
     });
   }

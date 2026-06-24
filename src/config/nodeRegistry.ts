@@ -22,6 +22,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'model-3d-upload', label: '3D素材上传', category: 'input', description: '上传 glb/gltf/obj/stl/fbx/usdz/zip 3D 模型素材，并可一键生成 3D 模型预览节点', icon: 'Box', color: 'blue' },
   { type: 'model-3d-preview', label: '3D模型预览', category: 'input', description: '预览 glb/gltf/obj/stl/fbx/usdz 3D 模型，显示原始下载地址，并把当前角度快照输出为图像', icon: 'Box', color: 'blue' },
   { type: 'material-set', label: '素材集', category: 'input', description: '把多个同类型文本 / 图像 / 视频 / 音频打包成可排序素材集，可直接传给生成与 RH 节点', icon: 'Images', color: 'teal' },
+  { type: 'generation-target', label: '生成目标框', category: 'input', description: '先在画布上摆好 AI 结果位置，再把图像生成、网页反推或标注改图结果替换到框内', icon: 'ScanLine', color: 'teal' },
   { type: 'output', label: '输出素材', category: 'input', description: '起于上游任意节点的 文本/图像/视频/音频/3D模型 结果预览(原始宽高比 + 文本双击编辑)', icon: 'MonitorPlay', color: 'teal' },
 
   // ========== Core 核心节点(6) ==========

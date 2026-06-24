@@ -1,14 +1,4 @@
-export type PanoramaRatioId =
-  | 'square'
-  | 'portrait'
-  | 'landscape'
-  | 'portrait43'
-  | 'landscape43'
-  | 'story'
-  | 'wide'
-  | 'ultrawide'
-  | 'ultratall'
-  | 'custom';
+export type PanoramaRatioId = 'ultrawide' | 'twoToOne' | 'custom';
 
 export interface PanoramaRatio {
   w: number;
@@ -16,27 +6,13 @@ export interface PanoramaRatio {
 }
 
 export const PANORAMA_RATIO_PRESETS: Record<Exclude<PanoramaRatioId, 'custom'>, PanoramaRatio> = {
-  square: { w: 1, h: 1 },
-  portrait: { w: 2, h: 3 },
-  landscape: { w: 3, h: 2 },
-  portrait43: { w: 3, h: 4 },
-  landscape43: { w: 4, h: 3 },
-  story: { w: 9, h: 16 },
-  wide: { w: 16, h: 9 },
   ultrawide: { w: 21, h: 9 },
-  ultratall: { w: 9, h: 21 },
+  twoToOne: { w: 2, h: 1 },
 };
 
 export const PANORAMA_RATIO_OPTIONS: Array<{ id: PanoramaRatioId; label: string }> = [
-  { id: 'square', label: '1:1' },
-  { id: 'portrait', label: '2:3' },
-  { id: 'landscape', label: '3:2' },
-  { id: 'portrait43', label: '3:4' },
-  { id: 'landscape43', label: '4:3' },
-  { id: 'story', label: '9:16' },
-  { id: 'wide', label: '16:9' },
   { id: 'ultrawide', label: '21:9' },
-  { id: 'ultratall', label: '9:21' },
+  { id: 'twoToOne', label: '2:1' },
   { id: 'custom', label: '自定义' },
 ];
 
@@ -245,11 +221,19 @@ export async function composePanoramaStoryboardPromptDataUrl(sourceDataUrl: stri
   ctx.drawImage(img, 0, 0, width, height);
   ctx.fillStyle = '#050505';
   ctx.fillRect(0, height, width, panel.panelHeight);
+  ctx.shadowColor = 'rgba(0, 0, 0, .96)';
+  ctx.shadowBlur = Math.max(2, Math.round(panel.fontSize * 0.12));
+  ctx.shadowOffsetY = Math.max(1, Math.round(panel.fontSize * 0.04));
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.strokeStyle = 'rgba(0, 0, 0, .98)';
+  ctx.lineWidth = Math.max(2, Math.round(panel.fontSize * 0.08));
   ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${panel.fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  ctx.font = `900 ${panel.fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
   ctx.textBaseline = 'top';
   panel.lines.forEach((line, index) => {
     const y = height + panel.paddingY + index * panel.lineHeight;
+    ctx.strokeText(line || ' ', panel.paddingX, y, width - panel.paddingX * 2);
     ctx.fillText(line || ' ', panel.paddingX, y, width - panel.paddingX * 2);
   });
   return out.toDataURL('image/png');
@@ -3266,7 +3250,7 @@ export function buildPanoramaSceneSnapshot(params: {
       yaw: view.yaw,
       pitch: view.pitch,
       fov: view.fov,
-      ratio: cleanPanoramaText(params.ratioId, 24) || 'wide',
+      ratio: normalizePanoramaRatioId(params.ratioId),
       width: Math.max(1, Math.round(Number(params.width) || 0)),
       height: Math.max(1, Math.round(Number(params.height) || 0)),
     },
@@ -3307,10 +3291,15 @@ export function clampPanoramaNumber(value: unknown, min: number, max: number, fa
   return Math.max(min, Math.min(max, n));
 }
 
+export function normalizePanoramaRatioId(value: unknown): PanoramaRatioId {
+  if (value === 'custom' || value === 'twoToOne' || value === 'ultrawide') return value;
+  return 'ultrawide';
+}
+
 export function resolvePanoramaRatio(id: unknown, customW: unknown, customH: unknown): PanoramaRatio {
-  const key = typeof id === 'string' ? id : 'wide';
-  if (key !== 'custom' && Object.prototype.hasOwnProperty.call(PANORAMA_RATIO_PRESETS, key)) {
-    return PANORAMA_RATIO_PRESETS[key as Exclude<PanoramaRatioId, 'custom'>];
+  const key = normalizePanoramaRatioId(id);
+  if (key !== 'custom') {
+    return PANORAMA_RATIO_PRESETS[key];
   }
   return {
     w: clampPanoramaNumber(customW, 1, 999, 16),

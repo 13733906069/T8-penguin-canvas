@@ -179,6 +179,8 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   upload: { inputs: [], outputs: [] },
   // 素材集: 同类型素材集合，输入可收集四类素材，输出按 materialSetKind 动态决定。
   'material-set': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
+  // 生成目标框: 接提示词和参考图，输出框内最终图像。
+  'generation-target': { inputs: ['text', 'image'], outputs: ['image'] },
 
   // ========== 输出素材节点 (NEW) ==========
   // 任意上游节点的 文本/图像/视频/音频 都可连入；同时作为中继节点可继续向下游透传 (any)。

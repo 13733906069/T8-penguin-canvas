@@ -655,8 +655,16 @@ test('director storyboard bridge generation is per-pair and refresh can recover 
   assert.match(node, /disabled=\{isActiveBridgeBusy\}/);
   assert.match(node, /bridgeAbortRefs\.current\.set\(bridgeIdFromJob, controller\)/);
   assert.match(node, /bridgeAbortRefs\.current\.forEach\(\(controller\) => controller\.abort\(\)\)/);
-  assert.match(node, /const refreshStoryboardOutputs = async \(\) =>/);
+  assert.match(node, /const syncBridgeResultFromState = \(bridge: DirectorStoryboardBridge, job: DirectorStoryboardJob\): boolean =>/);
+  assert.match(node, /const refreshStoryboardOutputs = async \(options: \{ bridgeId\?: string \} = \{\}\) =>/);
+  assert.match(node, /const targetJobId = targetBridgeId \? `bridge-\$\{targetBridgeId\}` : ''/);
+  assert.match(node, /syncBridgeResultFromState\(bridge, job\)/);
   assert.match(node, /querySeedance\(result\.taskId\)/);
-  assert.match(node, /result\.status !== 'success' && result\.taskId && !result\.videoUrl/);
+  assert.match(node, /filter\(\(\[, result\]\) => result\?\.taskId && !result\.videoUrl\)/);
   assert.match(node, /patchBridge\(bridgeIdFromJob, \{ status: 'success', videoUrl: query\.videoUrl/);
+  assert.match(node, /activeBridgeResult\.taskId[\s\S]*activeBridge\.taskId[\s\S]*activeBridgeResult\.videoUrl[\s\S]*activeBridge\.videoUrl/);
+  assert.match(node, /const isActiveBridgeLocallyPolling = bridgeAbortRefs\.current\.has\(activeBridge\.id\)/);
+  assert.match(node, /disabled=\{!canRefreshActiveBridgeOutput \|\| isActiveBridgeLocallyPolling\}/);
+  assert.match(node, /refreshStoryboardOutputs\(\{ bridgeId: activeBridge\.id \}\)/);
+  assert.match(node, /重新获取桥接/);
 });

@@ -51,6 +51,7 @@ test('advancedProvidersForNode only exposes enabled providers supported by each 
     { id: 'openai-compatible', label: 'OpenAI', protocol: 'openai-compatible', enabled: true, imageModels: ['gpt-image-1'], chatModels: ['gpt-4o-mini'] },
     { id: 'modelscope', label: 'ModelScope', protocol: 'modelscope', enabled: true, imageModels: ['MusePublic/489_ckpt_FLUX_1'], chatModels: ['Qwen/Qwen3-Coder'] },
     { id: 'volcengine', label: 'Volc', protocol: 'volcengine', enabled: false, imageModels: ['seedream'], videoModels: ['seedance'], chatModels: ['doubao'] },
+    { id: 'agnes', label: 'Agnes AI', protocol: 'agnes', enabled: true, imageModels: ['agnes-image-2.1-flash'], videoModels: ['agnes-video-v2.0'], chatModels: ['agnes-2.0-flash'] },
     { id: 'comfyui', label: 'ComfyUI', protocol: 'comfyui', enabled: true, comfyuiConfig: { workflows: [] } },
     { id: 'jimeng-cli', label: 'Jimeng', protocol: 'jimeng-cli', enabled: true, imageModels: ['jimeng-image'], videoModels: ['jimeng-video'] },
   ] as any;
@@ -58,13 +59,16 @@ test('advancedProvidersForNode only exposes enabled providers supported by each 
   assert.deepEqual(advancedProvidersForNode(providers, 'image').map((p) => p.id), [
     'openai-compatible',
     'modelscope',
+    'agnes',
     'jimeng-cli',
   ]);
   assert.deepEqual(advancedProvidersForNode(providers, 'llm').map((p) => p.id), [
     'openai-compatible',
     'modelscope',
+    'agnes',
   ]);
   assert.deepEqual(advancedProvidersForNode(providers, 'video').map((p) => p.id), [
+    'agnes',
     'jimeng-cli',
   ]);
 });
@@ -122,6 +126,22 @@ test('advancedProviderModelOptions uses explicit lists before safe provider defa
       'doubao-seedance-1-0-lite-t2v-250428',
       'doubao-seedance-1-0-lite-i2v-250428',
     ],
+  );
+  assert.deepEqual(
+    advancedProviderModelOptions({
+      id: 'agnes',
+      protocol: 'agnes',
+      defaults: { videoModel: 'agnes-video-v2.0' },
+    } as any, 'video'),
+    ['agnes-video-v2.0'],
+  );
+  assert.deepEqual(
+    advancedProviderModelOptions({
+      id: 'agnes',
+      protocol: 'agnes',
+      defaults: { chatModel: 'agnes-2.0-flash' },
+    } as any, 'llm'),
+    ['agnes-2.0-flash'],
   );
   assert.deepEqual(
     advancedProviderModelOptions({
@@ -295,6 +315,34 @@ test('zhenzhen local group selection extension points are wired without making p
   assert.match(proxy, /route: 'seedance\/submit'/);
   assert.match(proxy, /kind: 'seedance'/);
   assert.match(proxy, /ensureKeyOrSelectedGroup\(settings, res, 'seedance', 'Seedance', providerParams\)/);
+});
+
+test('Agnes provider settings and video node controls are exposed', () => {
+  const settings = fs.readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
+  const videoNode = fs.readFileSync(new URL('../src/components/nodes/VideoNode.tsx', import.meta.url), 'utf8');
+
+  assert.match(settings, /agnes:\s*'Agnes AI'/);
+  assert.match(settings, /https:\/\/apihub\.agnes-ai\.com\/v1/);
+  assert.match(settings, /AGNES_API_KEY_URL = 'https:\/\/platform\.agnes-ai\.com\/settings\/apiKeys'/);
+  assert.match(videoNode, /providerSelection\.provider\?\.protocol === 'agnes'/);
+  assert.match(videoNode, /Agnes 视频参数/);
+  assert.match(videoNode, /frameRate/);
+  assert.match(videoNode, /numFrames/);
+});
+
+test('advanced provider API keys have bounded visibility toggles', () => {
+  const settings = fs.readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8');
+
+  assert.match(settings, /advancedSecretShows/);
+  assert.match(settings, /setAdvancedSecretShows/);
+  assert.match(settings, /t8-api-settings-secret-field/);
+  assert.match(settings, /t8-api-settings-secret-toggle/);
+  assert.match(settings, /type=\{advancedSecretShows\[provider\.id\] \? 'text' : 'password'\}/);
+  assert.match(settings, /\{advancedSecretShows\[provider\.id\] \? <EyeOff size=\{14\} \/> : <Eye size=\{14\} \/>}/);
+  assert.match(styles, /\.t8-api-settings-secret-field\s*\{[\s\S]*position:\s*relative/);
+  assert.match(styles, /\.t8-api-settings-secret-field\s+\.t8-api-settings-input\s*\{[\s\S]*padding-right:\s*42px/);
+  assert.match(styles, /\.t8-api-settings-secret-toggle\s*\{[\s\S]*right:\s*8px/);
 });
 
 test('local private zhenzhen group extension is opt-in and keeps FAL out when present', () => {

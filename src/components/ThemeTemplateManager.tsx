@@ -97,6 +97,7 @@ const VISUAL_STYLE_OPTIONS = [
   { value: 'dragon-ball', label: '七龙珠' },
   { value: 'saint-seiya', label: '圣斗士' },
   { value: 'tetris', label: '俄罗斯方块' },
+  { value: 'farm-story', label: '牧场物语' },
 ] as const;
 
 const VISUAL_INTENSITY_OPTIONS = [
@@ -120,6 +121,7 @@ const MUSIC_PRESET_OPTIONS: Array<{ value: ThemeMusicPreset; label: string }> = 
   { value: 'pegasus-cosmos', label: '天马小宇宙' },
   { value: 'hades-eclipse', label: '冥界日蚀' },
   { value: 'block-drop', label: '落块冲刺' },
+  { value: 'farm-breeze', label: '牧场微风' },
 ];
 
 const MAX_THEME_AUDIO_SIZE = 20 * 1024 * 1024;
@@ -244,6 +246,17 @@ function visualDefaultsFor(style: ThemeVisuals['style'], legacyStyle: LegacyThem
       canvasPattern: 'tetris-stack',
       nodeFrame: 'arcade-cabinet-card',
       headerMark: prev?.headerMark || 'TETRIS STACK',
+    };
+  }
+  if (style === 'farm-story') {
+    return {
+      ...fallbackVisuals(legacyStyle),
+      ...(prev || {}),
+      style,
+      iconPack: 'farm-tools',
+      canvasPattern: 'pasture-map',
+      nodeFrame: 'farm-sign-card',
+      headerMark: prev?.headerMark || 'FARM STORY',
     };
   }
   if (style === 'tech') {
@@ -382,6 +395,16 @@ function fallbackMusic(legacyStyle: LegacyThemeStyle, visuals?: ThemeVisuals): T
       volume: 0.15,
       bpm: 148,
       copyrightNote: '原创 falling-block 合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'farm-story') {
+    return {
+      title: 'Farm Breeze',
+      preset: 'farm-breeze',
+      source: 'synth',
+      volume: 0.14,
+      bpm: 96,
+      copyrightNote: '原创轻量牧场合成循环；后续可替换为已授权季节音乐。',
     };
   }
   if (legacyStyle === 'tech' || visualStyle === 'tech') {

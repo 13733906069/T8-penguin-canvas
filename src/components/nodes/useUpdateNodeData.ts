@@ -10,6 +10,7 @@ function enqueueOffscreenCanvasPatch(
   canvasId: string,
   nodeId: string,
   patch: Record<string, any>,
+  notifyCompletion = false,
 ) {
   const key = `${canvasId}::${nodeId}`;
   const prev = offscreenPatchQueues.get(key) || Promise.resolve();
@@ -41,6 +42,9 @@ function enqueueOffscreenCanvasPatch(
       api.autoSaveCanvasData(canvasId, payload).catch((e) => {
         console.warn('离屏画布自动保存到本地路径失败', e);
       });
+      if (notifyCompletion) {
+        useCanvasStore.getState().markCanvasCompletionNotice(canvasId);
+      }
     });
   const queued = next.finally(() => {
     if (offscreenPatchQueues.get(key) === queued) {
@@ -48,6 +52,12 @@ function enqueueOffscreenCanvasPatch(
     }
   });
   offscreenPatchQueues.set(key, queued);
+}
+
+function isCompletedCanvasPatch(patch: Record<string, any>) {
+  const status = typeof patch?.status === 'string' ? patch.status.toLowerCase() : '';
+  const taskStatus = typeof patch?.taskStatus === 'string' ? patch.taskStatus.toLowerCase() : '';
+  return status === 'success' || status === 'completed' || taskStatus === 'completed';
 }
 
 /**
@@ -67,7 +77,7 @@ export function useUpdateNodeData(nodeId: string) {
       const queueKey = originCanvasId ? `${originCanvasId}::${nodeId}` : '';
       const hasPendingOffscreenPatch = queueKey ? offscreenPatchQueues.has(queueKey) : false;
       if (originCanvasId && (activeCanvasId !== originCanvasId || hasPendingOffscreenPatch)) {
-        enqueueOffscreenCanvasPatch(originCanvasId, nodeId, patch);
+        enqueueOffscreenCanvasPatch(originCanvasId, nodeId, patch, activeCanvasId !== originCanvasId && isCompletedCanvasPatch(patch));
         if (activeCanvasId !== originCanvasId) return;
       }
       setNodes((nds) =>

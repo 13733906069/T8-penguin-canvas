@@ -89,6 +89,8 @@ test('Codex CLI backend exposes status, skill, workspace, and streaming routes',
   assert.match(route, /signal:/);
   assert.match(service, /streamCodexCliAgent/);
   assert.match(service, /startCodexCliLogin/);
+  assert.match(service, /command\?: string/);
+  assert.match(service, /scriptPath\?: string/);
   assert.match(service, /getCodexCliSkills/);
   assert.match(service, /createCodexProjectSkill/);
   assert.match(service, /updateCodexProjectSkill/);
@@ -324,6 +326,17 @@ test('Codex CLI runner prefers runnable Windows npm shims and can build login in
   const login = runner.buildCodexLoginStartInvocation({ executablePath: 'codex', env: { PATH: npmDir } });
   assert.equal(login.args[0], 'login');
   assert.equal(login.shell, true);
+  assert.match(login.commandText, /codex\.cmd"? login/);
+
+  const deviceLogin = runner.buildCodexLoginStartInvocation({ executablePath: 'codex', env: { PATH: npmDir }, deviceAuth: true });
+  assert.deepEqual(deviceLogin.args, ['login', '--device-auth']);
+  assert.match(deviceLogin.commandText, /--device-auth/);
+
+  const runnerSource = read('../backend/src/utils/codexCliRunner.js');
+  assert.match(runnerSource, /writeCodexLoginCmdScript/);
+  assert.match(runnerSource, /startCodexLoginInVisibleTerminal/);
+  assert.match(runnerSource, /windowsHide:\s*false/);
+  assert.match(runnerSource, /登录完成后回到 T8 画布/);
 });
 
 test('Codex CLI status probe reports unavailable CLI without throwing HTTP-breaking errors', async () => {
@@ -697,10 +710,16 @@ test('Codex creator node remains draggable and exposes setup/login guidance', ()
   assert.match(node, /clearRecoverableCodexError/);
   assert.match(node, /codexStatusPanel/);
   assert.match(node, /startCodexCliLogin/);
+  assert.match(node, /正在打开 Codex 登录窗口/);
+  assert.match(node, /CODEX_LOGIN_FLOW_STEPS/);
+  assert.match(node, /copyCodexSetupCommand/);
   assert.match(node, /codexLoginCommand/);
   assert.match(node, /friendlyCodexErrorMessage/);
   assert.match(node, /登录 Codex CLI/);
   assert.match(node, /打开登录/);
+  assert.match(node, /复制安装命令/);
+  assert.match(node, /普通 CMD 或 PowerShell/);
+  assert.match(node, /登录流程/);
   assert.match(node, /需要登录或填写 Codex CLI 路径/);
   assert.match(node, /检测详情/);
   assert.match(node, /后端路由未加载/);

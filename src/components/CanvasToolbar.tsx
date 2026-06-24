@@ -17,6 +17,7 @@ import {
   BellOff,
   Archive,
   Search,
+  History,
   Terminal as TerminalIcon,
   LayoutGrid,
   MousePointer2,
@@ -32,6 +33,7 @@ import {
   AlignVerticalSpaceBetween,
   Grid3x3,
   Palette,
+  ScanLine,
 } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useLogStore } from '../stores/logs';
@@ -82,6 +84,11 @@ interface CanvasToolbarProps {
   onToggleSnap: () => void;
   outputMaterialPersistenceEnabled: boolean;
   onToggleOutputMaterialPersistence: () => void;
+  historyCount: number;
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  onCreateGenerationTarget: () => void;
+  onExportResourcePackage: () => void;
   onAlignSelection: (action: NodeAlignAction) => void;
   onOpenGuomanModels?: () => void;
   children?: ReactNode;
@@ -110,6 +117,11 @@ export default function CanvasToolbar({
   onToggleSnap,
   outputMaterialPersistenceEnabled,
   onToggleOutputMaterialPersistence,
+  historyCount,
+  historyOpen,
+  onToggleHistory,
+  onCreateGenerationTarget,
+  onExportResourcePackage,
   onAlignSelection,
   onOpenGuomanModels,
   children,
@@ -455,12 +467,56 @@ export default function CanvasToolbar({
           <Archive size={15} />
         </button>
         <button
+          className={`${baseBtn} ${
+            historyOpen
+              ? isPixel
+                ? 'bg-[var(--px-mint)] text-[var(--px-ink)]'
+                : isDark
+                  ? 'text-cyan-200 bg-cyan-500/20'
+                  : 'text-cyan-700 bg-cyan-500/10'
+              : ''
+          }`}
+          onClick={onToggleHistory}
+          title={historyCount > 0 ? `历史记录 · ${historyCount} 条` : '历史记录'}
+          aria-label="历史记录"
+          aria-pressed={historyOpen}
+        >
+          <History size={15} />
+          {historyCount > 0 && (
+            <span
+              className={
+                isPixel
+                  ? 'absolute -top-1 -right-1 text-[9px] leading-none px-1 py-0.5 rounded-full border-2 border-[var(--px-ink)] bg-[var(--px-yellow)] text-[var(--px-ink)] font-bold'
+                  : 'absolute -top-1 -right-1 text-[9px] leading-none px-1 py-0.5 rounded-full bg-cyan-500 text-black font-bold'
+              }
+            >
+              {historyCount > 99 ? '99+' : historyCount}
+            </span>
+          )}
+        </button>
+        <button
+          className={baseBtn}
+          onClick={onCreateGenerationTarget}
+          title="生成目标框：先摆位置，再把 AI 结果填入"
+          aria-label="生成目标框"
+        >
+          <ScanLine size={15} />
+        </button>
+        <button
           className={baseBtn}
           onClick={onFindNodeById}
           title="查找 NodeID"
           aria-label="查找 NodeID"
         >
           <Search size={15} />
+        </button>
+        <button
+          className={baseBtn}
+          onClick={onExportResourcePackage}
+          title="资源包：导出当前画布素材清单"
+          aria-label="导出资源包"
+        >
+          <Archive size={15} />
         </button>
 
         <div className={sep} />
