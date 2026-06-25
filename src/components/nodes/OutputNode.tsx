@@ -676,8 +676,9 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   ) => {
     const logSource = `annotation-edit-output:${id}`;
     if (cleanUrls.length < 2) {
-      logBus.warn('标注改图需要同时包含干净原图和标注图', logSource);
-      return;
+      const error = new Error('标注改图需要同时包含干净原图和标注图');
+      logBus.warn(error.message, logSource);
+      throw error;
     }
     try {
       logBus.info('正在按标注说明生成改图结果', logSource);
@@ -726,19 +727,19 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       logBus.success(targetNode ? '标注改图结果已填入生成目标框' : '标注改图结果已创建到右侧', logSource);
     } catch (error: any) {
       logBus.error(error?.message || '标注改图失败', logSource);
+      throw error;
     }
   };
 
-  const handleProduce = (urls: string[], _meta?: OutputProduceMeta) => {
+  const handleProduce = (urls: string[], _meta?: OutputProduceMeta): void | Promise<void> => {
     const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
     const isRhCapabilityOutput = _meta?.type === 'rh-capability';
     const logSource = `rh-image-output:${id}`;
+    if (_meta?.type === 'annotation-edit') {
+      return runAnnotationEditProduce(cleanUrls, _meta);
+    }
     if (cleanUrls.length === 0) {
       if (isRhCapabilityOutput) logBus.warn(`${_meta.label || 'RH 图像能力'}完成但没有可创建的图像 URL`, logSource);
-      return;
-    }
-    if (_meta?.type === 'annotation-edit') {
-      void runAnnotationEditProduce(cleanUrls, _meta);
       return;
     }
     const me = rf.getNode(id);

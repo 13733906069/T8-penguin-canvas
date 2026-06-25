@@ -10,13 +10,13 @@ https://www.runninghub.cn/?inviteCode=rh-v1121
 My favorite girl Go YounJung
 # 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
-> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.3.4
+> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.3.8
 >
 > GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
 一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器和桌面端均可使用。
 
-![status](https://img.shields.io/badge/version-v2.3.4-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
+![status](https://img.shields.io/badge/version-v2.3.8-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
@@ -26,8 +26,8 @@ My favorite girl Go YounJung
 
 | 平台 | 链接 |
 |---|---|
-| 🅱️ B 站教程 | <https://www.bilibili.com/video/BV18sG76AE9Y/> |
-| ▶️ Youtube 教程 | <https://www.youtube.com/watch?v=V8oCBhemmCQ> |
+| 🅱️ B 站教程 | <https://www.bilibili.com/video/BV1tYjy6jEuG/> |
+| ▶️ Youtube 教程 | <https://www.youtube.com/watch?v=AH24lGHA9E0> |
 
 > 如果你是首次上手，建议先跳转视频看一遍再动手，可避免在 API Key / 节点连线语义 / 模型选择上走弯路。
 
@@ -35,10 +35,14 @@ My favorite girl Go YounJung
 
 ## ✨ 功能亮点
 
-- 🎨 **50 个节点**，覆盖文本 / 图像 / 视频 / 音频 / LLM / RunningHub / ComfyUI / 3D / 工具 / 辅助 / 工具箱 / 输出预览 / 上传素材 / 素材集
+- 🎨 **53 个节点**，覆盖文本 / 图像 / 视频 / 音频 / LLM / RunningHub / ComfyUI / 3D / 工具 / 辅助 / 工具箱 / 输出预览 / 上传素材 / 素材集
 - 🧺 **画布级批量导入 + 素材合集打散**：上传节点支持一次选择多张图 / 多个视频 / 多段音频；也可直接把剪贴板或文件拖到画布，同类型多素材自动形成合集，上传和输出合集都可一键打散为多个独立素材节点
 - 👁️ **上传 / 输出图像原图悬停预览**（v1.8.7）：上传素材与输出素材的图像卡片在 hover 时显示小眼睛按钮，鼠标停在按钮上可按 100% 原尺寸预览，超出视口时自动等比收进可见区域，输出素材入口位于图像对比按钮下方
 - 🧾 **提示词模板库媒体套件**（v2.1.2）：图像 / 视频 / 音频 / 文本素材可从节点右键直接保存到提示词模板库，连同原 Prompt、标题、标签和配套媒体一起沉淀；右键保存时可选择或新建模板分类，模板库支持分类新增 / 删除 / 重命名，预览采用懒加载并支持图像 100% 查看
+- 🎬 **v2.3.8 视频剪辑与创作者工作流自动更新版**：新增核心「视频剪辑」节点，支持多视频上传/上游导入/跨画布追加、缩略图时间线、裁剪排序、片段拆分、转场滤镜、音频策略、异步 ffmpeg 合成、取消任务、下载成片和输出给下游；批量素材处理 RH 并发扩展到 1-10，并同步第十四弹教程、Gemini 正式模型名和左下角模型说明。
+- 🧩 **v2.3.7 网页反推 Electron 回传修复版**：Chrome 网页图片反推插件在 Electron 安装包场景下会优先通过本地桥接把提示词 / 图片 / 图文结果送回正在运行的桌面画布，不再误开 `127.0.0.1` 错误页；同时保留发送到当前选中生成目标框的回填逻辑。
+- 🧩 **v2.3.6 工作台与批量处理体验自动更新版**：VibeX 工作台顶部补充 Chrome 插件安装目录和说明，插件 manifest 升级到 1.1.0；批量素材处理改成一次只启用一种策略，并在并发执行时显示每个素材的等待 / 处理 / 完成 / 失败状态；左下角模型注意事项补充 Seedance2.0 mini、原生4K 和预扣退补说明。Electron 安装包继续带上网页图片反推插件目录 `resources/extension/web-image-reverse/`。
+- 🧩 **v2.3.5 VibeX 与大画布性能自动更新版**：新增 VibeX 工作台节点，支持线上嵌入、RunningHub 登录适配、结果回传画布和 Chrome 插件桥接；批量素材处理的抠图、扩图、高清放大全部走 RH 工具箱能力层并支持并发/重试；100+ 节点画布增加生成历史懒收集、拖拽时隐藏非焦点端口/操作条和暂停非焦点动画等性能护栏。Electron 安装包会带上网页图片反推插件目录 `resources/extension/web-image-reverse/`。
 - 🧩 **v2.3.4 画布创作流自动更新版**：补齐 Cowart 启发工作流第二段，图像编辑画板可直接“标注改图”，输出/上传素材会保留干净原图与标注图并自动生成干净改图结果；当前画布资源包导出加入资源库索引、缩略图引用和生成历史摘要，网页图片反推 Chrome 插件继续随公开源码发布。
 - 🧩 **v2.3.3 画布创作流自动更新版**：新增“生成目标框”，用户可先在画布上摆好 AI 结果位置，再由上游文本/图像、网页图片反推或选区生成把结果准确填入；选区右键可整理提示词和参考图创建图像节点，当前画布资源包可导出轻量 manifest，网页图片反推 Chrome 插件继续随公开源码发布。
 - 🧩 **v2.3.2 网页反推与画布体验自动更新版**：网页图片反推插件支持只发提示词、只发图片、图文一起发送，并可在浮层里直接用修改后的提示词重新生成图片；ModelScope 反推固定使用 qwen-web 同款 VL 模型并拦截不可读图片；画板节点和图像编辑弹窗新增 RH 自动抠图，结果直接替换选中图像；放置栏可隐藏/恢复，牧场物语和圣斗士主题折叠侧栏不再遮挡顶部主题栏。
@@ -55,7 +59,7 @@ My favorite girl Go YounJung
 - 🧩 **LLM / 文本 / 画布交互修复**（v2.1.2）：LLM 多轮流式结果可单条删除且不会在下次生成时复活；文本节点支持上游图像 / 视频 / 音频 `@` 提及预览，文本分割输入框接入提示词模板与放大编辑；复杂大画布框选用屏幕拖拽矩形复核，降低漂移误选
 - 🧭 **New API 分组令牌高级模式**（v2.1.1）：公开版新增本地扩展插槽与节点级 `providerParams` 透传，私有分组令牌能力可在 API Key 设置页默认关闭、按需启用；FAL 模型继续固定使用通用贞贞 Key，避免新手被分组配置打扰
 - 🌱 **即梦 CLI 模型补齐**（v2.1.3）：按新版 `dreamina -h` / 子命令 help 验证，外部平台即梦 CLI 图像模型新增 `seedream-4.7`，生成时会传入 `--model_version=4.7`；视频模型补齐 `seedance2.0fast_vip / seedance2.0_vip / seedance2.0fast / seedance2.0`
-- 🍌 **Nano Banana 2 映射修复**（v2.1.1）：UI 仍保留「香蕉2 / nano-banana-2 (Flash)」入口，真实上游模型修正为 `gemini-3.1-flash-image-preview`，旧画布保存的旧模型值会自动兼容
+- 🍌 **Nano Banana 2 映射修复**（v2.1.1）：UI 仍保留「香蕉2 / nano-banana-2 (Flash)」入口，真实上游模型修正为 `gemini-3.1-flash-image`，旧画布保存的旧模型值会自动兼容
 - 🧹 **生成节点上游素材单项排除**（v1.8.8）：图像 / 视频 / SD2.0 / 音频 / LLM / RunningHub / RH 工具节点的上游素材缩略图右下角可点 X，从当前节点排除单个传入素材但不切断连线，并可用“恢复N”一键恢复
 - 🗂️ **素材集节点 + 资源库整套复用**：可把同类型文本 / 图像 / 视频 / 音频合并为素材集，支持拖拽排序、反转 / 文件名 / 随机排序、导入素材集 / 导出素材集、保存到资源库、从资源库整套插入画布；未选中节点时按 `R` 可快速打开 / 关闭资源库
 - 🚚 **跨画布节点 / 素材发送 + 本机工具入库**：框选多个带连线节点可用“节点片段”发送到其他画布并保留内部连线；上传素材、输出素材或素材集仍支持智能保持 / 合并素材集 / 上传素材 / 拆分上传 / 输出素材，发送弹窗提供最近画布、发送历史和重复素材提示，发送后可自动切换并定位到新内容，资源库素材也可一键发送，Eagle 与 Figma 桥接均只允许本机 localhost 接口

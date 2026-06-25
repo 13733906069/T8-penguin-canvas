@@ -293,6 +293,17 @@ test('SeedanceNode exposes explicit Jimeng intelligent multiframe mode only for 
   assert.match(source, /智能多帧\(multiframe\)/);
 });
 
+test('SeedanceNode exposes Zhenzhen mini model and native4K resolution', () => {
+  const source = fs.readFileSync(new URL('../src/components/nodes/SeedanceNode.tsx', import.meta.url), 'utf8');
+  const generation = fs.readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /value: 'doubao-seedance-2\.0-mini'/);
+  assert.match(source, /label: 'seedance-2\.0-mini'/);
+  assert.match(source, /RESOLUTION_OPTIONS = \[[^\]]*'native4K'[^\]]*\]/);
+  assert.match(generation, /doubao-seedance-2\.0-mini/);
+  assert.match(generation, /native4K/);
+});
+
 test('zhenzhen local group selection extension points are wired without making private code public', () => {
   const apiSettings = fs.readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
   const imageNode = fs.readFileSync(new URL('../src/components/nodes/ImageNode.tsx', import.meta.url), 'utf8');

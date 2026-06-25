@@ -26,7 +26,7 @@ const config = {
   // 服务器
   HOST: process.env.HOST || '127.0.0.1',
   PORT: process.env.PORT || 18766, // 注意:与主项目 18765 错开
-  APP_VERSION: '2.3.4',
+  APP_VERSION: '2.3.8',
   NODE_ENV: process.env.NODE_ENV || (IS_PACKAGED ? 'production' : 'development'),
   IS_PACKAGED,
 
@@ -50,7 +50,6 @@ const config = {
   RH_TOOLBOX_MANIFEST_FILE: path.join(DATA_ROOT, 'data', 'rh_toolbox_manifest.json'),
   // 前端静态产物目录(打包后由 Express 同进程托管)
   FRONTEND_DIST: process.env.T8PC_FRONTEND_DIST || (IS_PACKAGED ? '' : path.join(PROJECT_DIR, 'dist')),
-
   // 缩略图配置
   THUMBNAIL_SIZE: 160,
   THUMBNAIL_QUALITY: 80,

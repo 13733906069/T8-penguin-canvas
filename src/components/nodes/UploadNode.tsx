@@ -45,6 +45,12 @@ import {
   type MediaKind,
 } from '../../utils/mediaCollection';
 import {
+  AUDIO_UPLOAD_ACCEPT,
+  UNSUPPORTED_M4A_UPLOAD_MESSAGE,
+  isUnsupportedUploadAudioFile,
+  validateUploadMediaFile,
+} from '../../utils/uploadMediaValidation';
+import {
   CREATIVE_TARGET_NODE_TYPE,
   buildAnnotationEditRequest,
   buildAnnotationEditResultPlacement,
@@ -101,7 +107,7 @@ const KIND_META: Record<
   },
   audio: {
     label: '音频',
-    accept: 'audio/*',
+    accept: AUDIO_UPLOAD_ACCEPT,
     icon: Music,
     color: PORT_COLOR.audio,
     dataField: 'audioUrl',
@@ -355,6 +361,9 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   };
 
   const uploadSingleFile = async (file: File, kind: UploadKind): Promise<MediaItem> => {
+    const validationError = validateUploadMediaFile(file, kind);
+    if (validationError) throw new Error(validationError);
+
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch('/api/files/upload', { method: 'POST', body: fd });
@@ -403,12 +412,17 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const prepareFiles = (rawFiles: File[]) => {
     const files = rawFiles.filter(Boolean);
     if (files.length === 0) return;
-    const inferred = lockedUploadType ?? uploadType ?? files.map(inferKindFromFile).find(Boolean) ?? null;
+    const uploadableFiles = files.filter((file) => !isUnsupportedUploadAudioFile(file));
+    if (uploadableFiles.length === 0) {
+      setError(UNSUPPORTED_M4A_UPLOAD_MESSAGE);
+      return;
+    }
+    const inferred = lockedUploadType ?? uploadType ?? uploadableFiles.map(inferKindFromFile).find(Boolean) ?? null;
     if (!inferred) {
       setError('无法识别文件类型,请选择图像/视频/音频/3D模型');
       return;
     }
-    const accepted = files.filter((file) => inferKindFromFile(file) === inferred);
+    const accepted = uploadableFiles.filter((file) => inferKindFromFile(file) === inferred);
     const skipped = files.length - accepted.length;
     if (accepted.length === 0) {
       const km = KIND_META[inferred];
@@ -453,8 +467,9 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   ) => {
     const logSource = `annotation-edit-upload:${id}`;
     if (cleanUrls.length < 2) {
-      logBus.warn('标注改图需要同时包含干净原图和标注图', logSource);
-      return;
+      const error = new Error('标注改图需要同时包含干净原图和标注图');
+      logBus.warn(error.message, logSource);
+      throw error;
     }
     try {
       logBus.info('正在按标注说明生成改图结果', logSource);
@@ -503,19 +518,19 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
       logBus.success(targetNode ? '标注改图结果已填入生成目标框' : '标注改图结果已创建到右侧', logSource);
     } catch (error: any) {
       logBus.error(error?.message || '标注改图失败', logSource);
+      throw error;
     }
   };
 
-  const handleProduce = (urls: string[], _meta?: UploadProduceMeta) => {
+  const handleProduce = (urls: string[], _meta?: UploadProduceMeta): void | Promise<void> => {
     const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
     const isRhCapabilityOutput = _meta?.type === 'rh-capability';
     const logSource = `rh-image-output:${id}`;
+    if (_meta?.type === 'annotation-edit') {
+      return runAnnotationEditProduce(cleanUrls, _meta);
+    }
     if (cleanUrls.length === 0) {
       if (isRhCapabilityOutput) logBus.warn(`${_meta.label || 'RH 图像能力'}完成但没有可创建的图像 URL`, logSource);
-      return;
-    }
-    if (_meta?.type === 'annotation-edit') {
-      void runAnnotationEditProduce(cleanUrls, _meta);
       return;
     }
     const me = rf.getNode(id);
@@ -748,7 +763,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
         <input
           ref={fileInputRef}
           type="file"
-          accept={meta ? meta.accept : 'image/*,video/*,audio/*,.glb,.gltf,.obj,.fbx,.stl,.usdz,.zip'}
+          accept={meta ? meta.accept : `image/*,video/*,${AUDIO_UPLOAD_ACCEPT},.glb,.gltf,.obj,.fbx,.stl,.usdz,.zip`}
           multiple
           className="hidden"
           onChange={handleFileChange}

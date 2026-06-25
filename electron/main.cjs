@@ -15,7 +15,7 @@ const net = require('net');
 const { spawn } = require('child_process');
 const { fileURLToPath } = require('url');
 
-const APP_VERSION = '2.3.4';
+const APP_VERSION = '2.3.8';
 const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新';
 
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
@@ -25,6 +25,7 @@ if (process.platform === 'win32') {
 }
 
 let mainWindow = null;
+let vibeXRhLoginWindow = null;
 let logWindow = null;
 let backendModule = null; // 后端 Express app(同进程加载) 或 子进程句柄
 let backendProcess = null;
@@ -32,6 +33,7 @@ let backendPort = 18766;
 let logBuffer = [];
 let autoUpdater = null;
 let initialUpdateCheckStarted = false;
+let vibeXFrameUiPatchTimer = null;
 let updaterState = {
   status: 'idle',
   currentVersion: APP_VERSION,
@@ -45,6 +47,37 @@ let updaterState = {
 };
 
 const PARSE_AUTH_PARTITION = 'persist:t8-parsehub-auth';
+const VIBEX_HOSTNAME = 'vibex.runninghub.cn';
+const VIBEX_RH_COOKIE_DOMAIN = '.runninghub.cn';
+const VIBEX_RH_TOKEN_KEYS = ['Rh-Accesstoken', 'Rh-Refreshtoken', 'Rh-Identify'];
+const VIBEX_RH_TOKEN_ALIASES = {
+  'Rh-Accesstoken': [
+    'Rh-Accesstoken',
+    'Accesstoken',
+    'accesstoken',
+    'accessToken',
+    'access_token',
+    'rhAccessToken',
+    'rh_access_token',
+    'token',
+  ],
+  'Rh-Refreshtoken': [
+    'Rh-Refreshtoken',
+    'Refreshtoken',
+    'refreshtoken',
+    'refreshToken',
+    'refresh_token',
+    'rhRefreshToken',
+    'rh_refresh_token',
+  ],
+  'Rh-Identify': [
+    'Rh-Identify',
+    'Identify',
+    'identify',
+    'rhIdentify',
+    'rh_identify',
+  ],
+};
 const PARSE_AUTH_PROFILES = [
   { id: 'douyin', label: '抖音', authUrl: 'https://www.douyin.com/', domains: ['douyin.com', 'iesdouyin.com'] },
   { id: 'tiktok', label: 'TikTok', authUrl: 'https://www.tiktok.com/', domains: ['tiktok.com'] },
@@ -76,6 +109,601 @@ function openExternalUrl(url) {
   return shell.openExternal(url)
     .then(() => ({ success: true }))
     .catch((e) => ({ success: false, message: e && e.message ? e.message : String(e) }));
+}
+
+function parseHttpUrl(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function isRunningHubHost(hostname) {
+  return hostnameMatchesDomain(hostname, 'runninghub.cn');
+}
+
+function isVibeXRhLoginUrl(url) {
+  const parsed = parseHttpUrl(url);
+  if (!parsed) return false;
+  return isRunningHubHost(parsed.hostname) && parsed.pathname.toLowerCase().includes('sso-login');
+}
+
+function isVibeXSsoCallbackUrl(url) {
+  const parsed = parseHttpUrl(url);
+  if (!parsed) return false;
+  return String(parsed.hostname || '').toLowerCase() === VIBEX_HOSTNAME
+    && parsed.pathname.toLowerCase().includes('sso-popup-callback');
+}
+
+function isVibeXRhLoginFlowUrl(url) {
+  const parsed = parseHttpUrl(url);
+  if (!parsed) return false;
+  const host = String(parsed.hostname || '').toLowerCase();
+  return host === VIBEX_HOSTNAME || isRunningHubHost(host);
+}
+
+function vibeXRhParamsFromUrl(url) {
+  const parsed = parseHttpUrl(url);
+  const params = new URLSearchParams(parsed ? parsed.search : '');
+  if (!parsed) return params;
+  const hash = String(parsed.hash || '').replace(/^#/, '');
+  const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : hash;
+  if (hashQuery.includes('=')) {
+    new URLSearchParams(hashQuery).forEach((value, key) => {
+      params.set(key, value);
+    });
+  }
+  return params;
+}
+
+function readVibeXRhTokenValue(source, key) {
+  const aliases = VIBEX_RH_TOKEN_ALIASES[key] || [key, key.replace(/^Rh-/, ''), key.toLowerCase(), key.replace(/^Rh-/, '').toLowerCase()];
+  for (const alias of aliases) {
+    const raw = source instanceof URLSearchParams ? source.get(alias) : source?.[alias];
+    const value = String(raw || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function extractVibeXRhLoginTokens(source) {
+  const params = source instanceof URLSearchParams
+    ? source
+    : (source && typeof source === 'object' && !(source instanceof String) ? source : vibeXRhParamsFromUrl(source));
+  const tokens = {};
+  for (const key of VIBEX_RH_TOKEN_KEYS) {
+    const value = readVibeXRhTokenValue(params, key);
+    if (value) tokens[key] = value;
+  }
+  return tokens;
+}
+
+function hasVibeXRhLoginTokens(tokens) {
+  return VIBEX_RH_TOKEN_KEYS.some((key) => String(tokens?.[key] || '').trim());
+}
+
+async function readVibeXRhTokensFromSessionCookies() {
+  const cookieUrls = [
+    `https://${VIBEX_HOSTNAME}/`,
+    'https://www.runninghub.cn/',
+    'https://runninghub.cn/',
+  ];
+  const cookies = [];
+  for (const url of cookieUrls) {
+    try {
+      cookies.push(...await session.defaultSession.cookies.get({ url }));
+    } catch (_) {}
+  }
+  if (!cookies.length) return {};
+  const byName = new Map();
+  for (const cookie of cookies) {
+    if (!cookie?.name || byName.has(cookie.name)) continue;
+    byName.set(cookie.name, cookie.value || '');
+  }
+  const out = {};
+  for (const key of VIBEX_RH_TOKEN_KEYS) {
+    const aliases = VIBEX_RH_TOKEN_ALIASES[key] || [key];
+    for (const alias of aliases) {
+      const raw = byName.get(alias);
+      const value = String(raw || '').trim();
+      if (!value) continue;
+      try {
+        out[key] = decodeURIComponent(value);
+      } catch (_) {
+        out[key] = value;
+      }
+      break;
+    }
+  }
+  return out;
+}
+
+async function persistVibeXRhLoginTokens(tokens) {
+  const entries = VIBEX_RH_TOKEN_KEYS
+    .map((key) => [key, String(tokens?.[key] || '').trim()])
+    .filter(([, value]) => value);
+  if (!entries.length) {
+    return { success: false, count: 0 };
+  }
+  const expirationDate = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7;
+  for (const [name, rawValue] of entries) {
+    const value = encodeURIComponent(rawValue);
+    const common = {
+      name,
+      value,
+      path: '/',
+      secure: true,
+      httpOnly: false,
+      sameSite: 'no_restriction',
+      expirationDate,
+    };
+    await session.defaultSession.cookies.set({
+      url: `https://${VIBEX_HOSTNAME}/`,
+      domain: VIBEX_RH_COOKIE_DOMAIN,
+      ...common,
+    });
+    await session.defaultSession.cookies.set({
+      url: `https://${VIBEX_HOSTNAME}/`,
+      ...common,
+    });
+  }
+  return { success: true, count: entries.length };
+}
+
+function collectVibeXFrames(frame, out = []) {
+  if (!frame) return out;
+  try {
+    if (isVibeXRhLoginFlowUrl(frame.url) && String(new URL(frame.url).hostname || '').toLowerCase() === VIBEX_HOSTNAME) {
+      out.push(frame);
+    }
+  } catch (_) {}
+  const childFrames = Array.isArray(frame.frames) ? frame.frames : [];
+  for (const child of childFrames) collectVibeXFrames(child, out);
+  return out;
+}
+
+function buildVibeXFrameUiPatchScript() {
+  function installVibeXSelectPatch() {
+    if (window.__t8VibeXSelectPatchInstalled && typeof window.__t8VibeXPatchSelects === 'function') {
+      window.__t8VibeXPatchSelects();
+      return 'already-installed';
+    }
+
+    window.__t8VibeXSelectPatchInstalled = true;
+    const PATCH_ATTR = 'data-t8-vibex-native-select';
+    const TRIGGER_CLASS = 't8-vibex-custom-select-trigger';
+    const MENU_CLASS = 't8-vibex-custom-select-menu';
+    const OPTION_CLASS = 't8-vibex-custom-select-option';
+    let openMenu = null;
+
+    function injectStyle() {
+      if (document.getElementById('t8-vibex-select-patch-style')) return;
+      const style = document.createElement('style');
+      style.id = 't8-vibex-select-patch-style';
+      style.textContent = [
+        '.' + TRIGGER_CLASS + '{box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;border:1px solid rgba(148,163,184,.35);border-radius:10px;background:rgba(2,6,23,.88);color:#f8fafc;padding:8px 12px;font:inherit;text-align:left;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}',
+        '.' + TRIGGER_CLASS + ':focus{outline:2px solid rgba(59,130,246,.75);outline-offset:2px;}',
+        '.' + TRIGGER_CLASS + ':disabled{cursor:not-allowed;opacity:.55;}',
+        '.t8-vibex-custom-select-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+        '.t8-vibex-custom-select-caret{flex:0 0 auto;opacity:.8;font-size:13px;}',
+        '.' + MENU_CLASS + '{position:fixed;z-index:2147483647;box-sizing:border-box;max-height:280px;overflow:auto;border:1px solid rgba(96,165,250,.45);border-radius:10px;background:#020617;color:#f8fafc;padding:4px;box-shadow:0 18px 42px rgba(0,0,0,.52),0 0 0 1px rgba(255,255,255,.04);}',
+        '.' + OPTION_CLASS + '{display:block;width:100%;border:0;border-radius:7px;background:transparent;color:inherit;padding:9px 10px;font:inherit;text-align:left;cursor:pointer;}',
+        '.' + OPTION_CLASS + ':hover,.' + OPTION_CLASS + '[data-active="true"]{background:#2563eb;color:white;}',
+      ].join('\n');
+      document.head.appendChild(style);
+    }
+
+    function selectedLabel(select) {
+      const option = select.options[select.selectedIndex];
+      return option ? option.textContent || option.value || '' : '';
+    }
+
+    function closeMenu() {
+      if (!openMenu) return;
+      try {
+        openMenu.remove();
+      } catch (_) {}
+      openMenu = null;
+    }
+
+    function updateTrigger(select) {
+      const trigger = select.__t8VibeXCustomTrigger;
+      if (!trigger) return;
+      const label = trigger.querySelector('.t8-vibex-custom-select-label');
+      if (label) label.textContent = selectedLabel(select);
+      trigger.disabled = !!select.disabled;
+      trigger.title = selectedLabel(select);
+    }
+
+    function dispatchSelectChange(select) {
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function positionMenu(trigger, menu) {
+      const rect = trigger.getBoundingClientRect();
+      const minViewportGap = 8;
+      const width = Math.max(rect.width, 128);
+      const left = Math.max(minViewportGap, Math.min(rect.left, window.innerWidth - width - minViewportGap));
+      const spaceBelow = window.innerHeight - rect.bottom - minViewportGap;
+      const spaceAbove = rect.top - minViewportGap;
+      const openAbove = spaceBelow < 150 && spaceAbove > spaceBelow;
+      menu.style.left = left + 'px';
+      menu.style.width = width + 'px';
+      menu.style.maxHeight = Math.max(120, Math.min(280, (openAbove ? spaceAbove : spaceBelow) - 4)) + 'px';
+      menu.style.top = openAbove ? 'auto' : Math.max(minViewportGap, rect.bottom + 4) + 'px';
+      menu.style.bottom = openAbove ? Math.max(minViewportGap, window.innerHeight - rect.top + 4) + 'px' : 'auto';
+    }
+
+    function openCustomMenu(select, trigger) {
+      closeMenu();
+      updateTrigger(select);
+      const menu = document.createElement('div');
+      menu.className = MENU_CLASS;
+      menu.setAttribute('role', 'listbox');
+      Array.from(select.options).forEach((option) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = OPTION_CLASS;
+        button.textContent = option.textContent || option.value || '';
+        button.setAttribute('role', 'option');
+        if (option.value === select.value) button.setAttribute('data-active', 'true');
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          select.value = option.value;
+          dispatchSelectChange(select);
+          updateTrigger(select);
+          closeMenu();
+          trigger.focus();
+        });
+        menu.appendChild(button);
+      });
+      document.body.appendChild(menu);
+      openMenu = menu;
+      positionMenu(trigger, menu);
+    }
+
+    function patchSelect(select) {
+      if (!(select instanceof HTMLSelectElement)) return;
+      if (select.getAttribute(PATCH_ATTR) === '1') {
+        updateTrigger(select);
+        return;
+      }
+      select.setAttribute(PATCH_ATTR, '1');
+      const oldChevron = select.nextElementSibling;
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = TRIGGER_CLASS;
+      trigger.innerHTML = '<span class="t8-vibex-custom-select-label"></span><span class="t8-vibex-custom-select-caret">⌄</span>';
+      select.__t8VibeXCustomTrigger = trigger;
+      select.style.display = 'none';
+      if (oldChevron && oldChevron.tagName && oldChevron.tagName.toLowerCase() === 'svg') {
+        oldChevron.style.display = 'none';
+      }
+      select.insertAdjacentElement('afterend', trigger);
+      trigger.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (select.disabled) return;
+        openCustomMenu(select, trigger);
+      });
+      select.addEventListener('change', () => updateTrigger(select));
+      select.addEventListener('input', () => updateTrigger(select));
+      updateTrigger(select);
+    }
+
+    function patchSelects() {
+      document.querySelectorAll('select').forEach(patchSelect);
+      return document.querySelectorAll('select[' + PATCH_ATTR + '="1"]').length;
+    }
+
+    window.__t8VibeXPatchSelects = patchSelects;
+    injectStyle();
+    const count = patchSelects();
+    const observer = new MutationObserver(() => patchSelects());
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener('pointerdown', (event) => {
+      if (!openMenu) return;
+      const target = event.target;
+      const isTrigger = target && typeof target.closest === 'function' && target.closest('.' + TRIGGER_CLASS);
+      if (openMenu.contains(target) || isTrigger) return;
+      closeMenu();
+    }, true);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeMenu();
+    }, true);
+    window.addEventListener('resize', closeMenu, true);
+    window.addEventListener('scroll', closeMenu, true);
+    setInterval(() => document.querySelectorAll('select[' + PATCH_ATTR + '="1"]').forEach(updateTrigger), 700);
+    return 'installed:' + count;
+  }
+
+  return `(${installVibeXSelectPatch.toString()})()`;
+}
+
+async function injectVibeXFrameUiPatches() {
+  if (!mainWindow || mainWindow.isDestroyed()) return 0;
+  const rootFrame = mainWindow.webContents && mainWindow.webContents.mainFrame ? mainWindow.webContents.mainFrame : null;
+  const frames = collectVibeXFrames(rootFrame);
+  if (!frames.length) return 0;
+  const script = buildVibeXFrameUiPatchScript();
+  let patched = 0;
+  for (const frame of frames) {
+    if (!frame || typeof frame.executeJavaScript !== 'function') continue;
+    try {
+      await frame.executeJavaScript(script, true);
+      patched += 1;
+    } catch (error) {
+      dbgLog(`[vibex-ui] frame patch failed: ${normalizeError(error)}`);
+    }
+  }
+  return patched;
+}
+
+function scheduleVibeXFrameUiPatch(delay = 250) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (vibeXFrameUiPatchTimer) clearTimeout(vibeXFrameUiPatchTimer);
+  vibeXFrameUiPatchTimer = setTimeout(() => {
+    vibeXFrameUiPatchTimer = null;
+    injectVibeXFrameUiPatches()
+      .then((count) => {
+        if (count) dbgLog(`[vibex-ui] patched ${count} embedded frame(s)`);
+      })
+      .catch((error) => dbgLog(`[vibex-ui] patch schedule failed: ${normalizeError(error)}`));
+  }, delay);
+}
+
+async function syncVibeXRhTokensToEmbeddedFrames(tokens) {
+  if (!hasVibeXRhLoginTokens(tokens) || !mainWindow || mainWindow.isDestroyed()) return 0;
+  const script = `(function(){
+    const tokens = ${JSON.stringify(tokens)};
+    try {
+      for (const [key, value] of Object.entries(tokens)) {
+        if (!value) continue;
+        localStorage.setItem(key, value);
+        document.cookie = key + '=' + encodeURIComponent(value) + ';Path=/;Max-Age=604800;SameSite=Lax;Secure';
+        document.cookie = key + '=' + encodeURIComponent(value) + ';Path=/;Max-Age=604800;SameSite=Lax;Domain=.runninghub.cn;Secure';
+      }
+      localStorage.removeItem('t8-vibex-local-rh-logged-out');
+      window.dispatchEvent(new MessageEvent('message', { data: { type: 'rh-sso-login-complete', tokens: tokens } }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  })()`;
+  let synced = 0;
+  const rootFrame = mainWindow.webContents && mainWindow.webContents.mainFrame ? mainWindow.webContents.mainFrame : null;
+  const frames = collectVibeXFrames(rootFrame);
+  for (const frame of frames) {
+    if (!frame || typeof frame.executeJavaScript !== 'function') continue;
+    try {
+      const ok = await frame.executeJavaScript(script, true);
+      if (ok) synced += 1;
+    } catch (error) {
+      dbgLog(`[vibex-sso] token frame sync failed: ${normalizeError(error)}`);
+    }
+  }
+  try {
+    const posted = await mainWindow.webContents.executeJavaScript(`(function(){
+      const frames = Array.from(document.querySelectorAll('iframe[data-vibex-frame="true"]'));
+      for (const frame of frames) {
+        try {
+          frame.contentWindow && frame.contentWindow.postMessage(
+            { type: 'rh-sso-login-complete', tokens: ${JSON.stringify(tokens)} },
+            'https://${VIBEX_HOSTNAME}'
+          );
+        } catch (_) {}
+      }
+      return frames.length;
+    })()`, true);
+    synced = Math.max(synced, Number(posted || 0));
+  } catch (error) {
+    dbgLog(`[vibex-sso] token postMessage failed: ${normalizeError(error)}`);
+  }
+  scheduleVibeXFrameUiPatch(100);
+  return synced;
+}
+
+function reloadVibeXFramesAfterLogin() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.executeJavaScript(`(function(){
+    const frames = Array.from(document.querySelectorAll('iframe[data-vibex-frame="true"]'));
+    let count = 0;
+    for (const frame of frames) {
+      try {
+        const next = new URL(frame.src);
+        if (next.hostname !== '${VIBEX_HOSTNAME}') continue;
+        next.searchParams.set('_t8rh', String(Date.now()));
+        frame.src = next.toString();
+        count += 1;
+      } catch (_) {}
+    }
+    return count;
+  })()`, true)
+    .then((count) => {
+      dbgLog(`[vibex-sso] refreshed ${Number(count || 0)} embedded frame(s)`);
+      scheduleVibeXFrameUiPatch(900);
+    })
+    .catch((error) => dbgLog(`[vibex-sso] refresh embedded frames failed: ${normalizeError(error)}`));
+}
+
+async function readVibeXRhTokensFromLoginWindow(loginWindow) {
+  if (!loginWindow || loginWindow.isDestroyed()) return {};
+  const currentUrl = loginWindow.webContents.getURL();
+  if (!isVibeXSsoCallbackUrl(currentUrl) && !isVibeXRhLoginFlowUrl(currentUrl)) return {};
+  try {
+    const tokens = await loginWindow.webContents.executeJavaScript(`(function(){
+      const aliases = ${JSON.stringify(VIBEX_RH_TOKEN_ALIASES)};
+      const readCookie = function(name) {
+        try {
+          const prefix = name + '=';
+          const item = document.cookie.split(';').map(function(part) { return part.trim(); }).find(function(part) {
+            return part.startsWith(prefix);
+          });
+          return item ? decodeURIComponent(item.slice(prefix.length)) : '';
+        } catch (_) {
+          return '';
+        }
+      };
+      const out = {};
+      for (const key of Object.keys(aliases)) {
+        for (const alias of aliases[key]) {
+          const value = localStorage.getItem(alias) || sessionStorage.getItem(alias) || readCookie(alias) || '';
+          if (value) {
+            out[key] = value;
+            break;
+          }
+        }
+      }
+      return out;
+    })()`, true);
+    return tokens && typeof tokens === 'object' ? tokens : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+async function handleVibeXSsoCallback(targetUrl, ownerWindow) {
+  let tokens = extractVibeXRhLoginTokens(targetUrl);
+  if (!hasVibeXRhLoginTokens(tokens)) {
+    tokens = await readVibeXRhTokensFromLoginWindow(ownerWindow);
+  }
+  if (!hasVibeXRhLoginTokens(tokens)) {
+    tokens = await readVibeXRhTokensFromSessionCookies();
+  }
+  if (!hasVibeXRhLoginTokens(tokens)) return false;
+  await persistVibeXRhLoginTokens(tokens);
+  const syncedFrames = await syncVibeXRhTokensToEmbeddedFrames(tokens);
+  dbgLog(`[vibex-sso] RunningHub login tokens synced to ${syncedFrames} VibeX frame(s)`);
+  setTimeout(() => {
+    reloadVibeXFramesAfterLogin();
+    if (ownerWindow && !ownerWindow.isDestroyed()) {
+      ownerWindow.close();
+    }
+  }, 800);
+  return true;
+}
+
+function createVibeXRhLoginWindowOptions() {
+  return {
+    width: 540,
+    height: 760,
+    minWidth: 480,
+    minHeight: 640,
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    modal: false,
+    show: true,
+    title: 'RunningHub 登录',
+    backgroundColor: '#0f172a',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  };
+}
+
+function configureVibeXRhLoginWindow(loginWindow) {
+  if (!loginWindow || loginWindow.isDestroyed()) return;
+  vibeXRhLoginWindow = loginWindow;
+  if (loginWindow.__t8VibeXRhLoginConfigured) return;
+  loginWindow.__t8VibeXRhLoginConfigured = true;
+  loginWindow.__t8VibeXRhLoginPending = false;
+  loginWindow.__t8VibeXRhLoginHandled = false;
+  loginWindow.__t8VibeXRhLoginAttempts = 0;
+  loginWindow.removeMenu();
+  loginWindow.on('closed', () => {
+    if (!loginWindow.__t8VibeXRhLoginHandled) {
+      void handleVibeXSsoCallback(`https://${VIBEX_HOSTNAME}/sso-popup-callback`, null);
+    }
+    if (vibeXRhLoginWindow === loginWindow) vibeXRhLoginWindow = null;
+  });
+  const scheduleCallbackSync = (targetUrl, delayMs = 900) => {
+    if (!isVibeXSsoCallbackUrl(targetUrl)) return;
+    if (loginWindow.__t8VibeXRhLoginPending || loginWindow.__t8VibeXRhLoginHandled) return;
+    loginWindow.__t8VibeXRhLoginPending = true;
+    loginWindow.__t8VibeXRhLoginAttempts += 1;
+    const attempt = loginWindow.__t8VibeXRhLoginAttempts;
+    setTimeout(() => {
+      void handleVibeXSsoCallback(targetUrl, loginWindow)
+        .then((handled) => {
+          if (handled) loginWindow.__t8VibeXRhLoginHandled = true;
+        })
+        .finally(() => {
+          loginWindow.__t8VibeXRhLoginPending = false;
+          if (!loginWindow.__t8VibeXRhLoginHandled
+            && attempt < 8
+            && !loginWindow.isDestroyed()
+            && isVibeXSsoCallbackUrl(loginWindow.webContents.getURL())) {
+            scheduleCallbackSync(loginWindow.webContents.getURL(), Math.min(800 + attempt * 400, 2600));
+          }
+        });
+    }, delayMs);
+  };
+  loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isVibeXRhLoginFlowUrl(url)) {
+      return { action: 'allow', overrideBrowserWindowOptions: createVibeXRhLoginWindowOptions() };
+    }
+    if (isSafeExternalUrl(url)) {
+      void openExternalUrl(url);
+    }
+    return { action: 'deny' };
+  });
+  loginWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    if (isVibeXSsoCallbackUrl(targetUrl)) {
+      scheduleCallbackSync(targetUrl, 800);
+      return;
+    }
+    if (isVibeXRhLoginFlowUrl(targetUrl)) return;
+    event.preventDefault();
+    if (isSafeExternalUrl(targetUrl)) {
+      void openExternalUrl(targetUrl);
+    }
+  });
+  loginWindow.webContents.on('will-redirect', (event, targetUrl) => {
+    if (isVibeXSsoCallbackUrl(targetUrl)) {
+      scheduleCallbackSync(targetUrl, 800);
+      return;
+    }
+    scheduleCallbackSync(targetUrl);
+  });
+  loginWindow.webContents.on('did-navigate', (_event, targetUrl) => {
+    scheduleCallbackSync(targetUrl);
+  });
+  loginWindow.webContents.on('did-redirect-navigation', (_event, targetUrl) => {
+    scheduleCallbackSync(targetUrl);
+  });
+  loginWindow.webContents.on('did-finish-load', () => {
+    scheduleCallbackSync(loginWindow.webContents.getURL());
+  });
+}
+
+async function openVibeXRhLoginWindow(targetUrl) {
+  if (!isVibeXRhLoginUrl(targetUrl)) {
+    return { success: false, message: 'invalid VibeX RunningHub login url' };
+  }
+  if (vibeXRhLoginWindow && !vibeXRhLoginWindow.isDestroyed()) {
+    configureVibeXRhLoginWindow(vibeXRhLoginWindow);
+    vibeXRhLoginWindow.focus();
+    try {
+      await vibeXRhLoginWindow.loadURL(targetUrl);
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: normalizeError(error) };
+    }
+  }
+  const loginWindow = new BrowserWindow(createVibeXRhLoginWindowOptions());
+  configureVibeXRhLoginWindow(loginWindow);
+  try {
+    await loginWindow.loadURL(targetUrl);
+    return { success: true };
+  } catch (error) {
+    return { success: false, message: normalizeError(error) };
+  }
 }
 
 function getParseAuthProfile(profileId) {
@@ -877,13 +1505,35 @@ function createMainWindow() {
   mainWindow.loadURL(url);
 
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    if (isVibeXRhLoginUrl(targetUrl)) {
+      return { action: 'allow', overrideBrowserWindowOptions: createVibeXRhLoginWindowOptions() };
+    }
     void openExternalUrl(targetUrl);
     return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('did-create-window', (childWindow, details) => {
+    if (isVibeXRhLoginUrl(details?.url)) {
+      configureVibeXRhLoginWindow(childWindow);
+    }
+  });
+
+  mainWindow.webContents.on('did-frame-finish-load', () => {
+    scheduleVibeXFrameUiPatch(250);
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    scheduleVibeXFrameUiPatch(350);
   });
 
   mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
     if (String(targetUrl || '').startsWith(url)) return;
     if (!isSafeExternalUrl(targetUrl)) return;
+    if (isVibeXRhLoginUrl(targetUrl)) {
+      event.preventDefault();
+      void openVibeXRhLoginWindow(targetUrl);
+      return;
+    }
     event.preventDefault();
     void openExternalUrl(targetUrl);
   });
@@ -895,6 +1545,10 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.on('resize', () => {
+    scheduleVibeXFrameUiPatch(250);
   });
 
   // F12 打开 DevTools

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "T8 Penguin Canvas Web Image Reverse",
   "description": "网页图片右键反推提示词、生成图片，并发送回 T8 画布。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "permissions": [
     "activeTab",
     "contextMenus",
@@ -12,6 +12,19 @@
   ],
   "host_permissions": [
     "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://vibex.runninghub.cn/*",
+        "https://www.runninghub.cn/*",
+        "https://runninghub.cn/*"
+      ],
+      "js": [
+        "scripts/runninghub-bridge.js"
+      ],
+      "run_at": "document_idle"
+    }
   ],
   "background": {
     "service_worker": "scripts/background.js"

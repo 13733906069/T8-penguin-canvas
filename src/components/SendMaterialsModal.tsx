@@ -9,6 +9,7 @@ import {
   Library,
   MonitorUp,
   PackagePlus,
+  Scissors,
   Send as SendIcon,
   UploadCloud,
   UserRoundCog,
@@ -32,7 +33,13 @@ interface SendMaterialsModalProps {
   canvases: CanvasListItem[];
   activeCanvasId: string | null;
   onClose: () => void;
-  onSendToCanvas: (targetCanvasId: string, mode: SendTargetMode, switchAfter: boolean) => Promise<void> | void;
+  onSendToCanvas: (
+    targetCanvasId: string,
+    mode: SendTargetMode,
+    switchAfter: boolean,
+    options?: { videoEditTargetNodeId?: string | null },
+  ) => Promise<void> | void;
+  onLoadVideoEditTargets: (targetCanvasId: string) => Promise<Array<{ id: string; label: string; clipCount: number }>>;
   onSaveToResource: (mode: SendTargetMode) => Promise<void> | void;
   onSendToEagle: () => Promise<void> | void;
   onSendToFigma: () => Promise<string | void> | string | void;
@@ -46,6 +53,7 @@ const MODE_OPTIONS: Array<{ value: SendTargetMode; label: string; desc: string; 
   { value: 'upload', label: '上传素材', desc: '图像/视频/音频以合集上传节点出现，文本生成文本节点', icon: UploadCloud },
   { value: 'split-upload', label: '拆成多个上传', desc: '每个媒体单独一个上传节点，适合逐个调整', icon: Box },
   { value: 'output', label: '输出素材', desc: '以输出素材节点展示，适合跨画布归档结果', icon: MonitorUp },
+  { value: 'video-edit', label: '视频剪辑', desc: '追加到视频剪辑节点；没有目标时可新建视频剪辑节点', icon: Scissors },
 ];
 
 function chunkModeLabel(label: string) {
@@ -133,6 +141,7 @@ export default function SendMaterialsModal({
   activeCanvasId,
   onClose,
   onSendToCanvas,
+  onLoadVideoEditTargets,
   onSaveToResource,
   onSendToEagle,
   onSendToFigma,
@@ -147,6 +156,9 @@ export default function SendMaterialsModal({
   const [busy, setBusy] = useState('');
   const [actionNotice, setActionNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [sendHistory, setSendHistory] = useState<SendHistoryEntry[]>([]);
+  const [videoEditTargets, setVideoEditTargets] = useState<Array<{ id: string; label: string; clipCount: number }>>([]);
+  const [videoEditTargetId, setVideoEditTargetId] = useState('__create__');
+  const [videoEditTargetsLoading, setVideoEditTargetsLoading] = useState(false);
   const busyRef = useRef(false);
 
   useEffect(() => {
@@ -158,6 +170,9 @@ export default function SendMaterialsModal({
     setSwitchAfter(false);
     setBusy('');
     setActionNotice(null);
+    setVideoEditTargets([]);
+    setVideoEditTargetId('__create__');
+    setVideoEditTargetsLoading(false);
     busyRef.current = false;
   }, [open, defaultMode, activeCanvasId, canvases]);
 
@@ -182,10 +197,11 @@ export default function SendMaterialsModal({
       MODE_OPTIONS.filter((opt) => {
         if (opt.value === 'node-fragment') return hasNodeFragment;
         if (opt.value === 'portrait-master') return materials.length > 0 && hasPortraitMasterConfig;
+        if (opt.value === 'video-edit') return buckets.video.length > 0;
         if (!['auto', 'node-fragment'].includes(opt.value) && materials.length === 0) return false;
         return true;
       }),
-    [hasNodeFragment, hasPortraitMasterConfig, materials.length],
+    [buckets.video.length, hasNodeFragment, hasPortraitMasterConfig, materials.length],
   );
   const filteredCanvases = useMemo(() => {
     const keyword = q.trim().toLowerCase();
@@ -225,6 +241,35 @@ export default function SendMaterialsModal({
     setMode(modeOptions[0]?.value || 'auto');
   }, [mode, modeOptions, open]);
 
+  useEffect(() => {
+    if (!open || mode !== 'video-edit' || !targetId) return;
+    let cancelled = false;
+    setVideoEditTargetsLoading(true);
+    onLoadVideoEditTargets(targetId)
+      .then((targets) => {
+        if (cancelled) return;
+        setVideoEditTargets(targets);
+        setVideoEditTargetId((prev) => {
+          if (prev !== '__create__' && targets.some((item) => item.id === prev)) return prev;
+          if (targets.length === 1) return targets[0].id;
+          return '__create__';
+        });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setVideoEditTargets([]);
+          setVideoEditTargetId('__create__');
+          setActionNotice({ kind: 'error', text: error?.message || '加载视频剪辑节点失败' });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setVideoEditTargetsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, onLoadVideoEditTargets, open, targetId]);
+
   if (!open) return null;
 
   const panelCls = isPixel
@@ -247,6 +292,8 @@ export default function SendMaterialsModal({
       ? hasNodeFragment
       : mode === 'auto'
         ? materials.length > 0 || hasNodeFragment
+        : mode === 'video-edit'
+          ? buckets.video.length > 0 && !videoEditTargetsLoading
         : materials.length > 0);
 
   const runAction = async (label: string, action: () => Promise<string | void> | string | void) => {
@@ -297,7 +344,9 @@ export default function SendMaterialsModal({
       materialCount: mode === 'node-fragment' ? nodeFragment?.nodes.length || 0 : materials.length,
       createdAt: Date.now(),
     };
-    await onSendToCanvas(targetId, mode, switchAfter);
+    await onSendToCanvas(targetId, mode, switchAfter, {
+      videoEditTargetNodeId: mode === 'video-edit' && videoEditTargetId !== '__create__' ? videoEditTargetId : null,
+    });
     const previous = loadSendHistory();
     const next = [
       entry,
@@ -497,6 +546,31 @@ export default function SendMaterialsModal({
                 })}
                 {filteredCanvases.length === 0 && <div className="px-3 py-5 text-center text-xs opacity-55">没有匹配的画布</div>}
               </div>
+              {mode === 'video-edit' && (
+                <div className={`mt-2 rounded-lg p-2 ${isPixel ? 'border-2 border-[var(--px-ink)] bg-[var(--px-surface)]' : isDark ? 'border border-white/10 bg-white/[0.04]' : 'border border-black/10 bg-black/[0.025]'}`}>
+                  <label className="mb-1 block text-xs font-semibold opacity-70">目标视频剪辑节点</label>
+                  <select
+                    className={`h-9 w-full ${inputCls}`}
+                    value={videoEditTargetId}
+                    disabled={videoEditTargetsLoading}
+                    onChange={(event) => setVideoEditTargetId(event.target.value)}
+                  >
+                    <option value="__create__">新建视频剪辑并发送</option>
+                    {videoEditTargets.map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.label} · {target.clipCount} 段
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-1 text-[11px] opacity-60">
+                    {videoEditTargetsLoading
+                      ? '正在读取目标画布的视频剪辑节点...'
+                      : videoEditTargets.length > 0
+                        ? '可追加到已有节点，也可新建一个轻量视频剪辑节点。'
+                        : '目标画布暂无视频剪辑节点，将自动新建。'}
+                  </div>
+                </div>
+              )}
               <label className="mt-2 flex items-center gap-2 text-xs opacity-75">
                 <input type="checkbox" checked={switchAfter} onChange={(event) => setSwitchAfter(event.target.checked)} />
                 发送后切换到目标画布

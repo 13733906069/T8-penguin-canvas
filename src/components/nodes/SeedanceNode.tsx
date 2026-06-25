@@ -40,7 +40,7 @@ import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
  * SeedanceNode — 字节 Seedance 2.0 视频分镜节点
  * 完全对齐 gpt-image-2-web runSeedance / pollSeedance:
  *   - 上游 endpoint: /seedance/v3/contents/generations/tasks
- *   - 模型: doubao-seedance-2-0-260128 / doubao-seedance-2-0-fast-260128
+ *   - 模型: doubao-seedance-2-0-260128 / doubao-seedance-2-0-fast-260128 / doubao-seedance-2.0-mini
  *   - content[]: text + image_url(role=first_frame|last_frame|reference_image)
  *                + video_url(role=reference_video) + audio_url(role=reference_audio)
  *   - 参数: duration / ratio / resolution / generate_audio / return_last_frame
@@ -56,9 +56,10 @@ import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 const MODEL_OPTIONS = [
   { value: 'doubao-seedance-2-0-fast-260128', label: 'seedance-2-0-fast' },
   { value: 'doubao-seedance-2-0-260128', label: 'seedance-2-0' },
+  { value: 'doubao-seedance-2.0-mini', label: 'seedance-2.0-mini' },
 ];
 const RATIO_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'];
-const RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', '1080p', '2k', '4k'];
+const RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', 'native4K', '1080p', '2k', '4k'];
 const DURATION_OPTIONS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const SEEDANCE_POLL_TIMEOUT_SECONDS = 3600;
 type SeedanceFrameMode = 'auto' | 'first' | 'firstlast' | 'multiframe';

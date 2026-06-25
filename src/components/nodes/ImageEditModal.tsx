@@ -20,6 +20,7 @@ import {
   ListOrdered,
   ArrowRight,
   Diamond as DiamondIcon,
+  Type as TypeIcon,
   Layers as LayersIcon,
   Lock as LockIcon,
   Unlock as UnlockIcon,
@@ -69,16 +70,19 @@ interface Props {
   srcUrl: string;
   onClose: () => void;
   /** 产物 urls 注入到外部 (在 OutputNode 中创建 N 个新 OutputNode) */
-  onProduce: (urls: string[], meta: ImageEditProduceMeta) => void;
+  onProduce: (urls: string[], meta: ImageEditProduceMeta) => void | Promise<void>;
 }
 
 type EditMode = 'crop' | 'mask' | 'brush' | 'grid' | 'compose';
 type GridSubMode = 'preset' | 'custom';
-type BrushTool = 'free' | 'line' | 'arrow' | 'rect' | 'round-rect' | 'ellipse' | 'diamond' | 'label';
+type BrushTool = 'free' | 'line' | 'arrow' | 'rect' | 'round-rect' | 'ellipse' | 'diamond' | 'label' | 'text';
 type BrushFillMode = 'stroke' | 'fill';
 type CropAspectPreset = 'free' | '16:9' | '9:16' | '4:3' | '3:4' | '1:1' | 'custom';
 
-const IMAGE_EDIT_BRUSH_TOOLS: Array<{ id: BrushTool; label: string; title: string; icon: 'brush' | 'line' | 'arrow' | 'rect' | 'roundRect' | 'ellipse' | 'diamond' | 'label' }> = [
+const AUTO_ANNOTATION_TEXT_ID = 'annotation-instruction-text';
+const ANNOTATION_EDIT_DEFAULT_INSTRUCTION = '按照图像标注的内容进行改图';
+
+const IMAGE_EDIT_BRUSH_TOOLS: Array<{ id: BrushTool; label: string; title: string; icon: 'brush' | 'line' | 'arrow' | 'rect' | 'roundRect' | 'ellipse' | 'diamond' | 'label' | 'text' }> = [
   { id: 'free', label: '画笔', title: '自由笔刷', icon: 'brush' },
   { id: 'line', label: '直线', title: '直线标注', icon: 'line' },
   { id: 'arrow', label: '箭头', title: '箭头标注', icon: 'arrow' },
@@ -87,6 +91,7 @@ const IMAGE_EDIT_BRUSH_TOOLS: Array<{ id: BrushTool; label: string; title: strin
   { id: 'ellipse', label: '圆形', title: '圆形 / 椭圆', icon: 'ellipse' },
   { id: 'diamond', label: '菱形', title: '菱形标注', icon: 'diamond' },
   { id: 'label', label: '标号', title: '数字标签', icon: 'label' },
+  { id: 'text', label: '文字', title: '文字标注：使用下方文本框内容，点击图片放置', icon: 'text' },
 ];
 
 const CROP_ASPECT_PRESETS: Array<{ id: CropAspectPreset; label: string }> = [
@@ -156,7 +161,8 @@ type DrawStroke =
   | { kind: 'brush-round-rect'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
   | { kind: 'brush-ellipse'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
   | { kind: 'brush-diamond'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
-  | { kind: 'brush-label'; color: string; size: number; pos: Pt; text: string };
+  | { kind: 'brush-label'; color: string; size: number; pos: Pt; text: string }
+  | { kind: 'brush-text'; id: string; color: string; size: number; pos: Pt; text: string; rotation: number; scale: number };
 
 interface Line {
   type: 'h' | 'v';
@@ -172,6 +178,23 @@ interface CropBox {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const EDIT_STAGE_PADDING = 32;
 const EDIT_STAGE_MIN_PREVIEW = 180;
+const TEXT_ANNOTATION_EXPORT_BASE_PX = 720;
+
+function brushTextExportFontPx(s: Extract<DrawStroke, { kind: 'brush-text' }>, W: number, H: number) {
+  const exportScale = clamp(Math.max(W, H) / TEXT_ANNOTATION_EXPORT_BASE_PX, 1, 10);
+  return Math.max(18, s.size * 1.35 * s.scale * exportScale);
+}
+
+function isImageEditEditableEventTarget(target: EventTarget | null) {
+  const el = target as HTMLElement | null;
+  return !!el?.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]');
+}
+
+function stopImageEditShortcutEvent(event: KeyboardEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+}
 
 function clampLabelCounter(value: number) {
   return clamp(Math.round(Number.isFinite(value) ? value : 1), 1, 9999);
@@ -408,7 +431,9 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const [brushFillMode, setBrushFillMode] = useState<BrushFillMode>('stroke');
   const [annotationInstruction, setAnnotationInstruction] = useState('');
   const [labelCounter, setLabelCounter] = useState(1);
+  const [selectedAnnotationTextId, setSelectedAnnotationTextId] = useState<string | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  const hasAnnotationTextDraft = brushStrokes.some((stroke) => stroke.kind === 'brush-text' && stroke.id === AUTO_ANNOTATION_TEXT_ID);
 
   // ---- compose v2 ----
   const [composeLayers, setComposeLayers] = useState<Layer[]>([]);
@@ -453,6 +478,18 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     pointerId: number;
     startPt: Pt;
     pending: DrawStroke | null;
+  } | null>(null);
+  const annotationTextDragRef = useRef<{
+    pointerId: number;
+    id: string;
+    op: 'move' | 'scale' | 'rotate';
+    startClientX: number;
+    startClientY: number;
+    centerClientX: number;
+    centerClientY: number;
+    startDistance: number;
+    startAngle: number;
+    startStroke: Extract<DrawStroke, { kind: 'brush-text' }>;
   } | null>(null);
 
   useEffect(() => {
@@ -531,49 +568,127 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       pushHistory('brush');
       setBrushStrokes([]);
       setLabelCounter(1);
+      setAnnotationInstruction('');
+      setSelectedAnnotationTextId(null);
     }
   };
+
+  useEffect(() => {
+    if (mode !== 'brush') return;
+    const annotationTextValue = annotationInstruction.trim();
+    setBrushStrokes((current) => {
+      const index = current.findIndex(
+        (stroke) => stroke.kind === 'brush-text' && stroke.id === AUTO_ANNOTATION_TEXT_ID,
+      );
+      if (!annotationTextValue) {
+        if (index < 0) return current;
+        return current.filter((_, strokeIndex) => strokeIndex !== index);
+      }
+      if (index >= 0) {
+        const existing = current[index] as Extract<DrawStroke, { kind: 'brush-text' }>;
+        const nextSize = Math.max(14, brushSize);
+        if (existing.text === annotationTextValue && existing.color === brushColor && existing.size === nextSize) return current;
+        const next = [...current];
+        next[index] = { ...existing, color: brushColor, size: nextSize, text: annotationTextValue };
+        return next;
+      }
+      return [
+        ...current,
+        {
+          kind: 'brush-text',
+          id: AUTO_ANNOTATION_TEXT_ID,
+          color: brushColor,
+          size: Math.max(14, brushSize),
+          pos: { x: 0.5, y: 0.16 },
+          text: annotationTextValue,
+          rotation: 0,
+          scale: 1,
+        },
+      ];
+    });
+  }, [annotationInstruction, brushColor, brushSize, mode]);
+
+  useEffect(() => {
+    if (!annotationInstruction.trim() && selectedAnnotationTextId === AUTO_ANNOTATION_TEXT_ID) {
+      setSelectedAnnotationTextId(null);
+    }
+  }, [annotationInstruction, selectedAnnotationTextId]);
+
+  function confirmAnnotationTextDraft() {
+    const draft = brushStrokes.find(
+      (stroke): stroke is Extract<DrawStroke, { kind: 'brush-text' }> =>
+        stroke.kind === 'brush-text' && stroke.id === AUTO_ANNOTATION_TEXT_ID,
+    );
+    if (!draft) return;
+    pushHistory('brush');
+    const lockedText: DrawStroke = {
+      ...draft,
+      id: `manual-text-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    };
+    setBrushStrokes((arr) =>
+      arr.map((stroke) =>
+        stroke.kind === 'brush-text' && stroke.id === AUTO_ANNOTATION_TEXT_ID ? lockedText : stroke,
+      ),
+    );
+    setAnnotationInstruction('');
+    setSelectedAnnotationTextId(lockedText.id);
+  }
 
   // ESC 关闭 + Ctrl+Z/Y 撤销恢复 + 1/2/3/4 切换 mode + [/] 调笔刷
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        stopImageEditShortcutEvent(e);
         onClose();
         return;
       }
       // 避免 input/textarea 输入时拦截
-      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
+      if (isImageEditEditableEventTarget(e.target)) return;
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        undo();
+        if (mode === 'compose') return;
+        stopImageEditShortcutEvent(e);
+        if (mode === 'mask' || mode === 'brush') undo();
         return;
       }
       if (
         ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') ||
         ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y')
       ) {
-        e.preventDefault();
-        redo();
+        if (mode === 'compose') return;
+        stopImageEditShortcutEvent(e);
+        if (mode === 'mask' || mode === 'brush') redo();
         return;
       }
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (e.key === '1') setMode('crop');
-        else if (e.key === '2') setMode('mask');
-        else if (e.key === '3') setMode('brush');
-        else if (e.key === '4') setMode('grid');
-        else if (e.key === '5') setMode('compose');
+        if (e.key === '1') {
+          stopImageEditShortcutEvent(e);
+          setMode('crop');
+        } else if (e.key === '2') {
+          stopImageEditShortcutEvent(e);
+          setMode('mask');
+        } else if (e.key === '3') {
+          stopImageEditShortcutEvent(e);
+          setMode('brush');
+        } else if (e.key === '4') {
+          stopImageEditShortcutEvent(e);
+          setMode('grid');
+        } else if (e.key === '5') {
+          stopImageEditShortcutEvent(e);
+          setMode('compose');
+        }
         else if (e.key === '[') {
+          stopImageEditShortcutEvent(e);
           if (mode === 'mask') setMaskBrushSize((s) => Math.max(2, s - 4));
           else if (mode === 'brush') setBrushSize((s) => Math.max(2, s - 2));
         } else if (e.key === ']') {
+          stopImageEditShortcutEvent(e);
           if (mode === 'mask') setMaskBrushSize((s) => Math.min(300, s + 4));
           else if (mode === 'brush') setBrushSize((s) => Math.min(160, s + 2));
         }
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose, undo, redo, mode]);
 
@@ -797,7 +912,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         h: Math.max(1, Math.round(crop.h * naturalSize.h)),
       };
       const { imageUrl } = await opCrop(workingSrcUrl, px.x, px.y, px.w, px.h);
-      onProduce([imageUrl], { type: 'crop', rect: px });
+      await onProduce([imageUrl], { type: 'crop', rect: px });
       onClose();
     } catch (e: any) {
       setErrMsg(e?.message || '裁剪失败');
@@ -831,7 +946,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         gap,
         rects,
       );
-      onProduce(urls, { type: 'grid-split', layout, rects });
+      await onProduce(urls, { type: 'grid-split', layout, rects });
       onClose();
     } catch (e: any) {
       setErrMsg(e?.message || '宫格切分失败');
@@ -1080,7 +1195,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       }
       const dataUrl = cv.toDataURL('image/png');
       const url = await uploadDataUrl(dataUrl, 'compose');
-      onProduce([url], {
+      await onProduce([url], {
         type: 'compose',
         layerCount: composeLayers.length,
         canvasW,
@@ -1277,27 +1392,26 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   useEffect(() => {
     if (mode !== 'compose') return;
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
+      if (isImageEditEditableEventTarget(e.target)) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
+        stopImageEditShortcutEvent(e);
         composeUndo();
       } else if (
         (ctrl && e.shiftKey && e.key.toLowerCase() === 'z') ||
         (ctrl && e.key.toLowerCase() === 'y')
       ) {
-        e.preventDefault();
+        stopImageEditShortcutEvent(e);
         composeRedo();
       } else if (ctrl && e.key.toLowerCase() === 'a') {
-        e.preventDefault();
+        stopImageEditShortcutEvent(e);
         setSelectedIds(composeLayers.map((l) => l.id));
       } else if (ctrl && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
+        stopImageEditShortcutEvent(e);
         if (selectedIds.length === 1) duplicateLayer(selectedIds[0]);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedIds.length === 0) return;
-        e.preventDefault();
+        stopImageEditShortcutEvent(e);
         pushComposeHistory();
         setComposeLayers((arr) => arr.filter((l) => !selectedIds.includes(l.id)));
         setSelectedIds([]);
@@ -1308,7 +1422,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         e.key === 'ArrowDown'
       ) {
         if (selectedIds.length === 0) return;
-        e.preventDefault();
+        stopImageEditShortcutEvent(e);
         const step = e.shiftKey ? 10 : 1;
         const dx =
           e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
@@ -1320,8 +1434,8 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         );
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, composeLayers, selectedIds, composeUndo, composeRedo]);
 
@@ -1539,6 +1653,32 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       ctx.restore();
       return;
     }
+    if (s.kind === 'brush-text') {
+      ctx.save();
+      const fontPx = brushTextExportFontPx(s, W, H);
+      const x = s.pos.x * W;
+      const y = s.pos.y * H;
+      ctx.translate(x, y);
+      ctx.rotate((s.rotation * Math.PI) / 180);
+      ctx.font = `bold ${Math.round(fontPx)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const metrics = ctx.measureText(s.text);
+      const padX = fontPx * 0.45;
+      const padY = fontPx * 0.3;
+      const boxW = metrics.width + padX * 2;
+      const boxH = fontPx + padY * 2;
+      drawRoundedRectPath(ctx, -boxW / 2, -boxH / 2, boxW, boxH, Math.min(12, boxH / 3));
+      ctx.fillStyle = 'rgba(255,255,255,.84)';
+      ctx.fill();
+      ctx.lineWidth = Math.max(2, fontPx / 12);
+      ctx.strokeStyle = s.color;
+      ctx.stroke();
+      ctx.fillStyle = s.color;
+      ctx.fillText(s.text, 0, 1);
+      ctx.restore();
+      return;
+    }
   };
 
   useEffect(() => {
@@ -1553,7 +1693,9 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       // 诊底透明 overlay; mask 的“黑底白笔”仅在调 applyMask 时走离屏
       for (const s of maskStrokes) drawStrokeOnCtx(ctx, s, cv.width, cv.height);
     } else if (mode === 'brush') {
-      for (const s of brushStrokes) drawStrokeOnCtx(ctx, s, cv.width, cv.height);
+      for (const s of brushStrokes) {
+        if (s.kind !== 'brush-text') drawStrokeOnCtx(ctx, s, cv.width, cv.height);
+      }
     }
   }, [mode, maskStrokes, brushStrokes, naturalSize]);
 
@@ -1566,6 +1708,91 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       y: clamp((e.clientY - r.top) / r.height, 0, 1),
     };
   };
+
+  function updateAnnotationTextStroke(
+    id: string,
+    updater: (stroke: Extract<DrawStroke, { kind: 'brush-text' }>) => Extract<DrawStroke, { kind: 'brush-text' }>,
+  ) {
+    setBrushStrokes((arr) =>
+      arr.map((stroke) => (stroke.kind === 'brush-text' && stroke.id === id ? updater(stroke) : stroke)),
+    );
+  }
+
+  function startAnnotationTextTransform(
+    e: React.PointerEvent,
+    id: string,
+    op: 'move' | 'scale' | 'rotate',
+  ) {
+    if (mode !== 'brush') return;
+    const img = imgRef.current;
+    const stroke = brushStrokes.find(
+      (item): item is Extract<DrawStroke, { kind: 'brush-text' }> => item.kind === 'brush-text' && item.id === id,
+    );
+    if (!img || !stroke) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = img.getBoundingClientRect();
+    const centerClientX = rect.left + stroke.pos.x * rect.width;
+    const centerClientY = rect.top + stroke.pos.y * rect.height;
+    setSelectedAnnotationTextId(id);
+    pushHistory('brush');
+    annotationTextDragRef.current = {
+      pointerId: e.pointerId,
+      id,
+      op,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      centerClientX,
+      centerClientY,
+      startDistance: Math.max(8, Math.hypot(e.clientX - centerClientX, e.clientY - centerClientY)),
+      startAngle: Math.atan2(e.clientY - centerClientY, e.clientX - centerClientX),
+      startStroke: stroke,
+    };
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+  }
+
+  function moveAnnotationTextTransform(e: React.PointerEvent) {
+    const drag = annotationTextDragRef.current;
+    const img = imgRef.current;
+    if (!drag || !img) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = img.getBoundingClientRect();
+    if (drag.op === 'move') {
+      const dx = (e.clientX - drag.startClientX) / Math.max(1, rect.width);
+      const dy = (e.clientY - drag.startClientY) / Math.max(1, rect.height);
+      updateAnnotationTextStroke(drag.id, (stroke) => ({
+        ...stroke,
+        pos: {
+          x: clamp(drag.startStroke.pos.x + dx, 0.02, 0.98),
+          y: clamp(drag.startStroke.pos.y + dy, 0.02, 0.98),
+        },
+      }));
+      return;
+    }
+    if (drag.op === 'scale') {
+      const distance = Math.max(8, Math.hypot(e.clientX - drag.centerClientX, e.clientY - drag.centerClientY));
+      updateAnnotationTextStroke(drag.id, (stroke) => ({
+        ...stroke,
+        scale: clamp(drag.startStroke.scale * (distance / drag.startDistance), 0.35, 4),
+      }));
+      return;
+    }
+    const angle = Math.atan2(e.clientY - drag.centerClientY, e.clientX - drag.centerClientX);
+    updateAnnotationTextStroke(drag.id, (stroke) => ({
+      ...stroke,
+      rotation: drag.startStroke.rotation + ((angle - drag.startAngle) * 180) / Math.PI,
+    }));
+  }
+
+  function endAnnotationTextTransform(e?: React.PointerEvent) {
+    const drag = annotationTextDragRef.current;
+    if (!drag) return;
+    try {
+      if (e) (e.currentTarget as Element).releasePointerCapture?.(drag.pointerId);
+    } catch {}
+    annotationTextDragRef.current = null;
+  }
 
   // ---- mask/brush pointer 事件 ----
   const onDrawPointerDown = (e: React.PointerEvent) => {
@@ -1622,6 +1849,21 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
           };
           setBrushStrokes((arr) => [...arr, stroke]);
           setLabelCounter((n) => clampLabelCounter(n + 1));
+          drawDragRef.current = null;
+        } else if (brushTool === 'text') {
+          const text = annotationInstruction.trim() || '文字标注';
+          const stroke: DrawStroke = {
+            kind: 'brush-text',
+            id: `manual-text-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            color: brushColor,
+            size: Math.max(14, brushSize),
+            pos: pt,
+            text,
+            rotation: 0,
+            scale: 1,
+          };
+          setBrushStrokes((arr) => [...arr, stroke]);
+          setSelectedAnnotationTextId(stroke.id);
           drawDragRef.current = null;
         }
       }
@@ -1720,7 +1962,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       // 原图转存（同步上传一份与 mask 同源）
       const originUrl = await fetchAndUpload(workingSrcUrl, 'mask-src');
       const maskUrl = await uploadDataUrl(maskDataUrl, 'mask');
-      onProduce([originUrl, maskUrl], { type: 'mask', strokeCount: maskStrokes.length });
+      await onProduce([originUrl, maskUrl], { type: 'mask', strokeCount: maskStrokes.length });
       onClose();
     } catch (e: any) {
       setErrMsg(e?.message || '应用遮罩失败');
@@ -1745,7 +1987,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       for (const s of brushStrokes) drawStrokeOnCtx(ctx, s, cv.width, cv.height);
       const dataUrl = cv.toDataURL('image/png');
       const url = await uploadDataUrl(dataUrl, 'brush');
-      onProduce([url], { type: 'brush', strokeCount: brushStrokes.length });
+      await onProduce([url], { type: 'brush', strokeCount: brushStrokes.length });
       onClose();
     } catch (e: any) {
       setErrMsg(e?.message || '应用画板失败');
@@ -1756,13 +1998,9 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
 
   async function applyAnnotationEdit() {
     if (!naturalSize || brushStrokes.length === 0) return;
-    const annotationTextCount = brushStrokes.filter((stroke) => stroke.kind === 'brush-label').length;
-    const annotationShapeCount = brushStrokes.filter((stroke) => stroke.kind !== 'brush-free').length;
-    const instruction = annotationInstruction.trim();
-    if (!instruction && annotationTextCount === 0) {
-      setErrMsg('请补充改图说明，或用标号文字写清楚要怎么改。');
-      return;
-    }
+    const annotationTextCount = brushStrokes.filter((stroke) => stroke.kind === 'brush-label' || stroke.kind === 'brush-text').length;
+    const annotationShapeCount = brushStrokes.filter((stroke) => stroke.kind !== 'brush-free' && stroke.kind !== 'brush-text').length;
+    const instruction = ANNOTATION_EDIT_DEFAULT_INSTRUCTION;
     setBusy(true);
     setErrMsg(null);
     try {
@@ -1777,7 +2015,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       const dataUrl = cv.toDataURL('image/png');
       const originUrl = await fetchAndUpload(workingSrcUrl, 'annotation-source');
       const annotatedUrl = await uploadDataUrl(dataUrl, 'annotation-markup');
-      onProduce([originUrl, annotatedUrl], {
+      await onProduce([originUrl, annotatedUrl], {
         type: 'annotation-edit',
         instruction,
         strokeCount: brushStrokes.length,
@@ -1894,8 +2132,80 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     if (icon === 'ellipse') return <CircleIcon size={13} />;
     if (icon === 'diamond') return <DiamondIcon size={13} />;
     if (icon === 'label') return <ListOrdered size={13} />;
+    if (icon === 'text') return <TypeIcon size={13} />;
     return <SquareIcon size={13} />;
   };
+
+  function renderAnnotationTextOverlay(stroke: Extract<DrawStroke, { kind: 'brush-text' }>) {
+    const selected = selectedAnnotationTextId === stroke.id;
+    const fontPx = Math.max(13, stroke.size * 1.25);
+    const handleStyle: React.CSSProperties = {
+      position: 'absolute',
+      width: 12,
+      height: 12,
+      borderRadius: isPixel ? 0 : 999,
+      border: `2px solid ${isPixel ? '#1A1410' : '#fff'}`,
+      background: accent,
+      boxShadow: '0 2px 6px rgba(0,0,0,.25)',
+      pointerEvents: 'auto',
+    };
+    return (
+      <div
+        key={stroke.id}
+        className="img-edit-annotation-text-overlay"
+        onPointerDown={(e) => startAnnotationTextTransform(e, stroke.id, 'move')}
+        style={{
+          position: 'absolute',
+          left: `${stroke.pos.x * 100}%`,
+          top: `${stroke.pos.y * 100}%`,
+          transform: `translate(-50%, -50%) rotate(${stroke.rotation}deg) scale(${stroke.scale})`,
+          transformOrigin: 'center',
+          color: stroke.color,
+          background: 'rgba(255,255,255,.84)',
+          border: selected ? `2px solid ${accent}` : `1.5px solid ${stroke.color}`,
+          borderRadius: isPixel ? 0 : 8,
+          padding: '3px 8px',
+          fontSize: fontPx,
+          fontWeight: 800,
+          lineHeight: 1.2,
+          whiteSpace: 'pre',
+          boxShadow: '0 2px 8px rgba(0,0,0,.18)',
+          cursor: 'move',
+          userSelect: 'none',
+          pointerEvents: mode === 'brush' ? 'auto' : 'none',
+          zIndex: 4,
+        }}
+        title="拖动文字标注，右下角缩放，上方圆点旋转"
+      >
+        {stroke.text}
+        {selected && (
+          <>
+            <span
+              aria-hidden="true"
+              onPointerDown={(e) => startAnnotationTextTransform(e, stroke.id, 'rotate')}
+              style={{
+                ...handleStyle,
+                left: '50%',
+                top: -24,
+                transform: 'translateX(-50%)',
+                cursor: 'grab',
+              }}
+            />
+            <span
+              aria-hidden="true"
+              onPointerDown={(e) => startAnnotationTextTransform(e, stroke.id, 'scale')}
+              style={{
+                ...handleStyle,
+                right: -8,
+                bottom: -8,
+                cursor: 'nwse-resize',
+              }}
+            />
+          </>
+        )}
+      </div>
+    );
+  }
 
   const ui = (
     <div
@@ -2833,11 +3143,15 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
                 : 'default',
           }}
           onPointerMove={(e) => {
+            const wasTextDragging = !!annotationTextDragRef.current;
+            moveAnnotationTextTransform(e);
+            if (wasTextDragging) return;
             moveCropDrag(e);
             onStagePointerMove(e);
             onDrawPointerMove(e);
           }}
           onPointerUp={(e) => {
+            endAnnotationTextTransform(e);
             endCropDrag();
             onStagePointerUp(e);
             onDrawPointerUp(e);
@@ -2901,6 +3215,13 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
                 borderRadius: isPixel ? 0 : 8,
               }}
             />
+            {mode === 'brush' &&
+              brushStrokes
+                .filter(
+                  (stroke): stroke is Extract<DrawStroke, { kind: 'brush-text' }> =>
+                    stroke.kind === 'brush-text',
+                )
+                .map(renderAnnotationTextOverlay)}
             {/* 跟随鼠标的笔刷圈 */}
             {(mode === 'mask' || mode === 'brush') && cursor && (
               <div
@@ -3131,9 +3452,17 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
                   }}
                 value={annotationInstruction}
                 onChange={(event) => setAnnotationInstruction(event.target.value)}
-                placeholder="改图说明：例如把箭头处换成木牌，移除框线和标注"
-                title="标注改图说明"
+                placeholder="输入文字后会自动添加到画板，可拖动、缩放、旋转"
+                title="文字标注内容"
               />
+              <button
+                style={btnBase}
+                onClick={confirmAnnotationTextDraft}
+                disabled={busy || !hasAnnotationTextDraft}
+                title={hasAnnotationTextDraft ? '固定当前文字标注并清空输入框' : '输入文字后可确认并继续添加下一条'}
+              >
+                <Check size={14} /> 确定文字
+              </button>
               <button
                 style={btnBase}
                 onClick={applyBrush}

@@ -258,6 +258,12 @@ test('web image Chrome extension exposes image context menu and canvas send mode
   assert.match(background, /\/api\/proxy\/external\/web-image/);
   assert.match(background, /无法连接 T8 后端/);
   assert.match(background, /window\.postMessage\(\{\s*type:\s*['"]t8:web-image-result['"]/);
+  assert.match(background, /postWebImageResultToLocalBridge/);
+  assert.match(background, /type:\s*['"]t8:web-image-result['"]/);
+  assert.match(background, /const CANVAS_MESSAGE_SOURCE = ['"]t8-web-image-extension['"]/);
+  assert.match(background, /source:\s*CANVAS_MESSAGE_SOURCE/);
+  assert.match(background, /\/api\/vibex-bridge\/messages/);
+  assert.match(background, /sendToCanvas\(payload\)[\s\S]*findExistingCanvasTab\(\)[\s\S]*postWebImageResultToLocalBridge\(messagePayload\)[\s\S]*findOrOpenCanvasTab\(\)/);
 
   const content = readProjectFile('extension/scripts/content.js');
   assert.match(content, /__t8WebImageContentLoaded/);
@@ -285,9 +291,23 @@ test('Canvas accepts web image extension payloads as prompt and output material 
   assert.match(canvas, /t8:web-image-result/);
   assert.match(canvas, /source:\s*['"]t8-web-image-extension['"]/);
   assert.match(canvas, /web-image-reverse/);
+  assert.match(canvas, /importWebImagePayload/);
+  assert.match(canvas, /\/api\/vibex-bridge\/pending/);
+  assert.match(canvas, /WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT\.type/);
   assert.match(canvas, /createOutputDataFromItems\('image'/);
   assert.match(canvas, /type:\s*'text'/);
   assert.match(canvas, /const includePromptInOutput = mode === 'both' && !!prompt/);
   assert.match(canvas, /if \(mode === 'prompt' && prompt\)/);
   assert.match(canvas, /\.\.\.\(includePromptInOutput\s*\?\s*\{/);
+});
+
+test('Electron bridge web image payloads keep selected generation target behavior', () => {
+  const canvas = readProjectFile('src/components/Canvas.tsx');
+  assert.match(canvas, /const importWebImagePayload = useCallback/);
+  assert.match(canvas, /node\.selected && node\.type === CREATIVE_TARGET_NODE_TYPE/);
+  assert.match(canvas, /buildCreativeTargetResult\(\s*selectedTarget/);
+  assert.match(canvas, /网页反推[\s\S]*结果已填入选中的生成目标框/);
+  assert.match(canvas, /网页反推[\s\S]*提示词已写入选中的生成目标框/);
+  assert.match(canvas, /message\?\.type === WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT\.type/);
+  assert.match(canvas, /importWebImagePayload\(message,\s*['"]网页反推['"]\)/);
 });

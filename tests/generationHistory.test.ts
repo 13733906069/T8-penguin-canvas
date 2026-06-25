@@ -5,6 +5,7 @@ import {
   GENERATION_HISTORY_LIMITS,
   buildGenerationHistoryDataKey,
   collectGenerationHistory,
+  countGenerationHistoryItems,
   countGenerationHistoryByKind,
 } from '../src/utils/generationHistory.ts';
 
@@ -47,6 +48,7 @@ test('generation history indexes generated canvas content without duplicating pa
   });
   const counts = countGenerationHistoryByKind(items);
 
+  assert.equal(countGenerationHistoryItems(nodes as any, { totalLimit: 20, perKindLimit: 10 }), items.length);
   assert.equal(counts.image, 2);
   assert.equal(counts.video, 1);
   assert.equal(counts.audio, 1);
@@ -82,6 +84,7 @@ test('generation history caps per kind and total items for large canvases', () =
   const counts = countGenerationHistoryByKind(items);
 
   assert.equal(items.length, 60);
+  assert.equal(countGenerationHistoryItems(nodes as any, { totalLimit: 60, perKindLimit: 35 }), 60);
   assert.ok(counts.image <= 35);
   assert.ok(counts.text <= 35);
   assert.equal(items[0].nodeId, 'node-179');
@@ -130,7 +133,12 @@ test('generation history shortcut and drawer are wired through toolbar, canvas, 
   assert.match(toolbar, /aria-pressed=\{historyOpen\}/);
   assert.match(toolbar, /历史记录/);
 
-  assert.match(canvas, /collectGenerationHistory\(nodes\)/);
+  assert.match(canvas, /countGenerationHistoryItems\(nodes\)/);
+  assert.match(canvas, /generationHistoryOpen \? collectGenerationHistory\(nodes\) : \[\]/);
+  assert.match(canvas, /historyCount=\{generationHistoryCount\}/);
+  assert.match(canvas, /const generationHistoryForExport = collectGenerationHistory\(nodesRef\.current\)/);
+  assert.match(canvas, /generationHistory:\s*generationHistoryForExport/);
+  assert.doesNotMatch(canvas, /historyCount=\{generationHistoryItems\.length\}/);
   assert.match(canvas, /<GenerationHistoryPanel/);
   assert.match(canvas, /focusGenerationHistoryNode/);
 

@@ -197,7 +197,7 @@ function loadRawSettings() {
 
 // ========== 工具: 按提示词（模型名 / endpoint / 路由名）选择分类 API Key ==========
 // 未填分类 key 时 fallback 到 通用 zhenzhenApiKey。
-// hint 例: 'gpt-image-1' / 'nano-banana-pro' / 'gemini-3.1-flash-image-preview' / 'mj-fast' / 'veo3.1-fal'
+// hint 例: 'gpt-image-1' / 'gemini-3-pro-image' / 'gemini-3.1-flash-image' / 'mj-fast' / 'veo3.1-fal'
 //          / 'grok-video-fal' / 'seedance-v3' / 'suno-v5.5' / 'fal-ai/nano-banana/edit'
 function pickApiKey(settings, hint = '') {
   if (!settings) return '';
@@ -205,7 +205,7 @@ function pickApiKey(settings, hint = '') {
   const m = String(hint || '').toLowerCase();
   if (!m) return fb;
   if (m.includes('gpt-image') || m.includes('gpt2') || m.includes('gpt_image') || m.includes('gptimage')) return settings.gptImageApiKey || fb;
-  if (m.includes('nano-banana') || m.includes('nano_banana') || m.includes('nanobanana') || m.includes('flash-image-preview')) return settings.nanoBananaApiKey || fb;
+  if (m.includes('nano-banana') || m.includes('nano_banana') || m.includes('nanobanana') || m.includes('flash-image') || m.includes('gemini-3-pro-image')) return settings.nanoBananaApiKey || fb;
   if (m.includes('midjourney') || /\bmj[-_/]/.test(m) || m.startsWith('mj') || m === 'mj') return settings.mjApiKey || fb;
   if (m.includes('veo')) return settings.veoApiKey || fb;
   if (m.includes('sora')) return settings.soraApiKey || fb;
@@ -217,7 +217,12 @@ function pickApiKey(settings, hint = '') {
 
 function normalizeImageApiModel(model) {
   const raw = String(model || '').trim();
-  if (raw === 'nano-banana-2') return 'gemini-3.1-flash-image-preview';
+  if (raw === 'nano-banana-2') return 'gemini-3.1-flash-image';
+  if (raw === 'gemini-3.1-flash-image-preview') return 'gemini-3.1-flash-image';
+  if (raw === 'gemini-3.1-flash-image-previiew') return 'gemini-3.1-flash-image';
+  if (raw === 'gemini-3-pro-image-preview') return 'gemini-3-pro-image';
+  if (raw === 'gemini-3-pro-image-2k-preview') return 'gemini-3-pro-image-2k';
+  if (raw === 'gemini-3-pro-image-4k-preview') return 'gemini-3-pro-image-4k';
   if (gptImage2ZhenzhenVariantSize(raw)) return 'gpt-image-2';
   return raw;
 }
@@ -234,7 +239,8 @@ function isBananaImageModel(model) {
   return m.includes('nano-banana')
     || m.includes('nano_banana')
     || m.includes('nanobanana')
-    || m.includes('flash-image-preview');
+    || m.includes('flash-image')
+    || m.includes('gemini-3-pro-image');
 }
 
 // ========== 工具: 以提示词为准，将 settings.zhenzhenApiKey 临时覆盖为分类 key ==========
@@ -2917,6 +2923,8 @@ router.get('/video/query', async (req, res) => {
 // Seedance 2.0(异步)— 完全对齐 gpt-image-2-web runSeedance / pollSeedance
 //   submit: POST ${ZHENZHEN_BASE_URL}/seedance/v3/contents/generations/tasks
 //   query : GET  ${ZHENZHEN_BASE_URL}/seedance/v3/contents/generations/tasks/{tid}
+// model includes: doubao-seedance-2-0-260128 / doubao-seedance-2-0-fast-260128 / doubao-seedance-2.0-mini
+// resolution includes: 480p / 720p / native1080p / native4K / 1080p / 2k / 4k
 // payload: { model, content[], duration, ratio, resolution, generate_audio,
 //            return_last_frame, watermark, tools?[web_search], seed? }
 // content 数组成员:

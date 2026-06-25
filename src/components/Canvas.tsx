@@ -119,7 +119,15 @@ import {
   type MaterialSetKind,
 } from '../utils/materialSet';
 import { chooseDefaultSendMode, resolveEffectiveSendMode } from '../utils/sendMode';
-import { buildGenerationHistoryDataKey, collectGenerationHistory } from '../utils/generationHistory';
+import {
+  DEFAULT_VIDEO_EDIT_DATA,
+  appendVideoEditClips,
+  createVideoEditClipFromSendable,
+  normalizeVideoEditClips,
+  type VideoEditClip,
+} from '../utils/videoEdit';
+import { buildGenerationHistoryDataKey, collectGenerationHistory, countGenerationHistoryItems } from '../utils/generationHistory';
+import { validateUploadMediaFile } from '../utils/uploadMediaValidation';
 import {
   CREATIVE_TARGET_NODE_TYPE,
   buildCreativeTargetResult,
@@ -127,6 +135,12 @@ import {
   createCanvasResourcePackageManifest,
   prepareCanvasResourcePackageImport,
 } from '../utils/canvasCreativeWorkflow';
+import {
+  VIBEX_MESSAGE_CONTRACT,
+  VIBEX_ONLINE_URL,
+  buildVibeXSendNodeSpecs,
+  normalizeVibeXResultPayload,
+} from '../utils/vibexBridge';
 import * as api from '../services/api';
 import { logBus } from '../stores/logs';
 import CanvasToolbar from './CanvasToolbar';
@@ -222,6 +236,24 @@ const FARM_MINIMAP_HEIGHT = 136;
 const FARM_MINIMAP_RIGHT = 24;
 const FARM_MINIMAP_BOTTOM = 32;
 const FARM_MINIMAP_MARKER_LIMIT = 140;
+
+type NodeIdDialogState =
+  | {
+      mode: 'connect';
+      value: string;
+      fromNodeId: string;
+      fromHandleType: 'source' | 'target';
+      title: string;
+      description: string;
+      placeholder: string;
+    }
+  | {
+      mode: 'find';
+      value: string;
+      title: string;
+      description: string;
+      placeholder: string;
+    };
 const FARM_MINIMAP_HEAVY_OBJECT_COUNT = 500;
 const MAX_EDGE_CUT_FEEDBACKS = 4;
 const EDGE_CUT_FEEDBACK_MS = 1100;
@@ -1005,6 +1037,7 @@ const TextNode = lazyCanvasNode(() => import('./nodes/TextNode'), 'TextNode');
 const ImageNode = lazyCanvasNode(() => import('./nodes/ImageNode'), 'ImageNode');
 const LLMNode = lazyCanvasNode(() => import('./nodes/LLMNode'), 'LLMNode');
 const VideoNode = lazyCanvasNode(() => import('./nodes/VideoNode'), 'VideoNode');
+const VideoEditNode = lazyCanvasNode(() => import('./nodes/VideoEditNode'), 'VideoEditNode');
 const SeedanceNode = lazyCanvasNode(() => import('./nodes/SeedanceNode'), 'SeedanceNode');
 const DirectorStoryboardNode = lazyCanvasNode(() => import('./nodes/DirectorStoryboardNode'), 'DirectorStoryboardNode');
 const AudioNode = lazyCanvasNode(() => import('./nodes/AudioNode'), 'AudioNode');
@@ -1057,6 +1090,7 @@ const PickFromSetNode = lazyCanvasNode(() => import('./nodes/PickFromSetNode'), 
 const TextSplitNode = lazyCanvasNode(() => import('./nodes/TextSplitNode'), 'TextSplitNode');
 const MaterialSetNode = lazyCanvasNode(() => import('./nodes/MaterialSetNode'), 'MaterialSetNode');
 const GenerationTargetNode = lazyCanvasNode(() => import('./nodes/GenerationTargetNode'), 'GenerationTargetNode');
+const VibeXNode = lazyCanvasNode(() => import('./nodes/VibeXNode'), 'VibeXNode');
 const UploadNode = lazyCanvasNode(() => import('./nodes/UploadNode'), 'UploadNode');
 const OutputNode = lazyCanvasNode(() => import('./nodes/OutputNode'), 'OutputNode');
 const GroupBoxNode = lazyCanvasNode(() => import('./nodes/GroupBoxNode'), 'GroupBoxNode');
@@ -1075,6 +1109,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   text: TextNode,
   image: ImageNode,
   video: VideoNode,
+  'video-edit': VideoEditNode,
   seedance: SeedanceNode, // 完全对齐 gpt-image-2-web Seedance2.0(独立 /seedance/v3 路径)
   'director-storyboard': DirectorStoryboardNode,
   audio: AudioNode,
@@ -1086,6 +1121,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   // RH 工具节点：内置启动器 + 应用运行面板（v1.2.10+）
   'rh-tools': RHToolsNode,
   'rh-toolbox': RHToolboxNode,
+  vibex: VibeXNode,
   ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerNode } : {}),
   'fal-toolbox': FalToolboxNode,
   'model-3d-preview': Model3DPreviewNode,
@@ -1264,6 +1300,7 @@ function withNodeSerialBadge(Component: ComponentType<any>): ComponentType<any> 
 const INITIAL_DATA: Record<string, Record<string, any>> = {
   image: { model: 'gpt-image-2', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
   edit: { mode: 'edit', model: 'gpt-image-2', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
+  'video-edit': { ...DEFAULT_VIDEO_EDIT_DATA, clips: [], settings: { ...DEFAULT_VIDEO_EDIT_DATA.settings }, job: { ...DEFAULT_VIDEO_EDIT_DATA.job } },
   seedance: {
     model: 'doubao-seedance-2-0-fast-260128',
     duration: 5,
@@ -1357,6 +1394,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     batchProcessorSequenceStart: 1,
     batchProcessorIndexPadding: 3,
     batchProcessorOutputFormat: 'keep',
+    batchProcessorOperation: 'trim',
     batchProcessorTrimBlackBars: true,
     batchProcessorTrimMode: 'auto',
     batchProcessorTrimAxis: 'vertical',
@@ -1367,11 +1405,15 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     batchProcessorTrimManualBottom: 0,
     batchProcessorTrimManualLeft: 0,
     batchProcessorRemoveBg: false,
+    batchProcessorCutoutOutputRatio: 'keep',
     batchProcessorExpandCanvas: false,
-    batchProcessorTargetRatio: 'keep',
+    batchProcessorExpandPresetId: 'landscape-16-9',
     batchProcessorPadBackground: '#00000000',
     batchProcessorUpscale: false,
-    batchProcessorUpscaleScale: 2,
+    batchProcessorLocalConcurrency: 4,
+    batchProcessorRhConcurrency: 2,
+    batchProcessorRetryCount: 1,
+    batchProcessorContinueOnError: true,
     batchProcessorQuality: 90,
     status: 'idle',
     error: '',
@@ -1787,6 +1829,13 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     urls: [],
     status: 'idle',
   },
+  vibex: {
+    vibexFrameMode: 'online',
+    vibexCustomUrl: '',
+    vibexNodeWidth: 1080,
+    vibexNodeHeight: 820,
+    label: 'VibeX工作台',
+  },
   'drawing-board': { boardRatio: '16:9', boardWidth: 960, boardHeight: 540, boardElements: [], boardColor: '#111827', boardStrokeSize: 5 },
   'grid-crop': { rows: 3, cols: 3, gap: 0 },
   'grid-editor': {
@@ -2177,6 +2226,30 @@ function sourceNodeIdsFromMaterials(materials: SendableMaterial[]): string[] {
   return [...ids].sort();
 }
 
+function videoEditTargetLabel(node: Node): string {
+  const serial = getNodeSerialId(node);
+  return serial ? `视频剪辑#${serial}` : `视频剪辑 ${node.id.slice(-6)}`;
+}
+
+function selectVideoEditTargetNode(nodes: Node[], targetNodeId?: string | null): Node | null {
+  const candidates = nodes.filter((node) => node.type === 'video-edit');
+  if (targetNodeId) return candidates.find((node) => node.id === targetNodeId) || null;
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function videoEditPatchFromIncomingClips(data: any, incomingClips: VideoEditClip[]): Record<string, any> {
+  const nextClips = appendVideoEditClips(data?.clips, incomingClips);
+  return {
+    clips: nextClips,
+    selectedClipId: data?.selectedClipId && nextClips.some((clip) => clip.id === data.selectedClipId)
+      ? data.selectedClipId
+      : nextClips[0]?.id || '',
+    status: nextClips.length ? 'ready' : 'idle',
+    error: '',
+    videoEditLastReceivedAt: Date.now(),
+  };
+}
+
 function removeDuplicateSendBridgeNodes(
   nodes: Node[],
   edges: Edge[],
@@ -2389,6 +2462,9 @@ function fallbackMediaName(file: File, kind: MediaKind, index: number): string {
 }
 
 async function uploadCanvasMediaFile(file: File, kind: MediaKind, index: number): Promise<MediaItem> {
+  const validationError = validateUploadMediaFile(file, kind);
+  if (validationError) throw new Error(validationError);
+
   const fileName = fallbackMediaName(file, kind, index);
   const fd = new FormData();
   fd.append('file', file, fileName);
@@ -2645,6 +2721,7 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
   {
     title: '图像模型注意事项（2K，4K只有FAL长期稳定，其他都不保证稳定）',
     items: [
+      '2026.06.25谷歌香蕉模型从preview模型升级为正式版，模型名字需要修改，如之前是 gemini-3-pro-image-preview ，需要改为 gemini-3-pro-image，请求的模型名字之前带preview 的都去掉preview以下是新名字gemini-3-pro-image，gemini-3-pro-image-2k，gemini-3-pro-image-4k，gemini-3.1-flash-image，gemini-3.1-flash-image-512px，gemini-3.1-flash-image-2k，gemini-3.1-flash-image-4k，特殊的nano-banana-pro模型不需要修改',
       'gpt-image-2模型，新增azure特价分组，固定0.3积分，支持2K,4K，目前稳定（2K,4K没法保证永久稳定，最稳定是FAL模型方法），支持质量参数传入！（2026.06.17）',
       'gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松',
       'gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上',
@@ -2660,6 +2737,7 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
   {
     title: '视频模型注意事项',
     items: [
+      '20250624更新，seedance2.0新增mini模型（720P是满血版的一半），支持原生4K，电影级质感（仅满血720P可选）',
       'seedance2.0（Default分组）非远景推荐480P+FAST模式，质量吊打快乐马，价格只要5个币15秒，后续用flashvsr放大即可，720P满血15秒大概15币，不排队，支持真人',
       'seedance2.0（sd-global分组）需要联系T8微信单独开通，只支持企业开通，由于除版权外基本无审核，防止有人搞色情，需要签协议才能开通，价格和上面一样',
       'veo3.1模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是veo&grok备用分组2的veo3.1模型和默认分组的fal模型',
@@ -2955,8 +3033,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   );
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [generationHistoryOpen, setGenerationHistoryOpen] = useState(false);
   const generationHistoryDataKey = useMemo(() => buildGenerationHistoryDataKey(nodes), [nodes]);
-  const generationHistoryItems = useMemo(() => collectGenerationHistory(nodes), [generationHistoryDataKey]);
+  const generationHistoryCount = useMemo(() => countGenerationHistoryItems(nodes), [generationHistoryDataKey]);
+  const generationHistoryItems = useMemo(
+    () => (generationHistoryOpen ? collectGenerationHistory(nodes) : []),
+    [generationHistoryDataKey, generationHistoryOpen],
+  );
   const [creativeDesk, setCreativeDesk] = useState<CreativeDeskState>(() => createDefaultCreativeDeskState());
   const [farmCanvas, setFarmCanvas] = useState<FarmCanvasState>(() => createFarmState());
   const [farmCanvasEditing, setFarmCanvasEditing] = useState(false);
@@ -2994,6 +3077,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const farmFollowupNoticeTimerRef = useRef<number | null>(null);
   const farmContinuousFeedbackBatchRef = useRef<FarmContinuousFeedbackBatch | null>(null);
   const webImageImportMessageIdsRef = useRef<Set<string>>(new Set());
+  const vibeXImportMessageIdsRef = useRef<Set<string>>(new Set());
   const edgeCutFeedbackTimersRef = useRef<Map<string, number>>(new Map());
   const edgeConnectFeedbackTimersRef = useRef<Map<string, number>>(new Map());
   const farmAchievementEventIdsRef = useRef<Set<string>>(new Set());
@@ -3362,6 +3446,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     flowPos: { x: number; y: number };
     screenPos: { x: number; y: number };
   } | null>(null);
+  const [nodeIdDialog, setNodeIdDialog] = useState<NodeIdDialogState | null>(null);
   const connectingFromRef = useRef<{
     nodeId: string;
     handleType: 'source' | 'target';
@@ -3697,7 +3782,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const [outputMaterialPersistenceEnabled, setOutputMaterialPersistenceEnabled] = useState(() =>
     readOutputMaterialPersistenceSetting(),
   );
-  const [generationHistoryOpen, setGenerationHistoryOpen] = useState(false);
   const toggleOutputMaterialPersistence = useCallback(() => {
     setOutputMaterialPersistenceEnabled((current) => {
       const next = !current;
@@ -4519,6 +4603,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     addNode(CREATIVE_TARGET_NODE_TYPE as NodeType);
   }, [addNode]);
 
+  const handleOpenVibeXWorkbench = useCallback(() => {
+    window.open(VIBEX_ONLINE_URL, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const handleCreateVibeXNode = useCallback(() => {
+    addNode('vibex' as NodeType);
+  }, [addNode]);
+
   const handleCreateImageFromSelection = useCallback((ids: string[]) => {
     const idSet = new Set(ids);
     const summaryNodes = nodesRef.current.map((node) => ({ ...node, selected: idSet.has(node.id) }));
@@ -4554,18 +4646,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     logBus.success('已在选区右侧创建图像生成节点', '选区生成');
   }, [activeId, assignActiveNodeSerials, registerPlacementShelfNodes]);
 
-  useEffect(() => {
-    const handleWebImageMessage = (event: MessageEvent) => {
-      if (event.source !== window) return;
-      const data = event.data || {};
-      if (
-        data.type !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type ||
-        data.source !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
-      ) return;
-      const payload = (data.payload || {}) as WebImageExtensionPayload;
+  const importWebImagePayload = useCallback((input: unknown, sourceLabel = '网页图片反推') => {
+      const data = input && typeof input === 'object' ? input as Record<string, any> : {};
+      const payload = (data.payload || data || {}) as WebImageExtensionPayload;
       const messageId = cleanWebImageText(payload.messageId || data.messageId, 160);
       if (messageId) {
-        if (webImageImportMessageIdsRef.current.has(messageId)) return;
+        if (webImageImportMessageIdsRef.current.has(messageId)) return false;
         webImageImportMessageIdsRef.current.add(messageId);
         if (webImageImportMessageIdsRef.current.size > 80) {
           webImageImportMessageIdsRef.current = new Set([...webImageImportMessageIdsRef.current].slice(-40));
@@ -4573,8 +4659,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       }
       const specs = buildWebImageSendNodeSpecs(payload);
       if (specs.length === 0) {
-        logBus.warn('网页图片反推没有可发送的提示词或生成图片', '网页反推');
-        return;
+        logBus.warn(`${sourceLabel} 没有可发送的提示词或生成图片`, '网页反推');
+        return false;
       }
 
       const selectedTarget = nodesRef.current.find((node) => node.selected && node.type === CREATIVE_TARGET_NODE_TYPE);
@@ -4597,8 +4683,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
               ? { ...node, data: { ...(node.data as any), ...built.targetPatch }, selected: true }
               : { ...node, selected: false },
           ));
-          logBus.success('网页图片反推结果已填入选中的生成目标框', '网页反推');
-          return;
+          logBus.success(`${sourceLabel}结果已填入选中的生成目标框`, '网页反推');
+          return true;
         }
         if (prompt) {
           setNodes(nodesRef.current.map((node) =>
@@ -4606,8 +4692,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
               ? { ...node, data: { ...(node.data as any), prompt, status: 'idle', error: '' }, selected: true }
               : { ...node, selected: false },
           ));
-          logBus.success('网页图片反推提示词已写入选中的生成目标框', '网页反推');
-          return;
+          logBus.success(`${sourceLabel}提示词已写入选中的生成目标框`, '网页反推');
+          return true;
         }
       }
 
@@ -4637,12 +4723,128 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       }
       setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assignedNewNodes]);
       registerPlacementShelfNodes(assignedNewNodes, '发送');
-      logBus.success(`已从网页图片反推发送 ${assignedNewNodes.length} 个节点到当前画布`, '网页反推');
+      logBus.success(`已从${sourceLabel}发送 ${assignedNewNodes.length} 个节点到当前画布`, '网页反推');
+      return true;
+  }, [activeId, assignActiveNodeSerials, getViewport, registerPlacementShelfNodes, screenToFlowPosition]);
+
+  useEffect(() => {
+    const handleWebImageMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const data = event.data || {};
+      if (
+        data.type !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type ||
+        data.source !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
+      ) return;
+      importWebImagePayload(data);
     };
 
     window.addEventListener('message', handleWebImageMessage);
     return () => window.removeEventListener('message', handleWebImageMessage);
+  }, [importWebImagePayload]);
+
+  const importVibeXPayload = useCallback((input: unknown, sourceLabel = 'VibeX') => {
+      const data = input && typeof input === 'object' ? input as Record<string, any> : {};
+      const payload = normalizeVibeXResultPayload(data.payload || data);
+      if (!payload) {
+        logBus.warn(`${sourceLabel} 没有发送可识别的视频、图片、音频或提示词`, 'VibeX');
+        return false;
+      }
+      const messageId = String(payload.messageId || data.messageId || '').trim().slice(0, 180);
+      if (messageId) {
+        if (vibeXImportMessageIdsRef.current.has(messageId)) return false;
+        vibeXImportMessageIdsRef.current.add(messageId);
+        if (vibeXImportMessageIdsRef.current.size > 80) {
+          vibeXImportMessageIdsRef.current = new Set([...vibeXImportMessageIdsRef.current].slice(-40));
+        }
+      }
+
+      const specs = buildVibeXSendNodeSpecs(payload);
+      if (specs.length === 0) {
+        logBus.warn(`${sourceLabel} 回传没有可创建的素材节点`, 'VibeX');
+        return false;
+      }
+
+      const flowEl = document.querySelector('.react-flow') as HTMLElement | null;
+      const rect = flowEl?.getBoundingClientRect();
+      const base = screenToFlowPosition(
+        rect
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      );
+      const newNodes = materialNodesFromSpecs(specs, nodesRef.current, base, {
+        signature: `vibex:${messageId || Date.now()}`,
+        mode: 'output',
+        sourceCanvasId: activeId,
+        sourceNodeIds: [],
+      });
+      const assignedNewNodes = assignActiveNodeSerials(newNodes, nodesRef.current);
+      const focusCenter = centerOfMaterialNodes(assignedNewNodes);
+      if (activeId && focusCenter) {
+        const { zoom } = getViewport();
+        pendingSendFocusRef.current = {
+          canvasId: activeId,
+          center: focusCenter,
+          zoom: Math.min(Math.max(zoom || 0.9, 0.72), 1.05),
+        };
+      }
+      setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assignedNewNodes]);
+      registerPlacementShelfNodes(assignedNewNodes, '发送');
+      logBus.success(`已从 ${sourceLabel} 发送 ${assignedNewNodes.length} 个节点到当前画布`, 'VibeX');
+      return true;
   }, [activeId, assignActiveNodeSerials, getViewport, registerPlacementShelfNodes, screenToFlowPosition]);
+
+  useEffect(() => {
+    const handleVibeXMessage = (event: MessageEvent) => {
+      const data = event.data || {};
+      if (
+        data.type !== VIBEX_MESSAGE_CONTRACT.type ||
+        data.source !== VIBEX_MESSAGE_CONTRACT.source
+      ) return;
+      importVibeXPayload(data, 'VibeX');
+    };
+
+    window.addEventListener('message', handleVibeXMessage);
+    return () => window.removeEventListener('message', handleVibeXMessage);
+  }, [importVibeXPayload]);
+
+  useEffect(() => {
+    let disposed = false;
+    let timerId: number | null = null;
+
+    const drain = async () => {
+      try {
+        const res = await fetch('/api/vibex-bridge/pending?limit=12', { cache: 'no-store' });
+        if (res.ok) {
+          const json = await res.json().catch(() => null);
+          const messages = Array.isArray(json?.data?.messages) ? json.data.messages : [];
+          messages.forEach((message: any) => {
+            if (
+              message?.type === VIBEX_MESSAGE_CONTRACT.type &&
+              message?.source === VIBEX_MESSAGE_CONTRACT.source
+            ) {
+              importVibeXPayload(message, '网页版 VibeX');
+              return;
+            }
+            if (
+              message?.type === WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type &&
+              message?.source === WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
+            ) {
+              importWebImagePayload(message, '网页反推');
+            }
+          });
+        }
+      } catch {
+        // 本地桥接不是所有运行形态都可用，失败时静默等待下一轮。
+      }
+      if (!disposed) timerId = window.setTimeout(drain, 1800);
+    };
+
+    drain();
+    return () => {
+      disposed = true;
+      if (timerId != null) window.clearTimeout(timerId);
+    };
+  }, [importVibeXPayload, importWebImagePayload]);
 
   useEffect(() => {
     const stopRadialPointerEvent = (event: PointerEvent | MouseEvent) => {
@@ -5219,8 +5421,156 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, screenToFlowPosition],
   );
 
+  const loadVideoEditTargets = useCallback(async (targetCanvasId: string) => {
+    const sourceNodes = targetCanvasId === activeId
+      ? nodesRef.current
+      : normalizeCanvasNodeSerials(
+          ((await api.getCanvasData(targetCanvasId)).nodes || []) as Node[],
+        ).nodes;
+    return sourceNodes
+      .filter((node) => node.type === 'video-edit')
+      .map((node) => ({
+        id: node.id,
+        label: videoEditTargetLabel(node),
+        clipCount: normalizeVideoEditClips((node.data as any)?.clips).length,
+      }));
+  }, [activeId]);
+
+  const appendMaterialsToVideoEditNode = useCallback(
+    async (
+      targetCanvasId: string,
+      incomingClips: VideoEditClip[],
+      switchAfter: boolean,
+      targetNodeId?: string | null,
+    ) => {
+      if (incomingClips.length === 0) {
+        logBus.warn('没有可追加到视频剪辑的视频素材', '视频剪辑');
+        return;
+      }
+
+      const createVideoEditNode = (existingNodes: Node[], base: { x: number; y: number }): Node => {
+        const size = defaultSizeOf('video-edit');
+        const offset = placeBatchNodes([{ x: base.x, y: base.y, w: size.w, h: size.h }], existingNodes, {
+          source: 'placement:video-edit-send',
+        });
+        return {
+          id: `video-edit-send-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: 'video-edit',
+          position: { x: base.x + offset.dx, y: base.y + offset.dy },
+          selected: true,
+          data: {
+            ...(INITIAL_DATA['video-edit'] || {}),
+            ...videoEditPatchFromIncomingClips({}, incomingClips),
+            sentFromMaterialBridge: true,
+            sendBridgeMode: 'video-edit',
+            sendBridgeSourceCanvasId: activeId || undefined,
+            sendBridgeSourceNodeIds: incomingClips
+              .map((clip) => clip.sourceNodeId)
+              .filter((value): value is string => typeof value === 'string' && Boolean(value)),
+            sendBridgeCreatedAt: Date.now(),
+          },
+        } as Node;
+      };
+
+      if (targetCanvasId === activeId) {
+        const target = selectVideoEditTargetNode(nodesRef.current, targetNodeId);
+        if (target) {
+          setNodes((prev) => prev.map((node) => {
+            if (node.id !== target.id) return { ...node, selected: false };
+            return {
+              ...node,
+              selected: true,
+              data: {
+                ...(node.data || {}),
+                ...videoEditPatchFromIncomingClips(node.data, incomingClips),
+              },
+            };
+          }));
+          setSendModal(null);
+          logBus.success(`已追加 ${incomingClips.length} 段视频到 ${videoEditTargetLabel(target)}`, '视频剪辑');
+          return;
+        }
+
+        const newNode = createVideoEditNode(nodesRef.current, basePositionForActiveSend());
+        const assigned = assignActiveNodeSerials([newNode], nodesRef.current);
+        const focusCenter = centerOfMaterialNodes(assigned);
+        if (activeId && focusCenter) {
+          const { zoom } = getViewport();
+          pendingSendFocusRef.current = {
+            canvasId: activeId,
+            center: focusCenter,
+            zoom: Math.min(Math.max(zoom || 0.9, 0.72), 1.05),
+          };
+        }
+        setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assigned]);
+        registerPlacementShelfNodes(assigned, '发送');
+        setSendModal(null);
+        logBus.success(`已新建视频剪辑并追加 ${incomingClips.length} 段视频`, '视频剪辑');
+        return;
+      }
+
+      const data = await api.getCanvasData(targetCanvasId);
+      const normalizedTarget = normalizeCanvasNodeSerials(
+        (Array.isArray(data.nodes) ? data.nodes : []) as Node[],
+        data.nextNodeSerialId,
+      );
+      let targetNodes = normalizedTarget.nodes;
+      const targetEdges = (Array.isArray(data.edges) ? data.edges : []) as Edge[];
+      let nextNodeSerialId = normalizedTarget.nextNodeSerialId;
+      let focusCenter: { x: number; y: number } | null = null;
+      const target = selectVideoEditTargetNode(targetNodes, targetNodeId);
+      if (target) {
+        targetNodes = targetNodes.map((node) => node.id === target.id
+          ? {
+              ...node,
+              selected: true,
+              data: {
+                ...(node.data || {}),
+                ...videoEditPatchFromIncomingClips(node.data, incomingClips),
+                videoEditCrossCanvasReceivedAt: Date.now(),
+              },
+            }
+          : { ...node, selected: false });
+        focusCenter = centerOfMaterialNodes(targetNodes.filter((node) => node.id === target.id));
+      } else {
+        const draft = createVideoEditNode(targetNodes, basePositionForAppend(targetNodes));
+        const fresh = assignFreshNodeSerials([draft], targetNodes, nextNodeSerialId);
+        targetNodes = [...targetNodes.map((node) => ({ ...node, selected: false })), ...fresh.nodes];
+        nextNodeSerialId = fresh.nextNodeSerialId;
+        focusCenter = centerOfMaterialNodes(fresh.nodes);
+      }
+      if (switchAfter && focusCenter) {
+        pendingSendFocusRef.current = {
+          canvasId: targetCanvasId,
+          center: focusCenter,
+          zoom: 0.88,
+        };
+      }
+      const payload = {
+        nodes: targetNodes,
+        edges: targetEdges,
+        viewport: data.viewport || { x: 0, y: 0, zoom: 1 },
+        nextNodeSerialId,
+        creativeDesk: data.creativeDesk,
+        farmCanvas: sanitizeFarmCanvasState(data.farmCanvas),
+      };
+      await api.saveCanvasData(targetCanvasId, payload);
+      api.autoSaveCanvasData(targetCanvasId, payload).catch(() => {});
+      await loadCanvases();
+      if (switchAfter) setActive(targetCanvasId);
+      setSendModal(null);
+      logBus.success(`跨画布视频剪辑：已追加 ${incomingClips.length} 段视频到目标画布`, '视频剪辑');
+    },
+    [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, registerPlacementShelfNodes, setActive],
+  );
+
   const handleSendMaterialsToCanvas = useCallback(
-    async (targetCanvasId: string, mode: SendTargetMode, switchAfter: boolean) => {
+    async (
+      targetCanvasId: string,
+      mode: SendTargetMode,
+      switchAfter: boolean,
+      options?: { videoEditTargetNodeId?: string | null },
+    ) => {
       if (!sendModal) return;
       const currentSend = {
         ...sendModal,
@@ -5299,6 +5649,18 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
       if (currentSend.materials.length === 0) {
         logBus.warn('当前发送方式需要素材；请选择“节点片段”发送选中节点和连线', '发送素材');
+        return;
+      }
+      if (effectiveMode === 'video-edit') {
+        const incomingClips = currentSend.materials
+          .map((item) => createVideoEditClipFromSendable(item))
+          .filter((clip): clip is VideoEditClip => Boolean(clip));
+        await appendMaterialsToVideoEditNode(
+          targetCanvasId,
+          incomingClips,
+          switchAfter,
+          options?.videoEditTargetNodeId ?? null,
+        );
         return;
       }
       const specs = buildSendNodeSpecs(currentSend.materials, effectiveMode);
@@ -5390,7 +5752,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         '发送素材',
       );
     },
-    [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, registerPlacementShelfNodes, resolveSendMode, sendModal, setActive],
+    [activeId, appendMaterialsToVideoEditNode, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, registerPlacementShelfNodes, resolveSendMode, sendModal, setActive],
   );
 
   const saveWorkflowFragmentToResource = useCallback(
@@ -5725,6 +6087,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const handleExportResourcePackage = useCallback(async () => {
     const title = canvases.find((canvas) => canvas.id === activeId)?.name || `画布 ${activeId || ''}`.trim() || '当前画布';
     const resourceLibrarySnapshot = await loadResourcePackageLibrarySnapshot();
+    const generationHistoryForExport = collectGenerationHistory(nodesRef.current);
     const manifest = createCanvasResourcePackageManifest({
       canvasId: activeId || 'export',
       title,
@@ -5738,8 +6101,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       },
       portable: false,
       resourceLibrary: resourceLibrarySnapshot,
-      thumbnails: buildResourcePackageThumbnailRefs(generationHistoryItems),
-      generationHistory: generationHistoryItems,
+      thumbnails: buildResourcePackageThumbnailRefs(generationHistoryForExport),
+      generationHistory: generationHistoryForExport,
     });
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -5757,7 +6120,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         : `资源包清单已导出：${manifest.resources.length} 个资源，历史 ${manifest.generationHistorySummary.total} 条`,
       '资源包',
     );
-  }, [activeId, canvases, nodes, edges, getViewport, creativeDesk, farmCanvas, generationHistoryItems]);
+  }, [activeId, canvases, nodes, edges, getViewport, creativeDesk, farmCanvas]);
 
   const handleImportClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -7755,28 +8118,63 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
   const handleConnectPickerToNodeId = useCallback(() => {
     if (!picker) return;
-    const raw = window.prompt(
-      picker.fromHandleType === 'source'
-        ? '输入要连接到的 NodeID'
-        : '输入要作为来源的 NodeID',
-    );
-    if (raw === null) return;
-    const result = resolveConnectionByNodeSerialId({
-      nodes: nodesRef.current,
-      edges: edgesRef.current,
+    setNodeIdDialog({
+      mode: 'connect',
+      value: '',
       fromNodeId: picker.fromNodeId,
       fromHandleType: picker.fromHandleType,
-      nodeSerialInput: raw,
+      title: picker.fromHandleType === 'source' ? '发送到 NodeID' : '从 NodeID 输入',
+      description:
+        picker.fromHandleType === 'source'
+          ? '输入目标节点编号，会从当前输出口自动连接到该节点。'
+          : '输入来源节点编号，会从该节点自动连接到当前输入口。',
+      placeholder: '#12 或 12',
     });
-    if (!result.ok) {
-      logBus.warn(result.message, '发送到ID');
+    setPicker(null);
+  }, [picker]);
+
+  const submitNodeIdDialog = useCallback(() => {
+    if (!nodeIdDialog) return;
+    const raw = nodeIdDialog.value.trim();
+    if (!raw) {
+      logBus.warn('请输入有效的 NodeID 数字', nodeIdDialog.mode === 'connect' ? '发送到ID' : '查找 NodeID');
       return;
     }
-    onConnect(result.connection);
-    setPicker(null);
+    if (nodeIdDialog.mode === 'connect') {
+      const result = resolveConnectionByNodeSerialId({
+        nodes: nodesRef.current,
+        edges: edgesRef.current,
+        fromNodeId: nodeIdDialog.fromNodeId,
+        fromHandleType: nodeIdDialog.fromHandleType,
+        nodeSerialInput: raw,
+      });
+      if (!result.ok) {
+        logBus.warn(result.message, '发送到ID');
+        return;
+      }
+      onConnect(result.connection);
+      setNodeIdDialog(null);
+      const serialId = parseNodeSerialInput(raw);
+      logBus.success(`已连接 NodeID #${serialId ?? raw}`, '发送到ID');
+      return;
+    }
     const serialId = parseNodeSerialInput(raw);
-    logBus.success(`已连接 NodeID #${serialId}`, '发送到ID');
-  }, [onConnect, picker]);
+    if (!serialId) {
+      logBus.warn('请输入有效的 NodeID 数字', '查找 NodeID');
+      return;
+    }
+    const target = findNodeBySerialId(nodesRef.current, serialId);
+    if (!target) {
+      logBus.warn(`没有找到 NodeID #${serialId}`, '查找 NodeID');
+      return;
+    }
+    const rect = rectOf(target);
+    const currentZoom = getViewport().zoom || 1;
+    const zoom = Math.min(Math.max(currentZoom, 0.55), 1.15);
+    setCenter(rect.x + rect.w / 2, rect.y + rect.h / 2, { zoom, duration: 450 });
+    pulseNearestNode(target.id);
+    setNodeIdDialog(null);
+  }, [getViewport, nodeIdDialog, onConnect, setCenter]);
 
   // ===== 自动创建输出素材节点 =====
   // 生成类节点 (image/video/audio/seedance/llm/runninghub 等) 输出字段有值后,
@@ -8544,24 +8942,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
   const focusNodeBySerialId = useCallback(() => {
     if (!loaded || loadedCanvasId !== activeId) return;
-    const raw = window.prompt('输入要查找的 NodeID');
-    if (raw === null) return;
-    const serialId = parseNodeSerialInput(raw);
-    if (!serialId) {
-      logBus.warn('请输入有效的 NodeID 数字', '查找 NodeID');
-      return;
-    }
-    const target = findNodeBySerialId(nodesRef.current, serialId);
-    if (!target) {
-      logBus.warn(`没有找到 NodeID #${serialId}`, '查找 NodeID');
-      return;
-    }
-    const rect = rectOf(target);
-    const currentZoom = getViewport().zoom || 1;
-    const zoom = Math.min(Math.max(currentZoom, 0.55), 1.15);
-    setCenter(rect.x + rect.w / 2, rect.y + rect.h / 2, { zoom, duration: 450 });
-    pulseNearestNode(target.id);
-  }, [activeId, getViewport, loaded, loadedCanvasId, setCenter]);
+    setNodeIdDialog({
+      mode: 'find',
+      value: '',
+      title: '查找 NodeID',
+      description: '输入节点编号后，画布会定位到该节点并高亮提示。',
+      placeholder: '#12 或 12',
+    });
+  }, [activeId, loaded, loadedCanvasId]);
 
   const focusGenerationHistoryNode = useCallback((nodeId: string) => {
     if (!loaded || loadedCanvasId !== activeId) return;
@@ -9077,6 +9465,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       data-theme-mode={theme}
       data-edge-motion={edgeMotionMode}
       data-edge-load={heavyEdgeMotion ? 'heavy' : undefined}
+      data-canvas-surface-load={heavyCanvasSurface ? 'heavy' : 'normal'}
+      data-canvas-node-count={nodes.length}
+      data-canvas-edge-count={edges.length}
       style={{ background: bgColor }}
       onContextMenuCapture={onCanvasContextMenuCapture}
       onMouseMove={handleCanvasPointerMove}
@@ -9104,9 +9495,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         onToggleSnap={() => setSnapEnabled((v) => !v)}
         outputMaterialPersistenceEnabled={outputMaterialPersistenceEnabled}
         onToggleOutputMaterialPersistence={toggleOutputMaterialPersistence}
-        historyCount={generationHistoryItems.length}
+        historyCount={generationHistoryCount}
         historyOpen={generationHistoryOpen}
         onToggleHistory={() => setGenerationHistoryOpen((value) => !value)}
+        onOpenVibeXWorkbench={handleOpenVibeXWorkbench}
+        onCreateVibeXNode={handleCreateVibeXNode}
         onCreateGenerationTarget={handleCreateGenerationTarget}
         onExportResourcePackage={handleExportResourcePackage}
         onAlignSelection={handleAlignSelection}
@@ -9712,6 +10105,126 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         </>
       )}
 
+      {nodeIdDialog && (
+        <div
+          data-canvas-floating-ui="node-id-dialog-backdrop"
+          data-canvas-node-id-dialog="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={nodeIdDialog.title}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (event.currentTarget === event.target) {
+              setNodeIdDialog(null);
+            }
+          }}
+        >
+          <form
+            data-canvas-floating-ui="node-id-dialog"
+            className={[
+              'w-full max-w-[420px] p-4 text-sm shadow-2xl',
+              isPixel
+                ? 'border-2 border-[#1A1410] bg-[#FFF8E3] text-[#1A1410] shadow-[5px_5px_0_rgba(26,20,16,0.8)]'
+                : isDark
+                  ? 'rounded-2xl border border-white/15 bg-zinc-950 text-white'
+                  : 'rounded-2xl border border-black/10 bg-white text-zinc-950',
+            ].join(' ')}
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitNodeIdDialog();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-base font-semibold">{nodeIdDialog.title}</div>
+                <div className={isDark && !isPixel ? 'mt-1 text-xs text-white/60' : 'mt-1 text-xs opacity-65'}>
+                  {nodeIdDialog.description}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={[
+                  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition',
+                  isPixel
+                    ? 'border-[#1A1410] bg-[#F6EABF] text-[#1A1410] hover:bg-[#EFCB69]'
+                    : isDark
+                      ? 'border-white/15 bg-white/5 text-white/75 hover:bg-white/10'
+                      : 'border-black/10 bg-black/5 text-zinc-700 hover:bg-black/10',
+                ].join(' ')}
+                aria-label="关闭"
+                onClick={() => setNodeIdDialog(null)}
+              >
+                <LucideIcons.X className="h-4 w-4" />
+              </button>
+            </div>
+            <input
+              data-canvas-node-id-dialog-input
+              autoFocus
+              value={nodeIdDialog.value}
+              placeholder={nodeIdDialog.placeholder}
+              className={[
+                'mt-4 w-full rounded-xl border px-3 py-2 text-sm font-medium outline-none transition',
+                isPixel
+                  ? 'border-[#1A1410] bg-[#F9F2D8] text-[#1A1410] focus:ring-2 focus:ring-[#EFCB69]'
+                  : isDark
+                    ? 'border-white/15 bg-white/5 text-white placeholder:text-white/35 focus:border-cyan-300'
+                    : 'border-black/10 bg-white text-zinc-950 placeholder:text-zinc-400 focus:border-cyan-500',
+              ].join(' ')}
+              onChange={(event) => {
+                const value = event.target.value;
+                setNodeIdDialog((current) => (current ? { ...current, value } : current));
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setNodeIdDialog(null);
+                }
+              }}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className={[
+                  'rounded-full border px-4 py-2 text-xs font-semibold transition',
+                  isPixel
+                    ? 'border-[#1A1410] bg-[#F6EABF] text-[#1A1410] hover:bg-[#EFCB69]'
+                    : isDark
+                      ? 'border-white/15 bg-white/5 text-white/75 hover:bg-white/10'
+                      : 'border-black/10 bg-black/5 text-zinc-700 hover:bg-black/10',
+                ].join(' ')}
+                onClick={() => setNodeIdDialog(null)}
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                data-canvas-node-id-dialog-confirm
+                className={[
+                  'rounded-full border px-4 py-2 text-xs font-semibold transition',
+                  isPixel
+                    ? 'border-[#1A1410] bg-[#70B957] text-[#1A1410] hover:bg-[#84CB68]'
+                    : isDark
+                      ? 'border-cyan-300/50 bg-cyan-300 text-zinc-950 hover:bg-cyan-200'
+                      : 'border-cyan-500/20 bg-cyan-500 text-white hover:bg-cyan-600',
+                ].join(' ')}
+              >
+                确定
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <SendMaterialsModal
         open={!!sendModal}
         materials={sendModal?.materials || []}
@@ -9722,6 +10235,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         activeCanvasId={activeId}
         onClose={() => setSendModal(null)}
         onSendToCanvas={handleSendMaterialsToCanvas}
+        onLoadVideoEditTargets={loadVideoEditTargets}
         onSaveToResource={handleSaveSendMaterialsToResource}
         onSendToEagle={handleSendMaterialsToEagle}
         onSendToFigma={handleSendMaterialsToFigma}

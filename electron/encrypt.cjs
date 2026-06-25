@@ -31,6 +31,11 @@ const LOCAL_PRIVATE_BACKEND_DIRS = [
   path.join(LOCAL_PRIVATE_SRC, 'extensions', 'backend'),
   path.join(LOCAL_PRIVATE_SRC, 'recharge', 'backend'),
 ];
+const EXCLUDED_BACKEND_FILES = new Set([
+  // Local VibeX static adapter is intentionally not part of public/Electron
+  // releases. The node uses the online VibeX page plus vibexBridge instead.
+  'routes/vibex.js',
+]);
 
 function walk(dir, results = []) {
   for (const name of fs.readdirSync(dir)) {
@@ -99,14 +104,24 @@ function encryptFile(srcAbs, sourceRoot = BACKEND_SRC, outRoot = OUT_DIR) {
   console.log('[T8ENC]', rel, '→', path.relative(path.resolve(__dirname, '..'), dst));
 }
 
+function isExcludedBackendFile(srcAbs) {
+  const rel = path.relative(BACKEND_SRC, srcAbs).replace(/\\/g, '/');
+  return EXCLUDED_BACKEND_FILES.has(rel);
+}
+
 function main() {
   if (fs.existsSync(OUT_DIR)) {
     fs.rmSync(OUT_DIR, { recursive: true, force: true });
   }
   ensureDir(OUT_DIR);
 
-  const files = walk(BACKEND_SRC);
-  console.log(`[encrypt] backend src files: ${files.length}`);
+  const backendFiles = walk(BACKEND_SRC);
+  const files = backendFiles.filter((file) => !isExcludedBackendFile(file));
+  const skipped = backendFiles.length - files.length;
+  console.log(`[encrypt] backend src files: ${files.length}${skipped ? ` (${skipped} release-excluded)` : ''}`);
+  for (const f of backendFiles.filter(isExcludedBackendFile)) {
+    console.log('[skip ]', path.relative(BACKEND_SRC, f).replace(/\\/g, '/'));
+  }
   for (const f of files) {
     encryptFile(f);
   }

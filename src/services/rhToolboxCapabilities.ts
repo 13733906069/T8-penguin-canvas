@@ -1,5 +1,6 @@
 import {
   buildRhToolboxCapabilityInputValues,
+  RH_IMAGE_CAPABILITY_PRESETS,
   resolveRhToolboxCapability,
 } from '../utils/rhToolboxCapabilities';
 import type { RhToolboxTool } from '../utils/rhToolbox';
@@ -282,6 +283,37 @@ export function runRhImageCutout(
     capability: 'image.cutout',
     imageUrl,
     preferredToolId: 'image-cutout-v1',
+  });
+}
+
+export function runRhImageUpscale(
+  imageUrl: string,
+  options: Omit<RunRhImageCapabilityOptions, 'capability' | 'imageUrl' | 'preferredToolId'> = {},
+): Promise<RunRhImageCapabilityResult> {
+  return runRhImageCapability({
+    ...options,
+    capability: 'image.upscale',
+    imageUrl,
+    preferredToolId: 'image-upscale-4k',
+  });
+}
+
+export function runRhImageExpand(
+  imageUrl: string,
+  options: Omit<RunRhImageCapabilityOptions, 'capability' | 'imageUrl'> & { presetId?: string } = {},
+): Promise<RunRhImageCapabilityResult> {
+  const preset = RH_IMAGE_CAPABILITY_PRESETS.expand.paramPresets?.find((item) => item.id === options.presetId)
+    || RH_IMAGE_CAPABILITY_PRESETS.expand.paramPresets?.find((item) => item.id === RH_IMAGE_CAPABILITY_PRESETS.expand.defaultParamPresetId)
+    || RH_IMAGE_CAPABILITY_PRESETS.expand.paramPresets?.[0];
+  const { presetId: _presetId, userParams, ...rest } = options;
+  return runRhImageCapability({
+    ...rest,
+    capability: 'image.expand',
+    imageUrl,
+    userParams: {
+      ...(preset?.userParams || {}),
+      ...(userParams || {}),
+    },
   });
 }
 

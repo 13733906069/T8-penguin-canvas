@@ -23,20 +23,26 @@ import {
   openOutputFolder,
   opConvert,
   opPadCanvas,
-  opRemoveBg,
   opTrimBorder,
-  opUpscale,
 } from '../../services/imageOps';
+import { runRhImageCapability } from '../../services/rhToolboxCapabilities';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { formatMediaSize, getMediaItemsFromData, type MediaItem, type MediaKind } from '../../utils/mediaCollection';
 import {
   buildBatchOutputName,
   classifyBatchFile,
+  createExclusiveBatchProcessorOperationPatch,
   createBatchItemFromUpload,
+  normalizeBatchConcurrency,
+  normalizeBatchRetrySettings,
+  resolveBatchProcessorOperation,
+  runBatchWorkPool,
   summarizeBatchProgress,
   type BatchNamingSettings,
   type BatchProcessorItem,
+  type BatchProcessorOperation,
 } from '../../utils/batchProcessor';
+import { RH_IMAGE_CAPABILITY_PRESETS } from '../../utils/rhToolboxCapabilities';
 import { useUpdateNodeData } from './useUpdateNodeData';
 
 const KIND_LABEL: Record<MediaKind, string> = {
@@ -53,6 +59,8 @@ const RATIO_OPTIONS = [
   { value: '16:9', label: '16:9' },
   { value: '9:16', label: '9:16' },
 ];
+
+const EXPAND_PRESET_OPTIONS = RH_IMAGE_CAPABILITY_PRESETS.expand.paramPresets || [];
 
 type TrimBorderMode = 'auto' | 'black' | 'white' | 'transparent';
 type TrimBorderAxis = 'vertical' | 'horizontal' | 'all';
@@ -72,6 +80,14 @@ const TRIM_AXIS_OPTIONS: Array<{ value: TrimBorderAxis; label: string }> = [
 ];
 
 const trimModeLabel = (mode: TrimBorderMode) => TRIM_MODE_OPTIONS.find((item) => item.value === mode)?.label || '自动检测';
+
+function batchStatusMeta(status: BatchProcessorItem['status']) {
+  if (status === 'running') return { label: '正在处理', color: '#f59e0b', glow: 'rgba(245, 158, 11, 0.32)' };
+  if (status === 'success') return { label: '已完成', color: '#22c55e', glow: 'rgba(34, 197, 94, 0.22)' };
+  if (status === 'error') return { label: '失败', color: '#ef4444', glow: 'rgba(239, 68, 68, 0.22)' };
+  if (status === 'skipped') return { label: '已跳过', color: '#94a3b8', glow: 'rgba(148, 163, 184, 0.18)' };
+  return { label: '等待中', color: 'var(--t8-text-dim)', glow: 'transparent' };
+}
 
 function dedupeItems(items: BatchProcessorItem[]): BatchProcessorItem[] {
   const seen = new Set<string>();
@@ -110,6 +126,22 @@ function collectUpstreamBatchItems(id: string, edges: any[], nodes: any[]): Batc
     });
   }
   return out;
+}
+
+function batchItemKey(item: BatchProcessorItem): string {
+  return `${item.kind}:${item.url}`;
+}
+
+function resetBatchItem(item: BatchProcessorItem): BatchProcessorItem {
+  return {
+    ...item,
+    status: 'pending',
+    error: '',
+    resultUrl: '',
+    outputName: '',
+    stepsDone: [],
+    trimInfo: undefined,
+  };
 }
 
 async function uploadBatchFile(file: File, index: number): Promise<BatchProcessorItem | null> {
@@ -192,6 +224,7 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [folderBusy, setFolderBusy] = useState(false);
@@ -213,8 +246,28 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
     ['keep', 'png', 'jpg', 'webp'].includes(d.batchProcessorOutputFormat)
       ? d.batchProcessorOutputFormat
       : 'keep';
-  const ratio = typeof d.batchProcessorTargetRatio === 'string' ? d.batchProcessorTargetRatio : 'keep';
-  const upscaleScale = Math.max(1, Math.min(8, Number(d.batchProcessorUpscaleScale || 2)));
+  const cutoutOutputRatio = RATIO_OPTIONS.some((item) => item.value === d.batchProcessorCutoutOutputRatio)
+    ? String(d.batchProcessorCutoutOutputRatio)
+    : 'keep';
+  const expandPresetId = EXPAND_PRESET_OPTIONS.some((item) => item.id === d.batchProcessorExpandPresetId)
+    ? String(d.batchProcessorExpandPresetId)
+    : RH_IMAGE_CAPABILITY_PRESETS.expand.defaultParamPresetId;
+  const expandPreset = EXPAND_PRESET_OPTIONS.find((item) => item.id === expandPresetId)
+    || EXPAND_PRESET_OPTIONS.find((item) => item.id === RH_IMAGE_CAPABILITY_PRESETS.expand.defaultParamPresetId)
+    || EXPAND_PRESET_OPTIONS[0];
+  const localConcurrency = normalizeBatchConcurrency(d.batchProcessorLocalConcurrency, 4, 1, 8);
+  const rhConcurrency = normalizeBatchConcurrency(d.batchProcessorRhConcurrency, 2, 1, 10);
+  const { retryCount, continueOnError } = normalizeBatchRetrySettings({
+    retryCount: d.batchProcessorRetryCount,
+    continueOnError: d.batchProcessorContinueOnError,
+  });
+  const selectedOperation = resolveBatchProcessorOperation(d);
+  const trimSelected = selectedOperation === 'trim';
+  const cutoutSelected = selectedOperation === 'cutout';
+  const expandSelected = selectedOperation === 'expand';
+  const upscaleSelected = selectedOperation === 'upscale';
+  const hasRhSteps = cutoutSelected || expandSelected || upscaleSelected;
+  const activeConcurrency = hasRhSteps ? rhConcurrency : localConcurrency;
   const trimMode: TrimBorderMode = ['auto', 'black', 'white', 'transparent'].includes(d.batchProcessorTrimMode)
     ? d.batchProcessorTrimMode
     : 'auto';
@@ -292,11 +345,30 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
     void appendFiles(Array.from(event.dataTransfer?.files || []));
   };
 
-  const processImage = async (item: BatchProcessorItem): Promise<{ url: string; steps: string[]; trimInfo?: BatchProcessorItem['trimInfo'] }> => {
+  const runRhStep = async (
+    label: string,
+    capability: string,
+    imageUrl: string,
+    options: { preferredToolId?: string; userParams?: Record<string, string | number | boolean>; signal?: AbortSignal } = {},
+  ): Promise<string> => {
+    const result = await runRhImageCapability({
+      capability,
+      imageUrl,
+      preferredToolId: options.preferredToolId,
+      userParams: options.userParams,
+      signal: options.signal,
+      onProgress: (progress) => {
+        update({ batchProcessorUploadNotice: `${label}：${progress.message || progress.stage}` });
+      },
+    });
+    return result.outputUrl;
+  };
+
+  const processImage = async (item: BatchProcessorItem, signal?: AbortSignal): Promise<{ url: string; steps: string[]; trimInfo?: BatchProcessorItem['trimInfo'] }> => {
     let url = item.url;
     const steps: string[] = [];
     let trimInfo: BatchProcessorItem['trimInfo'] | undefined;
-    if (d.batchProcessorTrimBlackBars) {
+    if (trimSelected) {
       const result = await opTrimBorder(url, {
         mode: trimMode,
         axis: trimAxis,
@@ -319,20 +391,31 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
         ? `裁边 上${removed.top}/右${removed.right}/下${removed.bottom}/左${removed.left}px`
         : '裁边 0px');
     }
-    if (d.batchProcessorRemoveBg) {
-      const result = await opRemoveBg(url);
-      url = result.imageUrl;
-      steps.push('抠图');
+    if (cutoutSelected) {
+      url = await runRhStep('RH高清抠图', 'image.cutout', url, {
+        preferredToolId: RH_IMAGE_CAPABILITY_PRESETS.cutout.preferredToolId,
+        signal,
+      });
+      steps.push('RH抠图');
+      if (cutoutOutputRatio !== 'keep') {
+        const result = await opPadCanvas(url, { ratio: cutoutOutputRatio, background: d.batchProcessorPadBackground || '#00000000' });
+        url = result.imageUrl;
+        steps.push(`抠图比例 ${cutoutOutputRatio}`);
+      }
     }
-    if (d.batchProcessorExpandCanvas && ratio !== 'keep') {
-      const result = await opPadCanvas(url, { ratio, background: d.batchProcessorPadBackground || '#00000000' });
-      url = result.imageUrl;
-      steps.push('扩图');
+    if (expandSelected) {
+      url = await runRhStep('RH AI扩图', 'image.expand', url, {
+        userParams: expandPreset?.userParams,
+        signal,
+      });
+      steps.push(`RH扩图 ${expandPreset?.label || ''}`.trim());
     }
-    if (d.batchProcessorUpscale) {
-      const result = await opUpscale(url, upscaleScale);
-      url = result.imageUrl;
-      steps.push(`${upscaleScale}x`);
+    if (upscaleSelected) {
+      url = await runRhStep('RH 4K高清放大', 'image.upscale', url, {
+        preferredToolId: RH_IMAGE_CAPABILITY_PRESETS.upscale.preferredToolId,
+        signal,
+      });
+      steps.push('RH 4K');
     }
     if (outputFormat !== 'keep') {
       const result = await opConvert(url, { format: outputFormat, quality: Number(d.batchProcessorQuality || 90) });
@@ -342,49 +425,82 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
     return { url, steps, trimInfo };
   };
 
-  const runBatch = async () => {
-    const baseItems: BatchProcessorItem[] = dedupeItems(allItems).map((item) => ({
-      ...item,
-      status: 'pending',
-      error: '',
-      resultUrl: '',
-      outputName: '',
-      stepsDone: [],
-      trimInfo: undefined,
-    }));
-    if (baseItems.length === 0) {
+  type BatchWorkEntry = { item: BatchProcessorItem; index: number };
+
+  const runBatch = async (retryOnly = false) => {
+    const deduped = dedupeItems(allItems);
+    if (deduped.length === 0) {
       const msg = '请先上传文件、文件夹或连接上游素材';
       setLocalError(msg);
       update({ status: 'error', error: msg });
       return;
     }
+
+    const targetKeys = new Set(
+      deduped
+        .filter((item) => !retryOnly || item.status === 'error')
+        .map(batchItemKey),
+    );
+    if (retryOnly && targetKeys.size === 0) {
+      update({ batchProcessorUploadNotice: '没有失败项需要重试' });
+      return;
+    }
+
+    const baseItems: BatchProcessorItem[] = deduped.map((item) => (
+      targetKeys.has(batchItemKey(item)) ? resetBatchItem(item) : item
+    ));
+    const workEntries: BatchWorkEntry[] = baseItems
+      .map((item, index) => ({ item, index }))
+      .filter((entry) => targetKeys.has(batchItemKey(entry.item)));
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     cancelRef.current = false;
     setLocalError('');
     update({
       status: 'running',
       error: '',
       batchProcessorItems: baseItems,
-      batchProcessorResults: [],
+      batchProcessorResults: baseItems.filter((item) => item.status === 'success' || item.status === 'error'),
       batchProcessorProgress: summarizeBatchProgress(baseItems),
+      batchProcessorUploadNotice: `${retryOnly ? '正在重试失败项' : '正在批处理'}：${workEntries.length} 项 · 并发 ${activeConcurrency} · 重试 ${retryCount}`,
     });
 
     let nextItems = [...baseItems];
-    for (let index = 0; index < nextItems.length; index += 1) {
-      if (cancelRef.current) {
-        nextItems = nextItems.map((item, i) => i >= index && item.status === 'pending' ? { ...item, status: 'skipped' as const, error: '已取消' } : item);
-        patchItems(nextItems);
-        break;
-      }
-
-      nextItems[index] = { ...nextItems[index], status: 'running' };
+    const patchAt = (index: number, patch: Partial<BatchProcessorItem>) => {
+      nextItems = nextItems.map((item, i) => (i === index ? { ...item, ...patch } : item));
       patchItems(nextItems);
-      try {
-        const item = nextItems[index];
+    };
+
+    const results = await runBatchWorkPool<BatchWorkEntry, BatchProcessorItem>({
+      items: workEntries,
+      concurrency: activeConcurrency,
+      retryCount,
+      retryDelayMs: hasRhSteps ? 1600 : 500,
+      continueOnError,
+      signal: controller.signal,
+      onItemStatus: (event) => {
+        const masterIndex = event.item.index;
+        if (event.status === 'start') {
+          patchAt(masterIndex, {
+            status: 'running',
+            error: event.attempt > 1 ? `重试 ${event.attempt}/${event.maxAttempts}` : '',
+          });
+        } else if (event.status === 'retry') {
+          patchAt(masterIndex, {
+            status: 'running',
+            error: `重试失败后继续：${event.error || '处理失败'}`,
+          });
+        }
+      },
+      worker: async (entry) => {
+        const item = entry.item;
         let currentUrl = item.url;
         let stepsDone: string[] = [];
         let trimInfo: BatchProcessorItem['trimInfo'] | undefined;
         if (item.kind === 'image') {
-          const processed = await processImage(item);
+          const processed = await processImage(item, controller.signal);
           currentUrl = processed.url;
           stepsDone = processed.steps;
           trimInfo = processed.trimInfo;
@@ -392,36 +508,48 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
           stepsDone = ['命名归档'];
         }
 
-        const outputName = buildBatchOutputName(item, index, namingSettingsFor(item));
+        const outputName = buildBatchOutputName(item, entry.index, namingSettingsFor(item));
         // 使用 /api/files/copy-to-output 收口命名后的真实文件；不写 imageUrls/videoUrls，避免画布自动外挂 OutputNode。
         const copied = await copyFileToOutput(currentUrl, outputName, 'batch');
-        nextItems[index] = {
+        return {
           ...item,
-          status: 'success',
+          status: 'success' as const,
           resultUrl: copied.url,
           outputName: copied.filename,
           size: copied.size || item.size,
           stepsDone,
           trimInfo,
         };
-      } catch (error: any) {
-        nextItems[index] = {
-          ...nextItems[index],
-          status: 'error',
-          error: error?.message || '处理失败',
-        };
+      },
+    });
+
+    for (const result of results) {
+      if (result.status === 'success' && result.value) {
+        patchAt(result.item.index, result.value);
+      } else if (result.status === 'cancelled') {
+        patchAt(result.item.index, { status: 'skipped', error: result.error || '已取消' });
+      } else {
+        patchAt(result.item.index, { status: 'error', error: result.error || '处理失败' });
       }
-      patchItems(nextItems);
     }
+    if (controller.signal.aborted || cancelRef.current) {
+      update({ status: 'idle', batchProcessorUploadNotice: '批处理已取消' });
+    }
+    abortRef.current = null;
+  };
+
+  const retryFailed = () => {
+    if (!running) void runBatch(true);
   };
 
   const stopBatch = () => {
     cancelRef.current = true;
-    update({ status: 'idle' });
+    abortRef.current?.abort();
+    update({ status: 'idle', batchProcessorUploadNotice: '正在取消批处理...' });
   };
 
   useRunTrigger(id, async () => {
-    if (!running) await runBatch();
+    if (!running) await runBatch(false);
   }, 'batch-processor');
 
   const clearItems = () => {
@@ -466,17 +594,18 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
     }
   };
 
-  const toggleStep = (field: string, value: boolean, label: string) => {
-    if (field === 'batchProcessorExpandCanvas' && value) {
+  const toggleStep = (operation: BatchProcessorOperation, value: boolean, label: string) => {
+    const patch = createExclusiveBatchProcessorOperationPatch(value ? operation : null);
+    if (operation === 'expand' && value) {
       update({
-        [field]: value,
-        batchProcessorTargetRatio: ratio === 'keep' ? '16:9' : ratio,
-        batchProcessorUploadNotice: '批量扩图已启用，扩图比例已切换为 16:9',
+        ...patch,
+        batchProcessorExpandPresetId: expandPresetId || RH_IMAGE_CAPABILITY_PRESETS.expand.defaultParamPresetId,
+        batchProcessorUploadNotice: '批量扩图已启用，将调用 RH AI扩图',
       });
       return;
     }
     update({
-      [field]: value,
+      ...patch,
       batchProcessorUploadNotice: `${label} ${value ? '已启用' : '已关闭'}`,
     });
   };
@@ -563,13 +692,32 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
                 <div className="rounded border border-dashed px-2 py-3 text-center text-[11px]" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-dim)' }}>
                   无素材
                 </div>
-              ) : allItems.slice(0, 24).map((item) => (
-                <div key={`${item.kind}:${item.url}`} className="grid grid-cols-[42px_1fr_auto] items-center gap-2 rounded px-2 py-1" style={{ background: 'var(--t8-bg-soft)' }}>
-                  <span className="rounded px-1 py-0.5 text-center text-[10px] font-bold" style={{ color: 'var(--t8-text-main)', background: 'var(--t8-bg-node)' }}>{KIND_LABEL[item.kind]}</span>
-                  <span className="truncate text-[11px]" style={{ color: 'var(--t8-text-main)' }} title={item.relativePath || item.name}>{item.name}</span>
-                  <span className="text-[10px]" style={{ color: 'var(--t8-text-dim)' }}>{formatMediaSize(item.size)}</span>
-                </div>
-              ))}
+              ) : allItems.slice(0, 24).map((item) => {
+                const statusMeta = batchStatusMeta(item.status);
+                return (
+                  <div
+                    key={`${item.kind}:${item.url}`}
+                    className="grid grid-cols-[14px_42px_1fr_auto] items-center gap-2 rounded px-2 py-1"
+                    data-batch-status={item.status}
+                    style={{ background: 'var(--t8-bg-soft)' }}
+                  >
+                    <span
+                      className="relative inline-flex h-3 w-3 items-center justify-center rounded-full border"
+                      title={statusMeta.label}
+                      aria-label={statusMeta.label}
+                      style={{ borderColor: statusMeta.color, boxShadow: `0 0 0 3px ${statusMeta.glow}` }}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${item.status === 'running' ? 'animate-pulse' : ''}`}
+                        style={{ background: statusMeta.color }}
+                      />
+                    </span>
+                    <span className="rounded px-1 py-0.5 text-center text-[10px] font-bold" style={{ color: 'var(--t8-text-main)', background: 'var(--t8-bg-node)' }}>{KIND_LABEL[item.kind]}</span>
+                    <span className="truncate text-[11px]" style={{ color: 'var(--t8-text-main)' }} title={`${statusMeta.label} · ${item.relativePath || item.name}`}>{item.name}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--t8-text-dim)' }}>{formatMediaSize(item.size)}</span>
+                  </div>
+                );
+              })}
               {allItems.length > 24 && <div className="text-right text-[10px]" style={{ color: 'var(--t8-text-dim)' }}>还有 {allItems.length - 24} 项</div>}
             </div>
           </div>
@@ -581,14 +729,19 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
                 取消
               </button>
             ) : (
-              <button type="button" className="t8-btn t8-btn-primary px-3 py-2 text-sm" onClick={runBatch} disabled={allItems.length === 0 || busy}>
+              <button type="button" className="t8-btn t8-btn-primary px-3 py-2 text-sm" onClick={() => void runBatch(false)} disabled={allItems.length === 0 || busy}>
                 <Play size={14} />
                 开始批处理
               </button>
             )}
-            <div className="rounded-md border px-2 py-1.5 text-[10px]" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-muted)' }}>
-              完成后只更新本节点结果，不自动铺素材节点
-            </div>
+            <button type="button" className="t8-btn px-3 py-2 text-sm" onClick={retryFailed} disabled={running || progress.fail === 0}>
+              <RotateCcw size={14} />
+              重试失败
+            </button>
+          </div>
+
+          <div className="rounded-md border px-2 py-1.5 text-[10px]" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-muted)' }}>
+            完成后只更新本节点结果，不自动铺素材节点
           </div>
 
           <button
@@ -637,29 +790,139 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
             </div>
           )}
 
+          <div className="rounded-md border p-2" style={{ borderColor: 'var(--t8-border)', background: 'var(--t8-bg-soft)' }}>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1 text-[10px] font-bold" style={{ color: 'var(--t8-text-main)' }}>
+                <Sparkles size={12} />
+                <span className="truncate">处理策略</span>
+              </div>
+              <span className="shrink-0 text-[9px]" style={{ color: 'var(--t8-text-dim)' }}>
+                当前并发 {activeConcurrency}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              <label className="min-w-0">
+                <FieldLabel>本地并发</FieldLabel>
+                <select className="t8-select w-full px-1.5 py-1 text-xs" value={localConcurrency} onChange={(event) => update({ batchProcessorLocalConcurrency: Number(event.target.value) })} disabled={running}>
+                  {[1, 2, 3, 4, 6, 8].map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="min-w-0">
+                <FieldLabel>RH并发</FieldLabel>
+                <select className="t8-select w-full px-1.5 py-1 text-xs" value={rhConcurrency} onChange={(event) => update({ batchProcessorRhConcurrency: Number(event.target.value) })} disabled={running}>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="min-w-0">
+                <FieldLabel>重试</FieldLabel>
+                <select className="t8-select w-full px-1.5 py-1 text-xs" value={retryCount} onChange={(event) => update({ batchProcessorRetryCount: Number(event.target.value) })} disabled={running}>
+                  {[0, 1, 2, 3].map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="flex min-w-0 items-end gap-1 rounded border px-1.5 py-1 text-[10px]" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-main)' }}>
+                <input
+                  type="checkbox"
+                  checked={continueOnError}
+                  onChange={(event) => update({ batchProcessorContinueOnError: event.target.checked })}
+                  disabled={running}
+                />
+                失败继续
+              </label>
+            </div>
+          </div>
+
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
             <div className="min-w-0">
-              <FieldLabel>扩图比例</FieldLabel>
-              <select className="t8-select w-full px-2 py-1.5 text-xs" value={ratio} onChange={(event) => update({ batchProcessorTargetRatio: event.target.value })} disabled={running}>
+              <FieldLabel>扩图预设</FieldLabel>
+              <select className="t8-select w-full px-2 py-1.5 text-xs" value={expandPresetId} onChange={(event) => update({ batchProcessorExpandPresetId: event.target.value })} disabled={running}>
+                {EXPAND_PRESET_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </div>
+            <div className="min-w-0">
+              <FieldLabel>抠图后比例</FieldLabel>
+              <select className="t8-select w-full px-2 py-1.5 text-xs" value={cutoutOutputRatio} onChange={(event) => update({ batchProcessorCutoutOutputRatio: event.target.value })} disabled={running}>
                 {RATIO_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </div>
-            <div className="min-w-0">
-              <FieldLabel>放大倍数</FieldLabel>
-              <select className="t8-select w-full px-2 py-1.5 text-xs" value={upscaleScale} onChange={(event) => update({ batchProcessorUpscaleScale: Number(event.target.value) })} disabled={running}>
-                {[1.5, 2, 3, 4].map((item) => <option key={item} value={item}>{item}x</option>)}
-              </select>
-            </div>
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-            <ToggleStep icon={<Scissors size={13} />} label="去除黑/白/透明边" active={Boolean(d.batchProcessorTrimBlackBars)} disabled={running} onChange={(value) => toggleStep('batchProcessorTrimBlackBars', value, '去除上下黑边')} />
-            <ToggleStep icon={<Wand2 size={13} />} label="批量抠图" active={Boolean(d.batchProcessorRemoveBg)} disabled={running} onChange={(value) => toggleStep('batchProcessorRemoveBg', value, '批量抠图')} />
-            <ToggleStep icon={<Maximize2 size={13} />} label="批量扩图" active={Boolean(d.batchProcessorExpandCanvas)} disabled={running} onChange={(value) => toggleStep('batchProcessorExpandCanvas', value, '批量扩图')} />
-            <ToggleStep icon={<ZoomIn size={13} />} label="高清放大" active={Boolean(d.batchProcessorUpscale)} disabled={running} onChange={(value) => toggleStep('batchProcessorUpscale', value, '高清放大')} />
+            <ToggleStep icon={<Scissors size={13} />} label="去除黑/白/透明边" active={trimSelected} disabled={running} onChange={(value) => toggleStep('trim', value, '去除上下黑边')} />
+            <ToggleStep icon={<Wand2 size={13} />} label="批量抠图" active={cutoutSelected} disabled={running} onChange={(value) => toggleStep('cutout', value, '批量抠图')} />
+            <ToggleStep icon={<Maximize2 size={13} />} label="批量扩图" active={expandSelected} disabled={running} onChange={(value) => toggleStep('expand', value, '批量扩图')} />
+            <ToggleStep icon={<ZoomIn size={13} />} label="高清放大" active={upscaleSelected} disabled={running} onChange={(value) => toggleStep('upscale', value, '高清放大')} />
           </div>
 
-          {Boolean(d.batchProcessorTrimBlackBars) && (
+          {cutoutSelected && (
+            <div className="rounded-md border p-2" style={{ borderColor: 'var(--t8-border)', background: 'var(--t8-bg-soft)' }}>
+              <div className="mb-2 flex items-center gap-1 text-[10px] font-bold" style={{ color: 'var(--t8-text-main)' }}>
+                <Wand2 size={12} />
+                <span>批量抠图设置</span>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                <label className="min-w-0">
+                  <FieldLabel>抠图方式</FieldLabel>
+                  <div className="rounded border px-2 py-1.5 text-xs" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-main)', background: 'var(--t8-bg-node)' }}>
+                    RH高清抠图
+                  </div>
+                </label>
+                <label className="min-w-0">
+                  <FieldLabel>抠图后比例</FieldLabel>
+                  <select className="t8-select w-full px-2 py-1.5 text-xs" value={cutoutOutputRatio} onChange={(event) => update({ batchProcessorCutoutOutputRatio: event.target.value })} disabled={running}>
+                    {RATIO_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {expandSelected && (
+            <div className="rounded-md border p-2" style={{ borderColor: 'var(--t8-border)', background: 'var(--t8-bg-soft)' }}>
+              <div className="mb-2 flex items-center gap-1 text-[10px] font-bold" style={{ color: 'var(--t8-text-main)' }}>
+                <Maximize2 size={12} />
+                <span>批量扩图设置</span>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                <label className="min-w-0">
+                  <FieldLabel>扩图方式</FieldLabel>
+                  <div className="rounded border px-2 py-1.5 text-xs" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-main)', background: 'var(--t8-bg-node)' }}>
+                    RH AI扩图
+                  </div>
+                </label>
+                <label className="min-w-0">
+                  <FieldLabel>RH预设</FieldLabel>
+                  <select className="t8-select w-full px-2 py-1.5 text-xs" value={expandPresetId} onChange={(event) => update({ batchProcessorExpandPresetId: event.target.value })} disabled={running}>
+                    {EXPAND_PRESET_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {upscaleSelected && (
+            <div className="rounded-md border p-2" style={{ borderColor: 'var(--t8-border)', background: 'var(--t8-bg-soft)' }}>
+              <div className="mb-2 flex items-center gap-1 text-[10px] font-bold" style={{ color: 'var(--t8-text-main)' }}>
+                <ZoomIn size={12} />
+                <span>高清放大设置</span>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                <label className="min-w-0">
+                  <FieldLabel>放大方式</FieldLabel>
+                  <div className="rounded border px-2 py-1.5 text-xs" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-main)', background: 'var(--t8-bg-node)' }}>
+                    RH 4K 高清放大
+                  </div>
+                </label>
+                <label className="min-w-0">
+                  <FieldLabel>执行队列</FieldLabel>
+                  <div className="rounded border px-2 py-1.5 text-xs" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-main)', background: 'var(--t8-bg-node)' }}>
+                    使用 RH 并发 {rhConcurrency}
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {trimSelected && (
             <div className="rounded-md border p-2" style={{ borderColor: 'var(--t8-border)', background: 'var(--t8-bg-soft)' }}>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-1 text-[10px] font-bold" style={{ color: 'var(--t8-text-main)' }}>
@@ -775,7 +1038,7 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
           </div>
 
           <div className="rounded-md border px-2 py-1.5 text-[10px] leading-relaxed" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-dim)' }}>
-            开启后点击开始批处理；去除上下左右黑边/白边/透明边、纯色背景本地抠图、扩画布、格式转换和普通放大仅图像素材可用，视频/音频/3D 当前执行批量命名归档。
+            开启后点击开始批处理；去除上下左右黑边/白边/透明边使用本机裁边，批量抠图、批量扩图和高清放大统一调用 RH 工具箱能力层，这三项仅图像素材可用；格式转换与归档在本机完成，视频/音频/3D 当前执行批量命名归档。
           </div>
         </div>
       </div>

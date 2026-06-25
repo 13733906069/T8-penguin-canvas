@@ -7,6 +7,11 @@ import { createRequire } from 'node:module';
 import {
   buildBatchOutputName,
   classifyBatchFile,
+  createExclusiveBatchProcessorOperationPatch,
+  normalizeBatchConcurrency,
+  resolveBatchProcessorOperation,
+  normalizeBatchRetrySettings,
+  runBatchWorkPool,
   summarizeBatchProgress,
   type BatchProcessorItem,
 } from '../src/utils/batchProcessor.ts';
@@ -79,6 +84,78 @@ test('batch processor classifies common media files and summarizes node-local pr
   });
 });
 
+test('batch processor operation flags are exclusive and normalize legacy multi-select data', () => {
+  assert.equal(resolveBatchProcessorOperation({
+    batchProcessorTrimBlackBars: true,
+    batchProcessorRemoveBg: true,
+    batchProcessorExpandCanvas: true,
+  }), 'trim');
+  assert.equal(resolveBatchProcessorOperation({
+    batchProcessorOperation: 'upscale',
+    batchProcessorTrimBlackBars: true,
+    batchProcessorRemoveBg: true,
+  }), 'upscale');
+
+  assert.deepEqual(createExclusiveBatchProcessorOperationPatch('expand'), {
+    batchProcessorOperation: 'expand',
+    batchProcessorTrimBlackBars: false,
+    batchProcessorRemoveBg: false,
+    batchProcessorExpandCanvas: true,
+    batchProcessorUpscale: false,
+  });
+  assert.deepEqual(createExclusiveBatchProcessorOperationPatch(null), {
+    batchProcessorOperation: '',
+    batchProcessorTrimBlackBars: false,
+    batchProcessorRemoveBg: false,
+    batchProcessorExpandCanvas: false,
+    batchProcessorUpscale: false,
+  });
+});
+
+test('batch processor work pool bounds concurrency, retries failures, and preserves result order', async () => {
+  assert.equal(normalizeBatchConcurrency(0, 4), 4);
+  assert.equal(normalizeBatchConcurrency(99, 2, 1, 6), 6);
+  assert.deepEqual(normalizeBatchRetrySettings({ retryCount: 3, continueOnError: false }), {
+    retryCount: 3,
+    continueOnError: false,
+  });
+
+  let active = 0;
+  let maxActive = 0;
+  const events: string[] = [];
+  const results = await runBatchWorkPool({
+    items: [0, 1, 2, 3, 4],
+    concurrency: 2,
+    retryCount: 1,
+    retryDelayMs: 1,
+    continueOnError: true,
+    onItemStatus: (event) => {
+      events.push(`${event.index}:${event.status}:${event.attempt}`);
+    },
+    worker: async (item, index, attempt) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        if (item === 2 && attempt === 1) throw new Error('transient');
+        if (item === 4) throw new Error('permanent');
+        return `ok-${index}-${attempt}`;
+      } finally {
+        active -= 1;
+      }
+    },
+  });
+
+  assert.equal(maxActive, 2);
+  assert.deepEqual(results.map((item) => item.status), ['success', 'success', 'success', 'success', 'error']);
+  assert.equal(results[2].attempts, 2);
+  assert.equal(results[4].attempts, 2);
+  assert.equal(results[2].value, 'ok-2-2');
+  assert.match(results[4].error || '', /permanent/);
+  assert.ok(events.includes('2:retry:1'));
+  assert.ok(events.includes('4:error:2'));
+});
+
 test('batch processor node is a toolbox executable that does not auto-output to the canvas', () => {
   const registry = read('src/config/nodeRegistry.ts');
   const ports = read('src/config/portTypes.ts');
@@ -100,19 +177,64 @@ test('batch processor node is a toolbox executable that does not auto-output to 
   assert.match(loop, /'aggregate-parser',\s*'batch-processor'/);
   assert.match(placement, /'batch-processor':\s*\{\s*w:\s*640,\s*h:\s*560\s*\}/);
   assert.match(features, /"nodeType":\s*"batch-processor"/);
-  assert.match(features, /"totalNodes":\s*52/);
+  assert.match(features, /"totalNodes":\s*53/);
   assert.match(node, /batchProcessorItems/);
   assert.match(node, /batchProcessorResults/);
   assert.match(node, /copy-to-output/);
   assert.match(node, /已启用/);
   assert.match(node, /未启用/);
   assert.match(node, /开启后点击开始批处理/);
-  assert.match(node, /批量扩图已启用，扩图比例已切换为 16:9/);
+  assert.match(node, /批量扩图已启用，将调用 RH AI扩图/);
   assert.match(node, /仅图像素材可用/);
-  assert.match(node, /纯色背景本地抠图/);
+  assert.match(node, /批量抠图、批量扩图和高清放大统一调用 RH 工具箱能力层/);
+  assert.match(node, /batchProcessorLocalConcurrency/);
+  assert.match(node, /batchProcessorRhConcurrency/);
+  assert.match(node, /batchProcessorRetryCount/);
+  assert.match(node, /batchProcessorContinueOnError/);
+  assert.match(node, /batchProcessorCutoutOutputRatio/);
+  assert.match(node, /batchProcessorExpandPresetId/);
+  assert.match(node, /resolveBatchProcessorOperation/);
+  assert.match(node, /createExclusiveBatchProcessorOperationPatch/);
+  assert.match(node, /data-batch-status/);
+  assert.match(node, /正在处理/);
+  assert.match(node, /runBatchWorkPool/);
+  assert.match(node, /runRhImageCapability/);
+  assert.match(node, /RH_IMAGE_CAPABILITY_PRESETS/);
+  assert.match(node, /RH高清/);
+  assert.match(node, /RH 4K/);
+  assert.match(node, /并发/);
+  assert.match(node, /重试失败/);
+  assert.match(node, /normalizeBatchConcurrency\(d\.batchProcessorRhConcurrency,\s*2,\s*1,\s*10\)/);
+  assert.match(node, /\[1,\s*2,\s*3,\s*4,\s*5,\s*6,\s*7,\s*8,\s*9,\s*10\]\.map\(\(item\) => <option key=\{item\} value=\{item\}>\{item\}<\/option>\)/);
   assert.doesNotMatch(node, /imageUrls:\s*result/);
   assert.doesNotMatch(node, /videoUrls:\s*result/);
   assert.doesNotMatch(node, /audioUrls:\s*result/);
+});
+
+test('batch processor routes cutout, expand, and upscale through RH toolbox only', () => {
+  const node = read('src/components/nodes/BatchProcessorNode.tsx');
+
+  assert.match(node, /runRhStep\('RH高清抠图',\s*'image\.cutout'/);
+  assert.match(node, /runRhStep\('RH AI扩图',\s*'image\.expand'/);
+  assert.match(node, /runRhStep\('RH 4K高清放大',\s*'image\.upscale'/);
+  assert.match(node, /const selectedOperation = resolveBatchProcessorOperation\(d\)/);
+  assert.match(node, /const hasRhSteps = cutoutSelected \|\| expandSelected \|\| upscaleSelected/);
+  assert.match(node, /const activeConcurrency = hasRhSteps \? rhConcurrency : localConcurrency/);
+  assert.match(node, /抠图后比例/);
+  assert.match(node, /batchProcessorCutoutOutputRatio/);
+  assert.match(node, /RH并发/);
+
+  assert.doesNotMatch(node, /opRemoveBg/);
+  assert.doesNotMatch(node, /opUpscale/);
+  assert.doesNotMatch(node, /本地抠图/);
+  assert.doesNotMatch(node, /本地扩图/);
+  assert.doesNotMatch(node, /本地快速/);
+  assert.doesNotMatch(node, /本地扩画布/);
+  assert.doesNotMatch(node, /本地倍数/);
+  assert.doesNotMatch(node, /普通放大/);
+  assert.doesNotMatch(node, /batchProcessorCutoutEngine/);
+  assert.doesNotMatch(node, /batchProcessorExpandEngine/);
+  assert.doesNotMatch(node, /batchProcessorUpscaleEngine/);
 });
 
 test('batch processor services report missing backend routes clearly', async () => {
@@ -387,4 +509,7 @@ test('batch processor roadmap records no canvas output and common batch operatio
   assert.match(roadmap, /批量抠图/);
   assert.match(roadmap, /批量扩图/);
   assert.match(roadmap, /批量高清放大/);
+  assert.match(roadmap, /R512 批量素材处理 RH 能力层升级/);
+  assert.match(roadmap, /并发队列/);
+  assert.match(roadmap, /RH 4K/);
 });

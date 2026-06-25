@@ -10,6 +10,7 @@ import {
   createCanvasResourcePackageManifest,
   prepareCanvasResourcePackageImport,
 } from '../src/utils/canvasCreativeWorkflow.ts';
+import { getMediaItemsFromData } from '../src/utils/mediaCollection.ts';
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
 
@@ -81,6 +82,19 @@ test('creative target results support replace-in-slot and keep-version output be
   });
   assert.equal(replace.targetPatch.status, 'success');
   assert.equal(replace.targetPatch.resultUrl, '/files/output/new.png');
+  assert.equal(replace.targetPatch.imageUrl, '/files/output/new.png');
+  assert.deepEqual(replace.targetPatch.imageUrls, ['/files/output/new.png']);
+  assert.equal(replace.targetPatch.directImageUrl, '/files/output/new.png');
+  assert.deepEqual(getMediaItemsFromData(replace.targetPatch, 'image').map((item) => item.url), [
+    '/files/output/new.png',
+  ]);
+  assert.deepEqual(getMediaItemsFromData({
+    resultUrl: '/files/output/legacy.png',
+    resultUrls: ['/files/output/legacy.png', '/files/output/legacy-2.png'],
+  }, 'image').map((item) => item.url), [
+    '/files/output/legacy.png',
+    '/files/output/legacy-2.png',
+  ]);
   assert.deepEqual(replace.targetPatch.resultVersions.map((item: any) => item.url), [
     '/files/output/new.png',
     '/files/output/old.png',
@@ -94,6 +108,10 @@ test('creative target results support replace-in-slot and keep-version output be
   });
   assert.equal(version.targetPatch.status, 'success');
   assert.equal(version.targetPatch.resultUrl, '/files/output/old.png');
+  assert.equal(version.targetPatch.imageUrl, '/files/output/old.png');
+  assert.deepEqual(getMediaItemsFromData(version.targetPatch, 'image').map((item) => item.url), [
+    '/files/output/old.png',
+  ]);
   assert.equal(version.outputNode?.type, 'output');
   assert.deepEqual(version.outputNode?.position, { x: 840, y: 300 });
   assert.equal((version.outputNode?.data as any).imageUrl, '/files/output/version.png');
@@ -284,6 +302,23 @@ test('resource package carries importable library references, thumbnails, and a 
   assert.equal(JSON.stringify(plan).includes('private-token'), false);
 });
 
+test('image edit board actions await async production and surface annotation edit failures', () => {
+  const modal = read('../src/components/nodes/ImageEditModal.tsx');
+  const outputNode = read('../src/components/nodes/OutputNode.tsx');
+  const uploadNode = read('../src/components/nodes/UploadNode.tsx');
+
+  assert.match(modal, /onProduce:\s*\(urls: string\[\], meta: ImageEditProduceMeta\) => void \| Promise<void>/);
+  assert.match(modal, /await onProduce\(\[url\], \{ type: 'brush', strokeCount: brushStrokes\.length \}\);\s*onClose\(\);/);
+  assert.match(modal, /await onProduce\(\[originUrl, annotatedUrl\], \{[\s\S]*type: 'annotation-edit'[\s\S]*\}\);\s*onClose\(\);/);
+
+  assert.match(outputNode, /return runAnnotationEditProduce\(cleanUrls, _meta\);/);
+  assert.match(uploadNode, /return runAnnotationEditProduce\(cleanUrls, _meta\);/);
+  assert.match(outputNode, /if \(_meta\?\.type === 'annotation-edit'\) \{\s*return runAnnotationEditProduce\(cleanUrls, _meta\);\s*\}\s*if \(cleanUrls\.length === 0\)/);
+  assert.match(uploadNode, /if \(_meta\?\.type === 'annotation-edit'\) \{\s*return runAnnotationEditProduce\(cleanUrls, _meta\);\s*\}\s*if \(cleanUrls\.length === 0\)/);
+  assert.match(outputNode, /logBus\.error\(error\?\.message \|\| '标注改图失败', logSource\);\s*throw error;/);
+  assert.match(uploadNode, /logBus\.error\(error\?\.message \|\| '标注改图失败', logSource\);\s*throw error;/);
+});
+
 test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, themes, and docs', () => {
   const registry = read('../src/config/nodeRegistry.ts');
   const ports = read('../src/config/portTypes.ts');
@@ -292,6 +327,8 @@ test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, 
   const targetNode = read('../src/components/nodes/GenerationTargetNode.tsx');
   const outputNode = read('../src/components/nodes/OutputNode.tsx');
   const uploadNode = read('../src/components/nodes/UploadNode.tsx');
+  const upstreamMaterials = read('../src/components/nodes/useUpstreamMaterials.ts');
+  const mediaCollection = read('../src/utils/mediaCollection.ts');
   const css = read('../src/styles/index.css');
   const features = read('../features.json');
 
@@ -303,6 +340,8 @@ test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, 
   assert.match(toolbar, /生成目标框/);
   assert.match(toolbar, /onExportResourcePackage:\s*\(\)\s*=>\s*void/);
   assert.match(toolbar, /资源包/);
+  assert.match(toolbar, /PackageOpen/);
+  assert.doesNotMatch(toolbar, /aria-label="导出资源包"[\s\S]{0,160}<Archive size=\{15\}/);
 
   assert.match(canvas, /GenerationTargetNode/);
   assert.match(canvas, /handleCreateGenerationTarget/);
@@ -310,13 +349,23 @@ test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, 
   assert.match(canvas, /collectCanvasSelectionSummary/);
   assert.match(canvas, /buildCreativeTargetResult/);
   assert.match(canvas, /prepareCanvasResourcePackageImport/);
-  assert.match(canvas, /generationHistory:\s*generationHistoryItems/);
+  assert.match(canvas, /generationHistory:\s*generationHistoryForExport/);
   assert.match(canvas, /resourceLibrary:\s*resourceLibrarySnapshot/);
 
   assert.match(targetNode, /替换到框内/);
   assert.match(targetNode, /保留版本/);
   assert.match(targetNode, /generateImage/);
   assert.match(targetNode, /creativeTargetId/);
+  assert.match(targetNode, /Download/);
+  assert.match(targetNode, /className="t8-generation-target-download nodrag nopan"/);
+  assert.match(targetNode, /download/);
+  assert.doesNotMatch(targetNode, /className=\{`t8-generation-target-node\s+nodrag/);
+  assert.match(targetNode, /className="t8-generation-target-title nodrag"/);
+  assert.match(targetNode, /className="t8-generation-target-prompt nodrag nowheel"/);
+  assert.match(upstreamMaterials, /data\.resultUrl/);
+  assert.match(upstreamMaterials, /'resultUrls'/);
+  assert.match(mediaCollection, /data\.resultUrl/);
+  assert.match(mediaCollection, /data\.resultUrls/);
 
   assert.match(outputNode, /buildAnnotationEditRequest/);
   assert.match(outputNode, /buildAnnotationEditResultPlacement/);
@@ -328,6 +377,7 @@ test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, 
   assert.match(uploadNode, /_meta\?\.type === 'annotation-edit'/);
 
   assert.match(css, /Generation target node v1/);
+  assert.match(css, /\.t8-generation-target-download/);
   assert.match(css, /\[data-theme-visual="farm-story"\] \.t8-generation-target-node/);
   assert.match(css, /\[data-theme-visual="saint-seiya"\] \.t8-generation-target-node/);
 

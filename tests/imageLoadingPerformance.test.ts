@@ -47,6 +47,8 @@ test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {
   const index = read('../index.html');
   const app = read('../src/App.tsx');
   const canvas = read('../src/components/Canvas.tsx');
+  const css = read('../src/styles/index.css');
+  const runTrigger = read('../src/hooks/useRunTrigger.ts');
 
   assert.ok(existsSync(new URL('../public/infinite-canvas-loading.png', import.meta.url)));
   assert.match(index, /<div class="t8-boot-screen"/);
@@ -62,6 +64,40 @@ test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {
   assert.match(canvas, /const Panorama3DNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/Panorama3DNode'\)/);
   assert.match(canvas, /const ImageNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/ImageNode'\)/);
   assert.doesNotMatch(canvas, /import ImageNode from '\.\/nodes\/ImageNode'/);
+
+  assert.match(canvas, /data-canvas-surface-load=\{heavyCanvasSurface \? 'heavy' : 'normal'\}/);
+  assert.doesNotMatch(canvas, /onlyRenderVisibleElements/);
+  assert.match(runTrigger, /useRunBusStore/);
+  assert.match(css, /Large graph rendering guard/);
+  assert.match(
+    css,
+    /\.t8-canvas-shell\[data-canvas-surface-load="heavy"\] \.react-flow__node:not\(\.selected\):not\(:focus-within\) :where\(img, video, iframe, canvas\) \{[\s\S]*content-visibility:\s*auto;[\s\S]*contain-intrinsic-size:\s*320px 260px;/,
+  );
+  assert.match(
+    css,
+    /\.t8-canvas-shell\[data-canvas-surface-load="heavy"\]\.t8-viewport-moving \.react-flow__node:not\(\.selected\):not\(:focus-within\) > div:first-child,[\s\S]*\.t8-canvas-shell\[data-canvas-surface-load="heavy"\]\.t8-node-dragging \.react-flow__node:not\(\.selected\):not\(:focus-within\) > div:first-child \{[\s\S]*box-shadow:\s*none !important;[\s\S]*filter:\s*none !important;[\s\S]*backdrop-filter:\s*none !important;/,
+  );
+  assert.match(css, /Large graph interaction chrome trim/);
+  assert.match(
+    css,
+    /\.t8-canvas-shell\[data-canvas-surface-load="heavy"\]\.t8-viewport-moving \.react-flow__node:not\(\.selected\):not\(:focus-within\) :where\(\.react-flow__handle, \.react-flow__resize-control, \[data-node-action-bar\], \[data-floating-node-action\]\),[\s\S]*\.t8-canvas-shell\[data-canvas-surface-load="heavy"\]\.t8-node-dragging \.react-flow__node:not\(\.selected\):not\(:focus-within\) :where\(\.react-flow__handle, \.react-flow__resize-control, \[data-node-action-bar\], \[data-floating-node-action\]\) \{[\s\S]*opacity:\s*0 !important;[\s\S]*pointer-events:\s*none !important;/,
+  );
+  assert.match(
+    css,
+    /\.t8-canvas-shell\[data-canvas-surface-load="heavy"\]\.t8-viewport-moving \.react-flow__node:not\(\.selected\):not\(:focus-within\) \*,[\s\S]*\.t8-canvas-shell\[data-canvas-surface-load="heavy"\]\.t8-node-dragging \.react-flow__node:not\(\.selected\):not\(:focus-within\) \* \{[\s\S]*transition-duration:\s*0s !important;/,
+  );
+});
+
+test('canvas video previews defer real video sources until near the viewport', () => {
+  const loopingVideo = read('../src/components/LoopingVideo.tsx');
+  const videoPlayback = read('../src/utils/videoPlayback.ts');
+
+  assert.match(videoPlayback, /preload:\s*'metadata'/);
+  assert.match(loopingVideo, /IntersectionObserver/);
+  assert.match(loopingVideo, /rootMargin:\s*'720px 720px'/);
+  assert.match(loopingVideo, /preload === undefined \? props : \{ \.\.\.props, preload \}/);
+  assert.match(loopingVideo, /data-full-src=\{src\}/);
+  assert.match(loopingVideo, /src=\{shouldLoad \? src : undefined\}/);
 });
 
 test('high-traffic node previews render through SmartImage', () => {

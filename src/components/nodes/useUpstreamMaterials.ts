@@ -112,7 +112,8 @@ function collectMentionableMediaFromNodeData(sourceId: string, data: any, type?:
   // 生成产物 / 输出节点 / 循环累积产物。
   pushMediaMaterial(buckets, seen, sourceId, 'image', data.imageUrl, 'imageUrl', '下游图像');
   pushMediaMaterial(buckets, seen, sourceId, 'image', data.directImageUrl, 'directImageUrl', '下游图像');
-  for (const field of ['imageUrls', 'urls', 'generatedImages', 'directImageUrls'] as const) {
+  pushMediaMaterial(buckets, seen, sourceId, 'image', data.resultUrl, 'resultUrl', '目标框图像');
+  for (const field of ['imageUrls', 'urls', 'generatedImages', 'directImageUrls', 'resultUrls'] as const) {
     pushMediaArray(buckets, seen, sourceId, 'image', data, field, '下游图像');
   }
   pushMediaMaterial(buckets, seen, sourceId, 'image', data.firstFrameUrl, 'firstFrameUrl', '首帧');
@@ -328,7 +329,8 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
 
       // 图像: 单 + 多
       pushUrl(sid, 'image', ud.imageUrl, images);
-      const arrFields = ['imageUrls', 'urls', 'generatedImages'];
+      pushUrl(sid, 'image', ud.resultUrl, images, undefined, '目标框图像');
+      const arrFields = ['imageUrls', 'urls', 'generatedImages', 'resultUrls'];
       for (const f of arrFields) {
         const v = ud[f];
         if (Array.isArray(v)) {

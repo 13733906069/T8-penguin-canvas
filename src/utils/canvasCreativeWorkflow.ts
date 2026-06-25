@@ -314,6 +314,23 @@ function createVersion(url: string, createdAt: number | string, sourceNodeIds: s
   };
 }
 
+function creativeTargetImagePatch(urls: string[]): Record<string, any> {
+  const cleanUrls = urls.map((url) => cleanText(url, 4096)).filter(Boolean);
+  return createOutputDataFromItems(
+    'image',
+    cleanUrls.map((url) => ({ kind: 'image', url })),
+  );
+}
+
+function currentCreativeTargetUrls(data: Record<string, any>): string[] {
+  const first = cleanText(data.resultUrl, 4096);
+  const rest = Array.isArray(data.resultUrls) ? data.resultUrls : [];
+  return [
+    first,
+    ...rest.map((url: any) => cleanText(url, 4096)).filter((url: string) => url && url !== first),
+  ].filter(Boolean);
+}
+
 export function buildCreativeTargetResult(
   targetNode: Node,
   urls: string[],
@@ -346,6 +363,7 @@ export function buildCreativeTargetResult(
     return {
       targetPatch: {
         ...basePatch,
+        ...creativeTargetImagePatch(cleanUrls),
         resultUrl: firstUrl,
       },
       outputNode: null,
@@ -377,10 +395,13 @@ export function buildCreativeTargetResult(
     },
   };
 
+  const currentUrls = currentCreativeTargetUrls(data);
   return {
     targetPatch: {
       ...basePatch,
-      resultUrl: data.resultUrl || '',
+      resultUrls: currentUrls,
+      ...(currentUrls.length > 0 ? creativeTargetImagePatch(currentUrls) : {}),
+      resultUrl: currentUrls[0] || '',
     },
     outputNode,
   };

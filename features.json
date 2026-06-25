@@ -1,7 +1,381 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.3.4",
-  "lastUpdated": "2026-06-23-v234-electron-release-r510",
+  "version": "2.3.8",
+  "lastUpdated": "2026-06-25-v238-electron-release",
+  "electronReleaseV238": {
+    "version": "2.3.8",
+    "status": "electron-release",
+    "date": "2026-06-25",
+    "description": "v2.3.8 Electron 自动更新版：新增轻量视频剪辑核心节点，完善跨画布视频追加、ffmpeg 异步合成、批量素材 RH 并发 1-10、教程第十四弹、Gemini 正式模型名与 videoOps 打包校验。",
+    "highlights": [
+      "新增核心视频剪辑节点：支持多视频上传、上游导入、跨画布追加、单片段预览、缩略图时间线、片段排序、入点/出点裁剪、拆分、转场、滤镜、音频策略和下载成片。",
+      "新增 /api/video-ops probe / compose / jobs / cancel，复用打包 ffmpeg 输出 /files/output/video_edit_*.mp4，并支持异步合成进度与取消任务。",
+      "视频剪辑节点输出标准 videoUrl / videoUrls / directVideoUrl / directVideoUrls，可继续连接输出素材节点或其他视频节点。",
+      "发送弹窗新增视频剪辑目标模式，上传素材、输出素材、VibeX 回传和普通视频结果可追加到当前画布或跨画布指定视频剪辑节点。",
+      "批量素材处理 RH 并发下拉扩展到 1-10，继续保持单策略处理和并发状态标记。",
+      "顶部画布教程新增第十四弹，说明 VibeX 联动、增强 Chrome 反推插件、目标框、批量素材处理和大画布性能优化。",
+      "贞贞 API 图像模型名同步 Gemini 正式版：gemini-3-pro-image、gemini-3-pro-image-2k、gemini-3-pro-image-4k、gemini-3.1-flash-image 等去掉 preview 后缀。",
+      "Electron 后置检查新增 backend-enc/routes/videoOps.t8c，避免视频剪辑后端能力在用户包中遗漏。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "electron/_post_build.cjs",
+      "backend/src/config.js",
+      "backend/src/server.js",
+      "backend/src/routes/proxy.js",
+      "backend/src/routes/videoOps.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.8.md",
+      "src/App.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/SendMaterialsModal.tsx",
+      "src/components/nodes/BatchProcessorNode.tsx",
+      "src/components/nodes/VideoEditNode.tsx",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/providers/models.ts",
+      "src/services/videoOps.ts",
+      "src/types/canvas.ts",
+      "src/utils/nodePlacement.ts",
+      "src/utils/sendMaterials.ts",
+      "src/utils/videoEdit.ts",
+      "tests/batchProcessor.test.ts",
+      "tests/imageModelMapping.test.ts",
+      "tests/modelUsageHelp.test.ts",
+      "tests/updateMdRegressions.test.ts",
+      "tests/videoEditNode.test.ts",
+      "tests/videoOpsIntegration.test.cjs"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.8 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.8.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.8.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.8 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.8",
+      "webImageReverseExtensionInstallDir": "安装后从 Electron 安装目录的 resources/extension/web-image-reverse/ 作为 Chrome 加载已解压扩展程序的目录。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/**、vibex/** 本地完整子项目、本地维护者工具源码和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码与 RunningHub/VibeX 桥接脚本继续保持在公开提交内；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "backend/src/routes/vibex.js 仍为本地 VibeX 静态适配，不进入公开 GitHub 和 Electron 用户包。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.8，且只能在用户明确要求发布后设置。",
+      "2026-06-25 R517 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.8 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\videoEditNode.test.ts tests\\videoOpsIntegration.test.cjs tests\\batchProcessor.test.ts tests\\imageModelMapping.test.ts tests\\modelUsageHelp.test.ts tests\\updateMdRegressions.test.ts",
+      "node -c backend\\src\\routes\\videoOps.js",
+      "node -c backend\\src\\routes\\proxy.js",
+      "node -c backend\\src\\server.js",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8')); JSON.parse(require('fs').readFileSync('package.json','utf8')); JSON.parse(require('fs').readFileSync('package-lock.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "git diff --cached --check",
+      "T8_RELEASE_APPROVAL=release-2.3.8 npm run dist:release",
+      "npm run release:verify -- v2.3.8"
+    ]
+  },
+  "videoEditNodeDev": {
+    "version": "2.3.8",
+    "status": "included-in-electron-release",
+    "date": "2026-06-25",
+    "description": "新增核心节点“视频剪辑”：轻量收集多个视频、裁剪排序、缩略图时间线、创作者预设、转场滤镜、音频策略，并通过本地 ffmpeg 合成为标准视频素材。",
+    "highlights": [
+      "新增 video-edit 节点类型、核心节点注册、video 输入 / 输出端口和 760x520 默认尺寸。",
+      "视频剪辑节点支持上传多个视频、从上游视频导入、单 video 预览、缩略图时间线、片段拖拽排序、入点 / 出点裁剪、选中片段一键拆分、转场、滤镜、音频策略、下载成片和可选自动创建输出素材节点。",
+      "输出预设新增抖音/快手、B站/YouTube、方形社媒、3:4 竖版海报、4:3 横版展示、21:9 电影宽屏、2:1 宽幅/全景；按用户要求不提供 4:5 预设。",
+      "一键模板新增快速混剪、口播混剪、产品展示、前后对比和批量合集，快速套用比例、转场、滤镜和音频策略。",
+      "合成流程改为异步任务：前端显示进度与后端消息，支持取消合成；后端 /api/video-ops/compose 支持 async 模式并通过 jobs 轮询返回结果。",
+      "发送弹窗新增“视频剪辑”模式，视频素材可追加到当前画布或跨画布的指定视频剪辑节点；没有目标时自动新建。",
+      "后端新增 /api/video-ops probe / compose / jobs / cancel，复用打包 ffmpeg，输出 /files/output/video_edit_*.mp4。",
+      "真实 ffmpeg 集成测试覆盖音轨结构不一致的视频拼接、新比例 target size 和异步 compose job 轮询结果，确认会为无音频片段补静音轨后稳定 concat。"
+    ],
+    "files": [
+      "src/types/canvas.ts",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/utils/nodePlacement.ts",
+      "src/utils/videoEdit.ts",
+      "src/services/videoOps.ts",
+      "src/components/nodes/VideoEditNode.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/SendMaterialsModal.tsx",
+      "src/utils/sendMaterials.ts",
+      "backend/src/server.js",
+      "backend/src/routes/videoOps.js",
+      "tests/videoEditNode.test.ts",
+      "tests/videoOpsIntegration.test.cjs",
+      "roadmap.md"
+    ],
+    "verification": [
+      "node --test tests\\videoEditNode.test.ts tests\\videoOpsIntegration.test.cjs tests\\batchProcessor.test.ts",
+      "node -c backend\\src\\routes\\videoOps.js",
+      "node -c backend\\src\\server.js",
+      "npm run type-check"
+    ]
+  },
+  "electronReleaseV237": {
+    "version": "2.3.7",
+    "status": "electron-release",
+    "date": "2026-06-25",
+    "description": "v2.3.7 Electron 自动更新版：修复网页图片反推 Chrome 插件在 Electron 安装包场景下无法直接回传本地画布的问题，并保留生成目标框回填能力。",
+    "highlights": [
+      "网页图片反推插件发送提示词、图片或图文结果时，会优先通过本机 /api/vibex-bridge/messages 桥接投递给正在运行的 Electron 画布，不再误开 127.0.0.1 错误页。",
+      "插件仍兼容开发环境的浏览器画布标签页注入；当没有可用画布标签页时才回退本地桥接，桥接失败后才尝试打开浏览器画布。",
+      "Electron 画布轮询 VibeX 本地桥接队列时现在同时识别 t8:vibex-result 与 t8:web-image-result，两条链路互不影响。",
+      "网页反推结果进入 Electron 后复用原有生成目标框逻辑：当前选中生成目标框时优先回填图片或提示词，不会只创建普通输出素材节点。",
+      "新增网页反推本地桥接与生成目标框回填回归测试，覆盖 Chrome 插件、后端桥接路由和 Canvas 轮询导入。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.7.md",
+      "backend/src/routes/vibexBridge.js",
+      "extension/scripts/background.js",
+      "src/components/Canvas.tsx",
+      "tests/vibexBrowserBridge.test.ts",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.7 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.7.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.7.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.7 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.7",
+      "webImageReverseExtensionInstallDir": "安装后从 Electron 安装目录的 resources/extension/web-image-reverse/ 作为 Chrome 加载已解压扩展程序的目录。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/**、vibex/** 本地完整子项目、本地维护者工具源码和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码与 RunningHub/VibeX 桥接脚本必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/scripts/runninghub-bridge.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.7，且只能在用户明确要求发布后设置。",
+      "2026-06-25 R514 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.7 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\webImageReverseToCanvas.test.ts tests\\vibexBrowserBridge.test.ts",
+      "node -c extension\\scripts\\background.js",
+      "node -c extension\\scripts\\content.js",
+      "node -c extension\\scripts\\runninghub-bridge.js",
+      "node -c backend\\src\\routes\\vibexBridge.js",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.7 npm run dist:release",
+      "npm run release:verify -- v2.3.7"
+    ]
+  },
+  "electronReleaseV236": {
+    "version": "2.3.6",
+    "status": "electron-release",
+    "date": "2026-06-25",
+    "description": "v2.3.6 Electron 自动更新版：收口 VibeX 插件安装提示、批量素材处理单策略与并发状态显示、顶部教程第十三弹和左下角模型注意事项更新。",
+    "highlights": [
+      "VibeX 工作台顶部补充网页图片反推 Chrome 插件的安装目录与步骤说明，提示用户从 Electron 安装目录的 resources/extension/web-image-reverse/ 加载已解压扩展。",
+      "网页图片反推 / RunningHub / VibeX 桥接 Chrome 插件 manifest 版本升级到 1.1.0；Electron 打包继续通过 extraResources 带上 extension/**，post-build 校验 manifest、background、content、runninghub-bridge 和样式文件。",
+      "批量素材处理节点改为一次只启用一种处理策略，避免同时启用抠图、扩图、高清放大后实际链路不清晰。",
+      "批量素材处理素材队列新增等待、处理中、完成和失败状态标记，并发执行时用户可以直接看到当前处理到哪个素材。",
+      "左下角模型注意事项更新：补充 Seedance2.0 mini、原生4K、满血 720P，以及 FAL / Seedance 预扣后多退少补说明。",
+      "顶部画布教程更新到第十三弹，覆盖牧场物语主题、放置栏收缩、图像编辑 Shift 等比例 / 实心图形 / 抠图、网页图片反推插件、历史记录和 Agnes 多模态能力。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.6.md",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/scripts/runninghub-bridge.js",
+      "extension/styles/content.css",
+      "src/App.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/nodes/BatchProcessorNode.tsx",
+      "src/components/nodes/VibeXNode.tsx",
+      "src/utils/batchProcessor.ts",
+      "tests/batchProcessor.test.ts",
+      "tests/modelUsageHelp.test.ts",
+      "tests/updateMdRegressions.test.ts",
+      "tests/vibexBrowserBridge.test.ts",
+      "tests/vibexIntegration.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.6 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.6.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.6.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.6 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.6",
+      "webImageReverseExtensionInstallDir": "安装后从 Electron 安装目录的 resources/extension/web-image-reverse/ 作为 Chrome 加载已解压扩展程序的目录。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/**、vibex/** 本地完整子项目、本地维护者工具源码和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码与 RunningHub/VibeX 桥接脚本必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/scripts/runninghub-bridge.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.6，且只能在用户明确要求发布后设置。",
+      "2026-06-25 R513 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.6 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\vibexIntegration.test.ts tests\\vibexBrowserBridge.test.ts tests\\batchProcessor.test.ts tests\\modelUsageHelp.test.ts tests\\updateMdRegressions.test.ts",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.6 npm run dist:release",
+      "npm run release:verify -- v2.3.6"
+    ]
+  },
+  "electronReleaseV235": {
+    "version": "2.3.5",
+    "status": "electron-release",
+    "date": "2026-06-25",
+    "description": "v2.3.5 Electron 自动更新版：发布 VibeX 工作台与线上/插件回传链路，补齐批量素材处理 RH 能力层并发执行，并为 100+ 节点大画布增加轻量化性能护栏。",
+    "highlights": [
+      "新增 VibeX 工作台节点：默认嵌入线上 VibeX 页面，支持自适应尺寸、手动缩放、注册 / 切换 RunningHub 入口和新窗口打开。",
+      "Electron 针对 VibeX RunningHub 登录做了专用适配：独立登录窗口、Token 同步、嵌入 iframe 刷新和下拉菜单定位修复，避免登录后又回到未登录态。",
+      "VibeX 线上结果可通过 postMessage 发送回当前画布，T8 会创建文本 / 图像 / 视频 / 音频输出素材节点；Chrome 插件增加 RunningHub 页面桥接脚本，支持网页版 RunningHub/VibeX 把结果转发到本地画布。",
+      "Electron 打包会随安装包带上网页图片反推插件目录 resources/extension/web-image-reverse/，post-build 会校验 manifest、background、content、runninghub-bridge 和样式文件都存在。",
+      "Electron 加密与 post-build 增加线上 VibeX 发布护栏：本地静态适配路由 backend/src/routes/vibex.js 不会被编译进安装包，产物出现 backend-enc/routes/vibex.t8c 会直接阻断发布。",
+      "批量素材处理节点完善 RH 能力层：批量抠图、批量扩图和高清放大全部走 RH 工具箱能力，不再回落到低质量本地处理；支持本地并发、RH 并发、失败重试和失败后继续。",
+      "批量素材处理新增抠图后比例、扩图预设、高清倍率、打开输出文件夹和清晰错误提示，完成后仍只更新本节点结果，不自动把输出素材铺满画布。",
+      "大画布性能优化：生成历史抽屉关闭时只计算轻量计数，导出资源包时再完整收集；大节点量拖动画布 / 拖节点时会隐藏非选中节点的端口、缩放点和悬浮操作条，并暂停非焦点节点动画。",
+      "生成目标框可把框内图像输出给下游并提供下载；上传音频禁止 .m4a 并给出转换提示；SD2.0 / 贞贞 API 补充 doubao-seedance-2.0-mini 与 native4K 分辨率。",
+      "网页图片反推、VibeX 桥接、批量处理、图像编辑标注、清晰文字渲染和大画布性能都补充了对应回归测试。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "electron/_post_build.cjs",
+      "backend/src/config.js",
+      "backend/src/server.js",
+      "backend/src/routes/proxy.js",
+      "backend/src/routes/vibexBridge.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.5.md",
+      "docs/vibex-online-send-to-t8-bridge.js",
+      "docs/vibex-send-to-t8-gallery-button.md",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/scripts/runninghub-bridge.js",
+      "extension/styles/content.css",
+      "src/components/Canvas.tsx",
+      "src/components/CanvasToolbar.tsx",
+      "src/components/LoopingVideo.tsx",
+      "src/components/nodes/BatchProcessorNode.tsx",
+      "src/components/nodes/GenerationTargetNode.tsx",
+      "src/components/nodes/ImageEditModal.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/SeedanceNode.tsx",
+      "src/components/nodes/UploadNode.tsx",
+      "src/components/nodes/VibeXNode.tsx",
+      "src/components/nodes/useUpstreamMaterials.ts",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/services/generation.ts",
+      "src/services/rhToolboxCapabilities.ts",
+      "src/styles/index.css",
+      "src/types/canvas.ts",
+      "src/utils/batchProcessor.ts",
+      "src/utils/canvasCreativeWorkflow.ts",
+      "src/utils/generationHistory.ts",
+      "src/utils/mediaCollection.ts",
+      "src/utils/nodePlacement.ts",
+      "src/utils/uploadMediaValidation.ts",
+      "src/utils/vibexBridge.ts",
+      "tests/advancedProviderFrontend.test.ts",
+      "tests/batchProcessor.test.ts",
+      "tests/canvasCreativeWorkflow.test.ts",
+      "tests/canvasNodeIdDialog.test.ts",
+      "tests/canvasTextRendering.test.ts",
+      "tests/generationHistory.test.ts",
+      "tests/imageEditAnnotationTools.test.ts",
+      "tests/imageLoadingPerformance.test.ts",
+      "tests/rhToolbox.test.ts",
+      "tests/uploadMediaValidation.test.ts",
+      "tests/vibexBrowserBridge.test.ts",
+      "tests/vibexElectronFramePatch.test.ts",
+      "tests/vibexElectronSso.test.ts",
+      "tests/vibexIntegration.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.5 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.5.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.5.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.5 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.5",
+      "webImageReverseExtensionInstallDir": "安装后从 Electron 安装目录的 resources/extension/web-image-reverse/ 作为 Chrome 加载已解压扩展程序的目录。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/**、本地维护者工具源码和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码与 RunningHub/VibeX 桥接脚本必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/scripts/runninghub-bridge.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "VibeX 线上嵌入和本地桥接只发布通用节点、后端桥接路由、插件转发脚本和对接文档；线上账号、Cookie、用户登录态与测试凭据不进入仓库。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.5，且只能在用户明确要求发布后设置。",
+      "2026-06-25 R512 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.5 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\vibexIntegration.test.ts tests\\vibexElectronSso.test.ts tests\\vibexElectronFramePatch.test.ts tests\\vibexBrowserBridge.test.ts tests\\batchProcessor.test.ts tests\\uploadMediaValidation.test.ts",
+      "node --test tests\\generationHistory.test.ts tests\\imageLoadingPerformance.test.ts tests\\canvasCreativeWorkflow.test.ts tests\\imageEditAnnotationTools.test.ts tests\\advancedProviderFrontend.test.ts tests\\rhToolbox.test.ts tests\\canvasNodeIdDialog.test.ts tests\\canvasTextRendering.test.ts",
+      "node -c backend\\src\\routes\\vibexBridge.js",
+      "node -c backend\\src\\routes\\proxy.js",
+      "node -c backend\\src\\server.js",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.5 npm run dist:release",
+      "npm run release:verify -- v2.3.5"
+    ]
+  },
+  "vibexExtensionInstallNoticeV236Dev": {
+    "version": "2.3.6",
+    "status": "included-in-electron-release",
+    "date": "2026-06-25",
+    "description": "VibeX 工作台顶部补充网页图片反推 Chrome 插件的打包目录与安装说明，并把插件 manifest 版本提升到 v1.1.0；该能力已纳入 v2.3.6 自动更新发布。",
+    "sourceFiles": [
+      "src/components/nodes/VibeXNode.tsx",
+      "extension/manifest.json",
+      "tests/vibexIntegration.test.ts",
+      "tests/vibexBrowserBridge.test.ts"
+    ],
+    "capabilities": [
+      "VibeX 工作台顶部显示打包版插件目录 resources/extension/web-image-reverse/。",
+      "VibeX 工作台顶部提示 Chrome 扩展程序 -> 开发者模式 -> 加载已解压 的安装路径。",
+      "网页图片反推 / RunningHub VibeX 桥接 Chrome 插件版本号升级为 1.1.0。"
+    ],
+    "verification": [
+      "node --test tests\\vibexIntegration.test.ts tests\\vibexBrowserBridge.test.ts"
+    ]
+  },
   "electronReleaseV234": {
     "version": "2.3.4",
     "status": "electron-release",
@@ -2351,7 +2725,7 @@
   "canvasTutorialTopbarPanel": {
     "status": "implemented",
     "date": "2026-06-14",
-    "description": "顶部栏在“最新应用”左侧新增“画布教程”入口，按第一弹到第十二弹整理 T8 画布教程 Bilibili / Youtube 链接；“最新应用 · RunningHub”弹窗移除“获取 RH ApiKey”快捷入口，只保留 RunningHub 国内/海外站和邀请码提示。",
+    "description": "顶部栏在“最新应用”左侧新增“画布教程”入口，按第一弹到第十四弹整理 T8 画布教程 Bilibili / Youtube 链接；“最新应用 · RunningHub”弹窗移除“获取 RH ApiKey”快捷入口，只保留 RunningHub 国内/海外站和邀请码提示。",
     "paths": [
       "src/App.tsx",
       "tests/updateMdRegressions.test.ts",
@@ -2418,6 +2792,16 @@
         "title": "教程第十二弹（grok agent的节点修复图生视频功能，新增视频延展及视频编辑功能，新增codex cli agent节点，简约模式和创作台模式，新增Codex生图工作台节点，新增自定义快捷圆盘，FAL超市新增10多个新模型，视频节点新增3个grok video 1.5模型，解锁成就系统所有隐藏模式的奖励影片，新增俄罗斯方块主题及小游戏）",
         "bilibili": "https://www.bilibili.com/video/BV1phJs6oE2g/",
         "youtube": "https://www.youtube.com/watch?v=BKV8YA-kKK4"
+      },
+      {
+        "title": "教程第十三弹（新增牧场物语主题及养成游戏，放置栏可收缩，修复侧边栏按钮常驻BUG，3D全景节点新增2:1尺寸，修复部分用户无法新增资源库分类，新增画板及图像编辑功能shift正圆，正方形及实心素材，抠图功能等，新增chrome插件支持任意网络图像反推生成并发送画布，新增跨画布完成通知，优化comfyui节点，新增自定义系统字体，支持agens apikey多模态模型免费使用，新增历史记录）",
+        "bilibili": "https://www.bilibili.com/video/BV1tYjy6jEuG/",
+        "youtube": "https://www.youtube.com/watch?v=AH24lGHA9E0"
+      },
+      {
+        "title": "教程第十四弹（新增VibeX联动发送功能及节点，增强chrome反推插件（需更新安装，支持vibex以及修复反推发送问题），修复ID连线方式，新增区域连线方式，新增目标框节点，重写画布底层大幅度优化节点太多卡顿问题，图像编辑模式画板新增标签改图功能，全局去掉字体模糊效果，批量素材节点完善扩图，高清放大，抠图等功能（需填写RH APIKEY））",
+        "bilibili": "https://www.bilibili.com/video/BV1mj7h6CEYx/",
+        "youtube": "https://www.youtube.com/watch?v=wCOoTtuxQPM"
       }
     ],
     "verification": [
@@ -2614,7 +2998,7 @@
       "图像、视频、Seedance、音频节点把 providerParams 透传到后端代理，后端可通过通用 hook 解析分组令牌；普通用户不启用高级模式时仍只使用原贞贞通用 Key / 分类独立 Key。",
       "FAL 图像和视频路线固定使用通用贞贞 API Key，不参与 New API 分组令牌，避免 fallback 模型因分组选择走错 Key。",
       "分类独立 API Key 设置为每个系列增加清空按钮，支持保存后明确清空单个分类 Key，而不是只能覆盖或显示。",
-      "Nano Banana 2 UI 仍显示 nano-banana-2 (Flash)，真实上游提交修正为 gemini-3.1-flash-image-preview；旧画布保存的 nano-banana-2 会在前端和后端兜底归一。",
+      "Nano Banana 2 UI 仍显示 nano-banana-2 (Flash)，真实上游提交修正为 gemini-3.1-flash-image；旧画布保存的 nano-banana-2 会在前端和后端兜底归一。",
       "后端增加无效令牌缓存失效 hook，私有分组令牌扩展可在 New API 后台删除/重建令牌后自动丢弃旧 key，避免继续复用过期缓存。"
     ],
     "sourceSync": [
@@ -3189,11 +3573,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.3.4",
-    "semverVersion": "2.3.4",
+    "version": "2.3.8",
+    "semverVersion": "2.3.8",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.4，发布标注改图执行链路、资源包 manifest 增强和网页反推插件公开提交确认；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.3.4 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.4 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.8，新增轻量视频剪辑核心节点、跨画布视频追加、ffmpeg 异步合成、批量素材 RH 并发 1-10、教程第十四弹、Gemini 正式模型名和 videoOps 打包校验；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.3.8 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.8 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
@@ -3834,7 +4218,7 @@
       "自动更新到带新影片的版本后，旧成就数据仍能解锁并播放新资源。"
     ]
   },
-  "totalNodes": 52,
+  "totalNodes": 53,
   "phases": {
     "phase0": {
       "label": "基础设施",
@@ -5785,7 +6169,7 @@
         "图像、视频、Seedance、音频节点和 generation service 支持 providerParams 透传；后端 zhenzhen.resolveApiKey hook 可按节点所选分组替换实际 API Key，普通用户不启用高级模式时不改变旧流程。",
         "FAL 图像/视频提交与查询固定使用通用贞贞 API Key，不接 New API 分组令牌；Sora2/Veo/Grok 等旧 FAL 通道继续保留兼容。",
         "分类独立 API Key 设置页每个系列新增清空按钮，保存后可明确清空对应分类 Key。",
-        "Nano Banana 2 的 UI 选项继续显示 nano-banana-2 (Flash)，但真实上游模型改为 gemini-3.1-flash-image-preview；旧画布保存值在 ImageNode 与 proxy 后端两侧兜底归一。",
+        "Nano Banana 2 的 UI 选项继续显示 nano-banana-2 (Flash)，但真实上游模型改为 gemini-3.1-flash-image；旧画布保存值在 ImageNode 与 proxy 后端两侧兜底归一。",
         "新增 imageModelMapping、localExtensionHooks 等回归测试，并同步 advanced provider、API 设置、Electron 打包检查与 FAL key 边界测试。",
         "公开版本同步到 2.1.1：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.1.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
       ]

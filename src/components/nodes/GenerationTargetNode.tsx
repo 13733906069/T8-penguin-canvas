@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import { Handle, Position, useNodeConnections, useNodesData, useReactFlow, type Node, type NodeProps } from '@xyflow/react';
-import { ImagePlus, Loader2, ScanLine, Sparkles } from 'lucide-react';
+import { Download, ImagePlus, Loader2, ScanLine, Sparkles } from 'lucide-react';
 import { generateImage } from '../../services/generation';
 import { logBus } from '../../stores/logs';
 import {
@@ -119,7 +119,7 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className={`t8-generation-target-node nodrag rounded-xl border p-3 shadow-lg ${selected ? 'is-selected' : ''}`}
+      className={`t8-generation-target-node rounded-xl border p-3 shadow-lg ${selected ? 'is-selected' : ''}`}
       data-target-status={status}
       data-has-result={resultUrl ? 'true' : 'false'}
     >
@@ -146,7 +146,31 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
 
       <div className="t8-generation-target-preview">
         {resultUrl ? (
-          <img src={resultUrl} alt={String(d.title || '生成目标框结果')} />
+          <>
+            <img
+              src={resultUrl}
+              alt={String(d.title || '生成目标框结果')}
+              data-drag-source
+              data-drag-kind="image"
+              data-drag-url={resultUrl}
+              data-drag-preview={resultUrl}
+              data-drag-node-id={id}
+              data-resource-title={resultUrl.split('/').pop()}
+            />
+            <a
+              className="t8-generation-target-download nodrag nopan"
+              href={resultUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+              title="下载框内结果"
+              aria-label="下载框内结果"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <Download size={12} />
+              <span>下载</span>
+            </a>
+          </>
         ) : (
           <div className="t8-generation-target-empty">
             <ImagePlus size={22} />
@@ -187,11 +211,11 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
       {upstreamImages.length > 0 ? <div className="t8-generation-target-hint">参考图 {upstreamImages.length} 张</div> : null}
 
       <div className="t8-generation-target-actions">
-        <button type="button" disabled={isBusy} onClick={() => void run('replace')}>
+        <button type="button" className="nodrag" disabled={isBusy} onClick={() => void run('replace')}>
           {busyMode === 'replace' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
           <span>替换到框内</span>
         </button>
-        <button type="button" disabled={isBusy} onClick={() => void run('keep-version')}>
+        <button type="button" className="nodrag" disabled={isBusy} onClick={() => void run('keep-version')}>
           {busyMode === 'keep-version' ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
           <span>保留版本</span>
         </button>

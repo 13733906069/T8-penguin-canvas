@@ -321,6 +321,63 @@ export function collectGenerationHistory(
   return result;
 }
 
+export function countGenerationHistoryItems(
+  nodes: Node[],
+  options: Pick<CollectGenerationHistoryOptions, 'totalLimit' | 'perKindLimit'> = {},
+): number {
+  const totalLimit = Math.max(1, options.totalLimit ?? GENERATION_HISTORY_LIMITS.total);
+  const perKindLimit = Math.max(1, options.perKindLimit ?? GENERATION_HISTORY_LIMITS.perKind);
+  const counts: Record<GenerationHistoryKind, number> = {
+    image: 0,
+    video: 0,
+    audio: 0,
+    text: 0,
+    model3d: 0,
+  };
+  const seenMedia = new Set<string>();
+  let total = 0;
+
+  const add = (kind: GenerationHistoryKind) => {
+    if (total >= totalLimit || counts[kind] >= perKindLimit) return;
+    counts[kind] += 1;
+    total += 1;
+  };
+
+  for (const node of nodes) {
+    if (total >= totalLimit) break;
+    if (!node || node.type === 'groupBox') continue;
+    const data = node.data || {};
+    let hasMedia = false;
+
+    for (const kind of MEDIA_KINDS) {
+      const mediaItems = [
+        ...getMediaItemsFromData(data, kind),
+        ...(kind === 'image' ? addImageLegacyItems(data) : []),
+      ];
+      for (const item of mediaItems) {
+        const url = typeof item.url === 'string' ? item.url.trim() : '';
+        if (!url) continue;
+        hasMedia = true;
+        const mediaKey = `${kind}:${url}`;
+        if (seenMedia.has(mediaKey)) continue;
+        seenMedia.add(mediaKey);
+        add(kind);
+        if (total >= totalLimit) break;
+      }
+      if (total >= totalLimit) break;
+    }
+
+    if (total >= totalLimit) break;
+    for (const text of collectTextValues(node, hasMedia)) {
+      if (!text) continue;
+      add('text');
+      if (total >= totalLimit) break;
+    }
+  }
+
+  return total;
+}
+
 export function countGenerationHistoryByKind(items: GenerationHistoryItem[]): GenerationHistoryCounts {
   const counts: GenerationHistoryCounts = {
     all: items.length,

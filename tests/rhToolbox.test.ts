@@ -26,6 +26,19 @@ test('RH toolbox node is registered as a visible executable RH node', () => {
   assert.match(loop, /'rh-tools', 'rh-toolbox'/);
 });
 
+test('RH image capability service exposes cutout, upscale, and expand wrappers for batch processing', () => {
+  const service = readFileSync(new URL('../src/services/rhToolboxCapabilities.ts', import.meta.url), 'utf8');
+  const presets = readFileSync(new URL('../src/utils/rhToolboxCapabilities.ts', import.meta.url), 'utf8');
+
+  assert.match(service, /export function runRhImageCutout/);
+  assert.match(service, /export function runRhImageUpscale/);
+  assert.match(service, /export function runRhImageExpand/);
+  assert.match(service, /preferredToolId:\s*'image-upscale-4k'/);
+  assert.match(service, /capability:\s*'image\.expand'/);
+  assert.match(presets, /defaultParamPresetId:\s*'landscape-16-9'/);
+  assert.match(presets, /wide-21-9/);
+});
+
 test('RH toolbox manifest ships maintainer release tools for packaged users', async () => {
   const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
   const {

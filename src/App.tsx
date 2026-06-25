@@ -174,6 +174,16 @@ const CANVAS_TUTORIALS = [
     bilibili: 'https://www.bilibili.com/video/BV1phJs6oE2g/',
     youtube: 'https://www.youtube.com/watch?v=BKV8YA-kKK4',
   },
+  {
+    title: '教程第十三弹（新增牧场物语主题及养成游戏，放置栏可收缩，修复侧边栏按钮常驻BUG，3D全景节点新增2:1尺寸，修复部分用户无法新增资源库分类，新增画板及图像编辑功能shift正圆，正方形及实心素材，抠图功能等，新增chrome插件支持任意网络图像反推生成并发送画布，新增跨画布完成通知，优化comfyui节点，新增自定义系统字体，支持agens apikey多模态模型免费使用，新增历史记录）',
+    bilibili: 'https://www.bilibili.com/video/BV1tYjy6jEuG/',
+    youtube: 'https://www.youtube.com/watch?v=AH24lGHA9E0',
+  },
+  {
+    title: '教程第十四弹（新增VibeX联动发送功能及节点，增强chrome反推插件（需更新安装，支持vibex以及修复反推发送问题），修复ID连线方式，新增区域连线方式，新增目标框节点，重写画布底层大幅度优化节点太多卡顿问题，图像编辑模式画板新增标签改图功能，全局去掉字体模糊效果，批量素材节点完善扩图，高清放大，抠图等功能（需填写RH APIKEY））',
+    bilibili: 'https://www.bilibili.com/video/BV1mj7h6CEYx/',
+    youtube: 'https://www.youtube.com/watch?v=wCOoTtuxQPM',
+  },
 ];
 
 function InfiniteCanvasBootLoading() {

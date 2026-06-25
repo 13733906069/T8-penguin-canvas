@@ -68,11 +68,17 @@ function isCanvasUrl(url, configuredUrl) {
     /^https?:\/\/(?:127\.0\.0\.1|localhost):18766(?:\/|$)/i.test(text);
 }
 
-async function findOrOpenCanvasTab() {
+async function findExistingCanvasTab() {
   const settings = await storageGet({ t8_canvas_url: DEFAULT_CANVAS_URL });
   const canvasUrl = String(settings.t8_canvas_url || DEFAULT_CANVAS_URL);
   const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((tab) => isCanvasUrl(tab.url, canvasUrl));
+  return tabs.find((tab) => isCanvasUrl(tab.url, canvasUrl)) || null;
+}
+
+async function findOrOpenCanvasTab() {
+  const settings = await storageGet({ t8_canvas_url: DEFAULT_CANVAS_URL });
+  const canvasUrl = String(settings.t8_canvas_url || DEFAULT_CANVAS_URL);
+  const existing = await findExistingCanvasTab();
   if (existing?.id) return existing;
   return chrome.tabs.create({ url: canvasUrl, active: false });
 }
@@ -100,13 +106,39 @@ function waitForTabComplete(tabId) {
 }
 
 async function sendToCanvas(payload) {
-  const target = await findOrOpenCanvasTab();
-  if (!target?.id) throw new Error('没有找到可发送的 T8 画布标签页。');
-  await waitForTabComplete(target.id);
   const messagePayload = {
     ...payload,
     messageId: payload?.messageId || `t8-web-image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   };
+  const existingTarget = await findExistingCanvasTab();
+  if (existingTarget?.id) {
+    try {
+      await postWebImageResultToCanvasTab(existingTarget, messagePayload);
+      return { method: 'canvas-tab' };
+    } catch (tabError) {
+      try {
+        const bridge = await postWebImageResultToLocalBridge(messagePayload);
+        return { method: 'local-bridge', bridge };
+      } catch {
+        throw tabError;
+      }
+    }
+  }
+
+  try {
+    const bridge = await postWebImageResultToLocalBridge(messagePayload);
+    return { method: 'local-bridge', bridge };
+  } catch (bridgeError) {
+    const target = await findOrOpenCanvasTab();
+    if (!target?.id) throw bridgeError || new Error('没有找到可发送的 T8 画布标签页。');
+    await postWebImageResultToCanvasTab(target, messagePayload);
+    return { method: 'canvas-tab-opened' };
+  }
+}
+
+async function postWebImageResultToCanvasTab(target, messagePayload) {
+  if (!target?.id) throw new Error('没有找到可发送的 T8 画布标签页。');
+  await waitForTabComplete(target.id);
   await chrome.scripting.executeScript({
     target: { tabId: target.id },
     func: (messagePayload, messageSource, messageType) => {
@@ -125,6 +157,94 @@ async function sendToCanvas(payload) {
       // ignore focus failures
     }
   }
+}
+
+function backendCandidates(preferredBase) {
+  const candidates = [];
+  const push = (value) => {
+    const clean = String(value || '').replace(/\/+$/, '');
+    if (clean && !candidates.includes(clean)) candidates.push(clean);
+  };
+  push(preferredBase || DEFAULT_BACKEND_BASE);
+  for (let port = 18766; port <= 18785; port += 1) {
+    push(`http://127.0.0.1:${port}`);
+  }
+  return candidates;
+}
+
+async function postVibeXResultToLocalBridge(payload) {
+  const settings = await storageGet({ t8_backend_base: DEFAULT_BACKEND_BASE });
+  let lastError = null;
+  for (const backendBase of backendCandidates(settings.t8_backend_base)) {
+    try {
+      const response = await fetch(absoluteBackendUrl(backendBase, '/api/vibex-bridge/messages'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 't8:vibex-result',
+          source: 'vibex-workbench',
+          payload,
+        }),
+      });
+      const data = await readJsonResponse(response);
+      if (response.ok && data?.success !== false) {
+        return { backendBase, data };
+      }
+      lastError = new Error(data?.error || `T8 后端返回 HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('无法连接 T8 本地桥接服务。');
+}
+
+async function postWebImageResultToLocalBridge(payload) {
+  const settings = await storageGet({ t8_backend_base: DEFAULT_BACKEND_BASE });
+  let lastError = null;
+  for (const backendBase of backendCandidates(settings.t8_backend_base)) {
+    try {
+      const response = await fetch(absoluteBackendUrl(backendBase, '/api/vibex-bridge/messages'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: CANVAS_MESSAGE_TYPE,
+          source: CANVAS_MESSAGE_SOURCE,
+          payload,
+        }),
+      });
+      const data = await readJsonResponse(response);
+      if (response.ok && data?.success !== false) {
+        return { backendBase, data };
+      }
+      lastError = new Error(data?.error || `T8 后端返回 HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('无法连接 T8 本地桥接服务。');
+}
+
+async function sendVibeXResultToCanvas(payload) {
+  const target = await findExistingCanvasTab();
+  const messagePayload = {
+    ...payload,
+    messageId: payload?.messageId || `t8-vibex-web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  };
+
+  if (target?.id) {
+    await waitForTabComplete(target.id);
+    await chrome.scripting.executeScript({
+      target: { tabId: target.id },
+      func: (payloadForCanvas) => {
+        window.postMessage({ type: 't8:vibex-result', source: 'vibex-workbench', payload: payloadForCanvas }, window.location.origin);
+      },
+      args: [messagePayload],
+    });
+    return { method: 'canvas-tab' };
+  }
+
+  const bridge = await postVibeXResultToLocalBridge(messagePayload);
+  return { method: 'local-bridge', bridge };
 }
 
 async function reverseAndGenerate(message) {
@@ -209,6 +329,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     generateImage(message)
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: normalizeBackendFetchError(error), data: { success: false } }));
+    return true;
+  }
+
+  if (message?.action === 't8RunningHub.forwardVibeXResult') {
+    const payload = {
+      ...(message.payload || {}),
+      pageUrl: message.payload?.pageUrl || message.pageUrl || '',
+      pageTitle: message.payload?.pageTitle || message.pageTitle || '',
+    };
+    sendVibeXResultToCanvas(payload)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => sendResponse({ ok: false, error: normalizeBackendFetchError(error) }));
     return true;
   }
 

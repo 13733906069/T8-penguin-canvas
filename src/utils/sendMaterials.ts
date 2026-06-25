@@ -10,7 +10,8 @@ export type SendTargetMode =
   | 'upload'
   | 'split-upload'
   | 'output'
-  | 'portrait-master';
+  | 'portrait-master'
+  | 'video-edit';
 
 export interface SendableMaterial extends MaterialSetItem {
   sourceNodeId?: string;

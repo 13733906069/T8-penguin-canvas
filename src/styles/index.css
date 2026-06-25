@@ -91,9 +91,9 @@ html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox
 
 /* API settings semantic theme adapter */
 html[data-ui-font]:not([data-ui-font="theme"]) {
-  text-rendering: geometricPrecision;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
 }
 
 html[data-ui-font]:not([data-ui-font="theme"]) body,
@@ -395,8 +395,8 @@ html[data-theme-template] .t8-api-settings-modal .t8-api-settings-guide {
   color-scheme: light dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
   --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='%230f172a' stroke='%2338bdf8' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'><path d='M17 2 7 13h6l-3 9 10-12h-6l3-8Z'/><path d='M5 20 20 5'/></svg>") 14 14, crosshair;
   --t8-cut-color: #38bdf8;
   --t8-cut-track: rgba(56, 189, 248, 0.86);
@@ -564,6 +564,36 @@ html[data-theme-visual] .t8-canvas-shell::after,
 .t8-canvas-shell .react-flow__node {
   isolation: isolate;
   overflow: visible !important;
+}
+
+/* Large graph rendering guard: keep node components mounted for runBus/cross-canvas logic,
+   while the browser lazily paints offscreen heavy media on 100+ node canvases. */
+@supports (content-visibility: auto) {
+  .t8-canvas-shell[data-canvas-surface-load="heavy"] .react-flow__node:not(.selected):not(:focus-within) :where(img, video, iframe, canvas) {
+    content-visibility: auto;
+    contain-intrinsic-size: 320px 260px;
+  }
+}
+
+.t8-canvas-shell[data-canvas-surface-load="heavy"].t8-viewport-moving .react-flow__node:not(.selected):not(:focus-within) > div:first-child,
+.t8-canvas-shell[data-canvas-surface-load="heavy"].t8-node-dragging .react-flow__node:not(.selected):not(:focus-within) > div:first-child {
+  box-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Large graph interaction chrome trim: borrow the lightweight drag state from
+   Infinite-Canvas without unmounting ReactFlow nodes or runBus handlers. */
+.t8-canvas-shell[data-canvas-surface-load="heavy"].t8-viewport-moving .react-flow__node:not(.selected):not(:focus-within) :where(.react-flow__handle, .react-flow__resize-control, [data-node-action-bar], [data-floating-node-action]),
+.t8-canvas-shell[data-canvas-surface-load="heavy"].t8-node-dragging .react-flow__node:not(.selected):not(:focus-within) :where(.react-flow__handle, .react-flow__resize-control, [data-node-action-bar], [data-floating-node-action]) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.t8-canvas-shell[data-canvas-surface-load="heavy"].t8-viewport-moving .react-flow__node:not(.selected):not(:focus-within) *,
+.t8-canvas-shell[data-canvas-surface-load="heavy"].t8-node-dragging .react-flow__node:not(.selected):not(:focus-within) * {
+  transition-duration: 0s !important;
+  animation-play-state: paused !important;
 }
 
 .t8-canvas-shell .react-flow__node > .react-flow__handle,
@@ -9420,6 +9450,7 @@ html[data-theme-visual="farm-story"] .t8-generation-history-item {
 }
 
 .t8-generation-target-preview {
+  position: relative;
   display: flex;
   height: 132px;
   align-items: center;
@@ -9439,6 +9470,31 @@ html[data-theme-visual="farm-story"] .t8-generation-history-item {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.t8-generation-target-download {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid rgba(15, 118, 110, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #134e4a;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 850;
+  text-decoration: none;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+}
+
+.t8-generation-target-download:hover {
+  background: #ccfbf1;
+  color: #0f766e;
 }
 
 .t8-generation-target-empty {
@@ -9564,6 +9620,13 @@ html[data-theme-mode="dark"] .t8-generation-target-meta select {
   color: #f8fafc;
 }
 
+[data-theme-mode="dark"] .t8-generation-target-download,
+html[data-theme-mode="dark"] .t8-generation-target-download {
+  border-color: rgba(45, 212, 191, 0.35);
+  background: rgba(15, 23, 42, 0.82);
+  color: #ccfbf1;
+}
+
 [data-theme-visual="farm-story"] .t8-generation-target-node,
 html[data-theme-visual="farm-story"] .t8-generation-target-node {
   border-color: #83b978;
@@ -9589,6 +9652,13 @@ html[data-theme-visual="farm-story"] .t8-generation-target-actions button {
   border-color: #6ca66a;
   background: linear-gradient(180deg, #b7eab0, #87d270);
   color: #173b22;
+}
+
+[data-theme-visual="farm-story"] .t8-generation-target-download,
+html[data-theme-visual="farm-story"] .t8-generation-target-download {
+  border-color: #79b875;
+  background: rgba(255, 253, 246, 0.92);
+  color: #21452a;
 }
 
 [data-theme-visual="saint-seiya"] .t8-generation-target-node,
@@ -9620,4 +9690,47 @@ html[data-theme-visual="saint-seiya"] .t8-generation-target-icon {
   .t8-generation-history-item {
     grid-template-columns: 96px minmax(0, 1fr);
   }
+}
+
+/* Canvas node crisp text contract: theme decoration must not add blur to node UI text. */
+#root .t8-canvas-shell .react-flow__node,
+#root .t8-canvas-shell .react-flow__node * {
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+#root .t8-canvas-shell .react-flow__node,
+#root .t8-canvas-shell .react-flow__node :where(
+  a,
+  b,
+  button,
+  code,
+  div,
+  em,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  input,
+  label,
+  legend,
+  li,
+  mark,
+  option,
+  p,
+  pre,
+  select,
+  small,
+  span,
+  strong,
+  summary,
+  td,
+  textarea,
+  th
+) {
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none !important;
 }

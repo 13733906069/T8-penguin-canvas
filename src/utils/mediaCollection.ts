@@ -101,8 +101,15 @@ export function getMediaItemsFromData(data: any, kind: MediaKind): MediaItem[] {
     directArr.forEach((url: any, i: number) => pushItem(out, seen, kind, url, names[i], sizes[i], mimes[i]));
   }
 
+  if (kind === 'image' && Array.isArray(data.resultUrls)) {
+    data.resultUrls.forEach((url: any, i: number) => pushItem(out, seen, kind, url, names[i], sizes[i], mimes[i]));
+  }
+
   pushItem(out, seen, kind, data[meta.singleField], data.fileName, data.fileSize, data.mime);
   pushItem(out, seen, kind, data[meta.directSingleField], data.fileName, data.fileSize, data.mime);
+  if (kind === 'image') {
+    pushItem(out, seen, kind, data.resultUrl, data.fileName, data.fileSize, data.mime);
+  }
   return out;
 }
 
