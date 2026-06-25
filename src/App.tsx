@@ -1732,6 +1732,7 @@ function App() {
         <GuomanModelDrawer
           open={guomanOpen}
           onClose={() => setGuomanOpen(false)}
+          onAddNode={(type, opts) => addNodeRef.current?.(type as any, opts)}
         />
       </Suspense>
       <MaterialContextMenu />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Star, StarOff, Search, X, Loader2, Palette, ImageIcon } from 'lucide-react';
+import { Star, StarOff, Search, X, Loader2, Palette, ImageIcon, Play, Maximize2, Minimize2 } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useGuomanFavoritesStore } from '../stores/guomanFavorites';
 import { getGuomanModels, type GuomanModel } from '../services/api';
@@ -7,11 +7,18 @@ import { getGuomanModels, type GuomanModel } from '../services/api';
 interface GuomanModelDrawerProps {
   open: boolean;
   onClose: () => void;
+  onAddNode?: (type: string, options?: { data?: Record<string, any> }) => void;
 }
 
 type TabKey = 'all' | 'favorites';
 
-export default function GuomanModelDrawer({ open, onClose }: GuomanModelDrawerProps) {
+/** 从模型对象中提取文件名（与 GuomanModelPickerModal 一致） */
+function extractModelFileName(model: GuomanModel): string {
+  const rawName = model.versions?.[0]?.versionResourceName || model.versions?.[0]?.resourceStorageName || '';
+  return rawName ? rawName.replace(/^.*[\\/]/, '') : model.resourceName;
+}
+
+export default function GuomanModelDrawer({ open, onClose, onAddNode }: GuomanModelDrawerProps) {
   const { theme, style } = useThemeStore();
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
@@ -41,6 +48,9 @@ export default function GuomanModelDrawer({ open, onClose }: GuomanModelDrawerPr
 
   // 预览大图
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // 展开模式（居中铺满，多列显示）
+  const [expanded, setExpanded] = useState(false);
 
   // 防抖搜索
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -119,6 +129,20 @@ export default function GuomanModelDrawer({ open, onClose }: GuomanModelDrawerPr
   // 当前 tab 显示的模型
   const displayModels = activeTab === 'all' ? models : favoriteModels;
 
+  // 点击"去使用"按钮 → 创建国漫文生图节点
+  const handleUseModel = (model: GuomanModel) => {
+    if (!onAddNode) return;
+    const modelFileName = extractModelFileName(model);
+    onAddNode('guoman-char-1', {
+      data: {
+        paramValues: {
+          '1569::lora_name': { value: modelFileName },
+        },
+      },
+    });
+    onClose();
+  };
+
   // ESC 键关闭
   useEffect(() => {
     if (!open) return;
@@ -132,150 +156,178 @@ export default function GuomanModelDrawer({ open, onClose }: GuomanModelDrawerPr
   // 不渲染时早退
   if (!open) return null;
 
-  // 样式定义
-  const panelCls = isPixel
-    ? 'bg-[var(--px-surface)] text-[var(--px-ink)] border-l-2 border-[var(--px-ink)]'
-    : isDark
-      ? 'bg-zinc-950 text-zinc-100 border-l border-white/10'
-      : 'bg-white text-zinc-900 border-l border-black/10';
+  // ====== 主题色变量 ======
+  const accent = '#f97316'; // orange-500
+  const accentLight = '#fb923c'; // orange-400
 
-  const headerCls = isPixel
-    ? 'border-b-2 border-[var(--px-ink)] bg-[var(--px-muted)]'
-    : isDark
-      ? 'border-b border-white/10 bg-zinc-900/50'
-      : 'border-b border-black/10 bg-zinc-50/80';
+  // 面板背景
+  const panelBg = isPixel ? 'var(--px-surface)' : isDark ? '#09090b' : '#ffffff';
+  const panelText = isPixel ? 'var(--px-ink)' : isDark ? '#f4f4f5' : '#18181b';
+  const panelBorder = isPixel ? '2px solid var(--px-ink)' : isDark ? '1px solid rgba(255,255,255,.08)' : '1px solid rgba(0,0,0,.08)';
 
-  const tabBtnCls = (active: boolean) =>
-    isPixel
-      ? `px-3 py-1.5 text-xs font-semibold rounded-full transition-colors ${
-          active
-            ? 'bg-[var(--px-ink)] text-[var(--px-surface)]'
-            : 'text-[var(--px-ink-soft)] hover:bg-[var(--px-muted)]'
-        }`
-      : `px-3 py-1.5 text-xs font-semibold rounded-full transition-colors ${
-          active
-            ? isDark
-              ? 'bg-white/15 text-white'
-              : 'bg-black/10 text-zinc-900'
-            : isDark
-              ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
-              : 'text-zinc-500 hover:text-zinc-700 hover:bg-black/5'
-        }`;
+  // 头部背景
+  const headerBg = isPixel ? 'var(--px-muted)' : isDark ? 'rgba(24,24,27,.8)' : 'rgba(249,250,251,.9)';
+  const headerBorder = isPixel ? '2px solid var(--px-ink)' : isDark ? '1px solid rgba(255,255,255,.06)' : '1px solid rgba(0,0,0,.06)';
 
-  const searchInputCls = isPixel
-    ? 'w-full px-3 py-2 text-xs bg-[var(--px-surface)] border-2 border-[var(--px-ink)] rounded-lg text-[var(--px-ink)] placeholder-[var(--px-ink-soft)] outline-none focus:border-[var(--px-mint)]'
-    : `w-full px-3 py-2 text-xs rounded-lg border outline-none transition-colors ${
-        isDark
-          ? 'bg-zinc-900 border-white/10 text-white placeholder-zinc-500 focus:border-white/30'
-          : 'bg-white border-black/10 text-zinc-900 placeholder-zinc-400 focus:border-black/25'
-      }`;
+  // 输入框
+  const inputBg = isPixel ? 'var(--px-surface)' : isDark ? 'rgba(255,255,255,.06)' : '#fff';
+  const inputBorder = isPixel ? '2px solid var(--px-ink)' : isDark ? '1px solid rgba(255,255,255,.1)' : '1px solid rgba(0,0,0,.1)';
+  const inputText = isPixel ? 'var(--px-ink)' : isDark ? '#fff' : '#18181b';
+  const mutedText = isPixel ? 'var(--px-ink-soft)' : isDark ? 'rgba(255,255,255,.4)' : 'rgba(0,0,0,.4)';
 
-  const cardCls = isPixel
-    ? 'group relative rounded-xl overflow-hidden border-2 border-[var(--px-ink)] bg-[var(--px-surface)] hover:border-[var(--px-mint)] transition-colors cursor-pointer'
-    : `group relative rounded-xl overflow-hidden border transition-all cursor-pointer ${
-        isDark
-          ? 'border-white/8 bg-zinc-900/60 hover:border-white/20 hover:shadow-lg hover:shadow-black/30'
-          : 'border-black/8 bg-white hover:border-black/15 hover:shadow-lg hover:shadow-black/10'
-      }`;
+  // 卡片
+  const cardBg = isPixel ? 'var(--px-surface)' : isDark ? '#18181b' : '#fff';
+  const cardBorder = isPixel ? '2px solid var(--px-ink)' : isDark ? '1px solid rgba(255,255,255,.06)' : '1px solid rgba(0,0,0,.06)';
+  const cardBorderHover = isPixel ? '2px solid var(--px-mint)' : isDark ? `1px solid ${accent}` : `1px solid ${accent}`;
 
-  const nameCls = isPixel
-    ? 'text-[11px] font-semibold text-[var(--px-ink)] truncate px-2 py-1.5 bg-[var(--px-muted)]'
-    : `text-[11px] font-semibold truncate px-2 py-1.5 ${
-        isDark ? 'text-zinc-200 bg-zinc-800/80' : 'text-zinc-700 bg-zinc-50'
-      }`;
-
-  const emptyCls = isPixel
-    ? 'text-[var(--px-ink-soft)] text-xs'
-    : isDark
-      ? 'text-zinc-500 text-xs'
-      : 'text-zinc-400 text-xs';
+  // 名称区域
+  const nameBg = isPixel ? 'var(--px-muted)' : isDark ? 'rgba(24,24,27,.9)' : 'rgba(249,250,251,.95)';
+  const nameText = isPixel ? 'var(--px-ink)' : isDark ? '#e4e4e7' : '#3f3f46';
 
   return (
     <>
       {/* 背景遮罩 */}
       <div
-        className={`fixed inset-0 z-40 ${isPixel ? 'px-modal-mask' : 'bg-black/30'}`}
+        style={{
+          position: 'fixed', inset: 0, zIndex: expanded ? 9998 : 40,
+          background: isPixel ? 'var(--px-modal-mask, rgba(0,0,0,.5))' : 'rgba(0,0,0,.35)',
+        }}
         onClick={onClose}
       />
 
-      {/* 抽屉面板 */}
+      {/* 面板（抽屉模式 / 展开模式） */}
       <div
         data-guoman-drawer
-        className={`fixed top-0 right-0 z-50 h-screen w-[400px] max-w-[calc(100vw-18px)] flex flex-col ${panelCls}`}
-        style={{ animation: 't8-slide-in-right 0.2s ease-out' }}
+        style={expanded ? {
+          position: 'fixed', inset: 20, zIndex: 9999,
+          borderRadius: 16, display: 'flex', flexDirection: 'column',
+          background: panelBg, color: panelText,
+          border: panelBorder,
+          boxShadow: isDark ? '0 40px 120px rgba(0,0,0,.8)' : '0 40px 120px rgba(0,0,0,.2)',
+          animation: 'guoman-expand-in .25s ease-out',
+        } : {
+          position: 'fixed', top: 0, right: 0, zIndex: 50,
+          height: '100vh', width: 420, maxWidth: 'calc(100vw - 18px)',
+          display: 'flex', flexDirection: 'column',
+          background: panelBg, color: panelText,
+          borderLeft: panelBorder,
+          animation: 't8-slide-in-right 0.2s ease-out',
+        }}
       >
-        {/* 头部 */}
-        <div className={`flex items-center justify-between px-4 py-3 ${headerCls}`}>
-          <div className="flex items-center gap-2 text-sm font-bold">
-            <Palette size={16} />
-            国漫模型
-            {total > 0 && (
-              <span
-                className={`text-[10px] font-normal px-1.5 py-0.5 rounded-full ${
-                  isPixel
-                    ? 'bg-[var(--px-yellow)] text-[var(--px-ink)] border border-[var(--px-ink)]'
-                    : isDark
-                      ? 'bg-white/10 text-zinc-400'
-                      : 'bg-black/5 text-zinc-500'
-                }`}
-              >
-                {total}
-              </span>
-            )}
+        {/* ====== 头部 ====== */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px', background: headerBg, borderBottom: headerBorder,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: isDark ? 'rgba(249,115,22,.15)' : 'rgba(249,115,22,.1)',
+              color: accent, boxShadow: `inset 0 0 0 1px ${isDark ? 'rgba(249,115,22,.3)' : 'rgba(249,115,22,.2)'}`,
+            }}>
+              <Palette size={16} />
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>国漫模型</div>
+              {total > 0 && (
+                <div style={{ fontSize: 10, color: mutedText, lineHeight: 1.3 }}>共 {total} 个模型</div>
+              )}
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className={
-              isPixel
-                ? 'px-btn px-btn--icon px-btn--ghost'
-                : `p-1 rounded transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`
-            }
-          >
-            <X size={14} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* 展开/收起按钮 */}
+            <button
+              onClick={() => setExpanded(!expanded)}
+              title={expanded ? '收起为侧栏' : '展开铺满'}
+              style={{
+                width: 28, height: 28, borderRadius: 6, border: 'none',
+                background: 'transparent', color: mutedText, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background .15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+            {/* 关闭按钮 */}
+            <button
+              onClick={onClose}
+              style={{
+                width: 28, height: 28, borderRadius: 6, border: 'none',
+                background: 'transparent', color: mutedText, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background .15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
-        {/* Tab 切换 */}
-        <div className={`flex items-center gap-1 px-4 py-2 ${headerCls}`}>
-          <button
-            className={tabBtnCls(activeTab === 'all')}
-            onClick={() => setActiveTab('all')}
-          >
-            全部模型
-          </button>
-          <button
-            className={tabBtnCls(activeTab === 'favorites')}
-            onClick={() => setActiveTab('favorites')}
-          >
-            收藏模型
-            {favoriteIds.length > 0 && (
-              <span className="ml-1 text-[10px] opacity-70">({favoriteIds.length})</span>
-            )}
-          </button>
+        {/* ====== Tab 切换 ====== */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '8px 16px', background: headerBg, borderBottom: headerBorder,
+        }}>
+          {(['all', 'favorites'] as TabKey[]).map((tab) => {
+            const active = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: '5px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, transition: 'all .15s',
+                  background: active
+                    ? (isDark ? 'rgba(249,115,22,.2)' : 'rgba(249,115,22,.12)')
+                    : 'transparent',
+                  color: active
+                    ? accent
+                    : (isDark ? 'rgba(255,255,255,.45)' : 'rgba(0,0,0,.45)'),
+                }}
+              >
+                {tab === 'all' ? '全部模型' : '收藏模型'}
+                {tab === 'favorites' && favoriteIds.length > 0 && (
+                  <span style={{ marginLeft: 4, fontSize: 10, opacity: .7 }}>({favoriteIds.length})</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* 搜索框 */}
-        <div className="px-4 py-2">
-          <div className="relative">
-            <Search
-              size={14}
-              className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${
-                isPixel ? 'text-[var(--px-ink-soft)]' : isDark ? 'text-zinc-500' : 'text-zinc-400'
-              }`}
-            />
+        {/* ====== 搜索框 ====== */}
+        <div style={{ padding: '10px 16px' }}>
+          <div style={{ position: 'relative' }}>
+            <Search size={14} style={{
+              position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+              color: mutedText, pointerEvents: 'none',
+            }} />
             <input
               type="text"
               placeholder="搜索模型名称..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className={`${searchInputCls} pl-8 pr-8`}
+              style={{
+                width: '100%', height: 36, paddingLeft: 34, paddingRight: searchText ? 34 : 10,
+                fontSize: 12, color: inputText, background: inputBg,
+                border: inputBorder, borderRadius: 10, outline: 'none', boxSizing: 'border-box',
+                transition: 'border-color .15s',
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = accent; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'; }}
             />
             {searchText && (
               <button
                 onClick={() => setSearchText('')}
-                className={`absolute right-2 top-1/2 -translate-y-1/2 ${
-                  isPixel ? 'text-[var(--px-ink-soft)]' : isDark ? 'text-zinc-500' : 'text-zinc-400'
-                }`}
+                style={{
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  width: 20, height: 20, borderRadius: '50%', border: 'none',
+                  background: 'transparent', color: mutedText, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
               >
                 <X size={12} />
               </button>
@@ -283,94 +335,136 @@ export default function GuomanModelDrawer({ open, onClose }: GuomanModelDrawerPr
           </div>
         </div>
 
-        {/* 模型网格 */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-2">
+        {/* ====== 模型网格 ====== */}
+        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }}>
           {/* 空状态 */}
           {!loading && displayModels.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <ImageIcon size={40} className={emptyCls} />
-              <span className={emptyCls}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
+              <ImageIcon size={40} style={{ color: mutedText }} />
+              <span style={{ fontSize: 12, color: mutedText }}>
                 {activeTab === 'favorites'
                   ? '还没有收藏模型，点击星标收藏吧'
-                  : error
-                    ? error
-                    : '没有找到模型'}
+                  : error || '没有找到模型'}
               </span>
             </div>
           )}
 
           {/* 模型卡片网格 */}
-          <div className="grid grid-cols-2 gap-2.5">
-            {displayModels.map((model) => (
-              <div
-                key={model.id}
-                className={cardCls}
-                onClick={() => setPreviewUrl(model.posterUrl)}
-              >
-                {/* 封面图 */}
-                <div className="relative aspect-[3/4] overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                  <img
-                    src={model.thumbnailUrl}
-                    alt={model.resourceName}
-                    loading="lazy"
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    onError={(e) => {
-                      // 图片加载失败时显示占位
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                    }}
-                  />
-
-                  {/* 收藏按钮 */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite(model.id);
-                    }}
-                    className={`absolute top-1.5 right-1.5 p-1 rounded-full transition-all ${
-                      isFavorite(model.id)
-                        ? isPixel
-                          ? 'bg-[var(--px-yellow)] text-[var(--px-ink)]'
-                          : 'bg-amber-500/90 text-white'
-                        : isPixel
-                          ? 'bg-[var(--px-surface)]/80 text-[var(--px-ink-soft)] hover:bg-[var(--px-yellow)]'
-                          : isDark
-                            ? 'bg-black/40 text-zinc-400 hover:text-amber-400 hover:bg-black/60'
-                            : 'bg-white/60 text-zinc-400 hover:text-amber-500 hover:bg-white/80'
-                    }`}
-                    title={isFavorite(model.id) ? '取消收藏' : '收藏'}
+          <div style={{ display: 'grid', gridTemplateColumns: expanded ? 'repeat(auto-fill, minmax(200px, 1fr))' : 'repeat(2, 1fr)', gap: expanded ? 14 : 12 }}>
+            {displayModels.map((model) => {
+              const isFav = isFavorite(model.id);
+              return (
+                <div
+                  key={model.id}
+                  className="guoman-card"
+                  style={{
+                    borderRadius: 12, overflow: 'hidden',
+                    border: cardBorder, background: cardBg,
+                    transition: 'border-color .2s, box-shadow .2s, transform .2s',
+                    position: 'relative',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.border = cardBorderHover;
+                    e.currentTarget.style.boxShadow = isDark
+                      ? `0 8px 24px rgba(249,115,22,.12)`
+                      : `0 8px 24px rgba(249,115,22,.1)`;
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.border = cardBorder;
+                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  {/* 封面图（点击预览） */}
+                  <div
+                    style={{ position: 'relative', aspectRatio: '3/4', overflow: 'hidden', background: isDark ? '#1a1a1f' : '#f0f0f0', cursor: 'pointer' }}
+                    onClick={() => setPreviewUrl(model.posterUrl)}
                   >
-                    {isFavorite(model.id) ? <Star size={14} fill="currentColor" /> : <StarOff size={14} />}
-                  </button>
-                </div>
+                    <img
+                      src={model.thumbnailUrl}
+                      alt={model.resourceName}
+                      loading="lazy"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform .3s' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLImageElement).style.transform = 'scale(1.05)'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLImageElement).style.transform = 'scale(1)'; }}
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
 
-                {/* 模型名称 */}
-                <div className={nameCls} title={model.resourceName}>
-                  {model.resourceName}
+                    {/* 收藏按钮（独立层级，不被遮罩覆盖） */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleFavorite(model.id); }}
+                      style={{
+                        position: 'absolute', top: 8, right: 8, zIndex: 10,
+                        width: 28, height: 28, borderRadius: '50%', border: 'none',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all .15s',
+                        background: isFav
+                          ? 'rgba(245,158,11,.92)'
+                          : isDark ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.7)',
+                        color: isFav ? '#fff' : (isDark ? 'rgba(255,255,255,.5)' : 'rgba(0,0,0,.4)'),
+                        boxShadow: isFav ? '0 2px 8px rgba(245,158,11,.4)' : '0 1px 4px rgba(0,0,0,.15)',
+                      }}
+                      title={isFav ? '取消收藏' : '收藏'}
+                    >
+                      {isFav ? <Star size={13} fill="currentColor" /> : <StarOff size={13} />}
+                    </button>
+
+                    {/* Hover 遮罩 + "去使用"按钮（pointer-events 默认关闭，hover 时才开启） */}
+                    <div
+                      className="guoman-card-overlay"
+                      style={{
+                        position: 'absolute', inset: 0, zIndex: 5,
+                        background: 'linear-gradient(to top, rgba(0,0,0,.7) 0%, rgba(0,0,0,.2) 40%, transparent 70%)',
+                        opacity: 0, pointerEvents: 'none', transition: 'opacity .2s',
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                        padding: '0 10px 10px',
+                      }}
+                    >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleUseModel(model); }}
+                        className="guoman-use-btn"
+                        style={{
+                          width: '100%', height: 32, borderRadius: 8, border: 'none',
+                          background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                          color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                          boxShadow: '0 2px 8px rgba(249,115,22,.4)',
+                          transform: 'translateY(6px)', transition: 'transform .2s',
+                        }}
+                      >
+                        <Play size={12} /> 去使用
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 模型名称 */}
+                  <div style={{
+                    padding: '8px 10px', fontSize: 11, fontWeight: 600,
+                    color: nameText, background: nameBg,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }} title={model.resourceName}>
+                    {model.resourceName}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* 加载指示器 */}
           {loading && (
-            <div className="flex items-center justify-center py-6 gap-2">
-              <Loader2
-                size={16}
-                className={`animate-spin ${isPixel ? 'text-[var(--px-ink)]' : isDark ? 'text-zinc-400' : 'text-zinc-500'}`}
-              />
-              <span className={`text-xs ${isPixel ? 'text-[var(--px-ink-soft)]' : isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                加载中...
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 0', gap: 8 }}>
+              <Loader2 size={16} style={{ color: mutedText, animation: 'spin 1s linear infinite' }} />
+              <span style={{ fontSize: 12, color: mutedText }}>加载中...</span>
             </div>
           )}
 
           {/* 无限滚动哨兵 */}
-          {activeTab === 'all' && <div ref={sentinelRef} className="h-1" />}
+          {activeTab === 'all' && <div ref={sentinelRef} style={{ height: 1 }} />}
 
           {/* 已加载全部 */}
           {activeTab === 'all' && !loading && models.length > 0 && page >= totalPages && (
-            <div className={`text-center py-4 text-[11px] ${emptyCls}`}>
+            <div style={{ textAlign: 'center', padding: '16px 0', fontSize: 11, color: mutedText }}>
               已加载全部 {total} 个模型
             </div>
           )}
@@ -380,23 +474,48 @@ export default function GuomanModelDrawer({ open, onClose }: GuomanModelDrawerPr
       {/* 大图预览 */}
       {previewUrl && (
         <div
-          className={`fixed inset-0 z-[60] flex items-center justify-center ${isPixel ? 'px-modal-mask' : 'bg-black/70'}`}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,.75)',
+          }}
           onClick={() => setPreviewUrl(null)}
         >
           <img
             src={previewUrl}
             alt="模型预览"
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,.5)' }}
             onClick={(e) => e.stopPropagation()}
           />
           <button
             onClick={() => setPreviewUrl(null)}
-            className="absolute top-4 right-4 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+            style={{
+              position: 'absolute', top: 16, right: 16,
+              width: 36, height: 36, borderRadius: '50%', border: 'none',
+              background: 'rgba(0,0,0,.5)', color: '#fff', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'background .15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,.7)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,.5)'; }}
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
       )}
+
+      {/* Hover 效果 CSS */}
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes guoman-expand-in { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
+        .guoman-card:hover .guoman-card-overlay {
+          opacity: 1 !important;
+          pointer-events: auto !important;
+        }
+        .guoman-card:hover .guoman-use-btn {
+          transform: translateY(0) !important;
+        }
+      `}</style>
     </>
   );
 }
