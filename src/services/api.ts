@@ -952,6 +952,8 @@ export interface GuomanModel {
   imageSize?: string;
   createTime?: string;
   owner?: { name: string } | null;
+  /** 顶层 desc（角色外观描述）；空或 "1.0" 表示未填写具体外观 */
+  desc?: string | null;
   versions?: {
     id: string;
     version: string;

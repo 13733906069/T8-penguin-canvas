@@ -30,6 +30,8 @@ function slimItem(item) {
     imageSize: item.imageSize,
     createTime: item.createTime,
     owner: item.owner ? { name: item.owner.name } : null,
+    // 顶层 desc（角色外观描述），空或 "1.0" 表示未填写具体外观
+    desc: item.desc ?? null,
     versions: (item.versions || []).map((v) => ({
       id: v.id,
       version: v.version,

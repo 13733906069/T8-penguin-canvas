@@ -36,11 +36,17 @@ const GuomanModelSelectorNode = ({ id, data, selected }: NodeProps) => {
   const borderColor = selected ? COLOR : isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.1)';
 
   // ========== 模型选择回调 ==========
-  const handleModelSelect = (selectedModelName: string, displayName?: string, thumb?: string) => {
+  const handleModelSelect = (
+    selectedModelName: string,
+    model?: { desc?: string | null; thumbnailUrl?: string; resourceName?: string },
+  ) => {
+    const desc = typeof model?.desc === 'string' ? model.desc : '';
     update({
       modelName: selectedModelName,
-      modelDisplayName: displayName || selectedModelName,
-      thumbnailUrl: thumb || '',
+      modelDisplayName: model?.resourceName || selectedModelName,
+      thumbnailUrl: model?.thumbnailUrl || '',
+      // 角色外观描述（顶层 desc）。空或 "1.0" 表示无具体外观，下游需自行用默认值
+      modelDesc: desc,
       // 同时更新 text 字段，让 useUpstreamMaterials 能识别这个文本输出
       text: selectedModelName,
       prompt: selectedModelName,
@@ -53,6 +59,7 @@ const GuomanModelSelectorNode = ({ id, data, selected }: NodeProps) => {
       modelName: '',
       modelDisplayName: '',
       thumbnailUrl: '',
+      modelDesc: '',
       text: '',
       prompt: '',
     });
@@ -183,7 +190,7 @@ const GuomanModelSelectorNode = ({ id, data, selected }: NodeProps) => {
       <GuomanModelPickerModal
         open={modelPickerOpen}
         onClose={() => setModelPickerOpen(false)}
-        onSelect={(name) => handleModelSelect(name)}
+        onSelect={(name, model) => handleModelSelect(name, model)}
         currentModel={modelName}
       />
     </div>

@@ -100,6 +100,18 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
     return data?.modelName || data?.text || data?.prompt || '';
   }, [modelSelectorNode]);
 
+  /**
+   * 从上游模型选择器获取角色外观描述（顶层 desc）。
+   * 注意：空字符串或 "1.0" 被视为"无具体外观"，需要保持默认占位符由用户自行输入。
+   */
+  const upstreamModelDesc = useMemo(() => {
+    if (!modelSelectorNode) return '';
+    const data = modelSelectorNode.data as any;
+    const desc = typeof data?.modelDesc === 'string' ? data.modelDesc.trim() : '';
+    if (!desc || desc === '1.0') return '';
+    return desc;
+  }, [modelSelectorNode]);
+
   const getUpstreamTexts = (): string[] => {
     return orderedTexts.map((m: { url?: string; label?: string }) => m.url || m.label || '').filter(Boolean);
   };
@@ -132,6 +144,37 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasModelSelectorUpstream, upstreamModelName]);
+
+  // ========== 监听上游模型选择器的角色外观描述（顶层 desc），自动填充外观字段 ==========
+  // 外观字段节点：1643::text。当 desc 为空或 "1.0" 时，保持默认占位符（extractDefaultValue）。
+  useEffect(() => {
+    const appearanceKey = paramKey('1643', 'text');
+    const currentAppearance = paramValues[appearanceKey];
+
+    if (hasModelSelectorUpstream && upstreamModelDesc) {
+      // 上游提供了有效 desc，覆盖外观并标记为来自上游
+      if (currentAppearance?.value !== upstreamModelDesc) {
+        update({
+          paramValues: {
+            ...paramValues,
+            [appearanceKey]: { value: upstreamModelDesc, sourceFromUpstream: true },
+          },
+        });
+        logBus.info(`从上游模型选择器获取角色外观: ${upstreamModelDesc.slice(0, 30)}…`, src);
+      }
+    } else if (!hasModelSelectorUpstream || !upstreamModelDesc) {
+      // 没有 selector 连接，或者 desc 为空/"1.0"，清除上游标记回到默认
+      if (currentAppearance?.sourceFromUpstream) {
+        update({
+          paramValues: {
+            ...paramValues,
+            [appearanceKey]: { value: currentAppearance.value, sourceFromUpstream: false },
+          },
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasModelSelectorUpstream, upstreamModelDesc]);
 
   // ========== 拉取应用信息 ==========
   const handleFetchInfo = async () => {

@@ -14,7 +14,12 @@ import { getGuomanModels, type GuomanModel } from '../services/api';
 interface GuomanModelPickerModalProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (modelName: string) => void;
+  /**
+   * 选择回调：
+   * - modelName：模型文件名（去路径后的纯文件名）
+   * - model：完整模型对象（包含 desc 顶层字段、thumbnailUrl 等），可选
+   */
+  onSelect: (modelName: string, model?: GuomanModel) => void;
   currentModel?: string;
 }
 
@@ -259,7 +264,7 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
                 const isFav = isFavorite(model.id);
                 return (
                   <div key={model.id}
-                    onClick={() => { onSelect(modelFileName); onClose(); }}
+                    onClick={() => { onSelect(modelFileName, model); onClose(); }}
                     style={{
                       borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
                       border: `2px solid ${isSelected ? accent : bd}`,
