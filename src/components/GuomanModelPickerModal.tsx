@@ -365,3 +365,14 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
     document.body
   );
 }
+
+/**
+ * 去除字符串中的 HTML 标签，返回纯文本。
+ * - 去掉所有形如 <tag>、</tag>、<tag attr="..."> 的标签
+ * - 自动 trim 首尾空白
+ * - 非字符串输入返回空串
+ */
+export function stripHtml(s: string | null | undefined): string {
+  if (typeof s !== 'string') return '';
+  return s.replace(/<[^>]*>/g, '').trim();
+}

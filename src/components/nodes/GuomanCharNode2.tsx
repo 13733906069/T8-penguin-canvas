@@ -21,7 +21,7 @@ import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
-import GuomanModelPickerModal from '../GuomanModelPickerModal';
+import GuomanModelPickerModal, { stripHtml } from '../GuomanModelPickerModal';
 import SmartImage from '../SmartImage';
 
 // ========== 固定配置 ==========
@@ -62,6 +62,9 @@ const GuomanCharNode2 = ({ id, data, selected }: NodeProps) => {
 
   const appInfo = (data as any).appInfo || null;
   const paramValues: Record<string, { value: string; sourceFromUpstream?: boolean }> = (data as any).paramValues || {};
+  // 用 ref 跟踪最新 paramValues，避免 onSelect 和 useEffect 中闭包陈旧导致字段丢失
+  const paramValuesRef = useRef(paramValues);
+  paramValuesRef.current = paramValues;
   const instanceType: string = (data as any).instanceType || 'plus';
   const status: string = (data as any).status || 'idle';
   const taskId: string = (data as any).taskId || '';
@@ -131,47 +134,36 @@ const GuomanCharNode2 = ({ id, data, selected }: NodeProps) => {
     return paramValues[paramKey(nodeId, fieldName)]?.value ?? fallback;
   };
 
-  // ========== 监听上游模型选择器输出，自动填充模型字段 ==========
+  // ========== 监听上游模型选择器输出，同步模型字段 + 角色外观 ==========
+  // 合并成一个 useEffect：分两个会导致连续两次 setNodes 调用互相覆盖（race condition），
+  // 表现为组件渲染时 model1569 拿不到上游新值。CharNode3 没有这个问题是因为它只有模型同步。
+  // 依赖 upstreamModelName / upstreamModelDesc（useMemo 派生值），与 CharNode3 风格一致。
   useEffect(() => {
     const modelKey = paramKey('1569', 'lora_name');
-
-    if (hasModelSelectorUpstream && upstreamModelName) {
-      // 有上游模型选择器连接，强制使用上游模型
-      const currentModel = paramValues[modelKey]?.value;
-      if (currentModel !== upstreamModelName) {
-        updateParam(modelKey, upstreamModelName, true);
-        logBus.info(`从上游模型选择器获取模型: ${upstreamModelName}`, src);
-      }
-    } else if (!hasModelSelectorUpstream) {
-      // 没有上游模型选择器连接，清除来自上游的模型标记
-      const modelData = paramValues[modelKey];
-      if (modelData?.sourceFromUpstream) {
-        updateParam(modelKey, modelData.value, false);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasModelSelectorUpstream, upstreamModelName]);
-
-  // ========== 监听上游模型选择器的角色外观描述（顶层 desc），自动填充外观字段 ==========
-  // 外观字段节点：1216::text。当 desc 为空或 "1.0" 时，保持默认占位符（extractDefaultValue）。
-  useEffect(() => {
     const appearanceKey = paramKey('1216', 'text');
-    const currentAppearance = paramValues[appearanceKey];
 
-    if (hasModelSelectorUpstream && upstreamModelDesc) {
-      // 上游提供了有效 desc，覆盖外观并标记为来自上游
-      if (currentAppearance?.value !== upstreamModelDesc) {
-        updateParam(appearanceKey, upstreamModelDesc, true);
-        logBus.info(`从上游模型选择器获取角色外观: ${upstreamModelDesc.slice(0, 30)}…`, src);
-      }
-    } else if (!hasModelSelectorUpstream || !upstreamModelDesc) {
-      // 没有 selector 连接，或者 desc 为空/"1.0"，清除上游标记回到默认
-      if (currentAppearance?.sourceFromUpstream) {
-        updateParam(appearanceKey, currentAppearance.value, false);
-      }
+    if (!hasModelSelectorUpstream) return;
+
+    // 用 ref 读最新 paramValues（避免连写两个字段时第二次拿到第一次没合并的旧值）
+    const pv = paramValuesRef.current;
+    const next: Record<string, { value: string; sourceFromUpstream?: boolean }> = { ...pv };
+    let changed = false;
+
+    if (upstreamModelName && pv[modelKey]?.value !== upstreamModelName) {
+      next[modelKey] = { value: upstreamModelName, sourceFromUpstream: true };
+      changed = true;
+    }
+    if (upstreamModelDesc && pv[appearanceKey]?.value !== upstreamModelDesc) {
+      next[appearanceKey] = { value: upstreamModelDesc, sourceFromUpstream: true };
+      changed = true;
+    }
+    if (changed) {
+      update({ paramValues: next });
+      if (next[modelKey]) logBus.info(`从上游模型选择器获取模型: ${next[modelKey].value}`, src);
+      if (next[appearanceKey]) logBus.info(`从上游模型选择器获取角色外观: ${(next[appearanceKey].value || '').slice(0, 30)}…`, src);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasModelSelectorUpstream, upstreamModelDesc]);
+  }, [hasModelSelectorUpstream, upstreamModelName, upstreamModelDesc]);
 
   // ========== 图片上传处理 ==========
   const poseImageKey = paramKey('1646', 'image');
@@ -360,7 +352,17 @@ const GuomanCharNode2 = ({ id, data, selected }: NodeProps) => {
         let fieldValue: any = paramValues[k]?.value ?? extractDefaultValue(it);
         const vt = inferValueType(it?.fieldType);
         if (vt === 'image' || vt === 'video' || vt === 'audio') {
-          if (fieldValue && /^https?:\/\//i.test(fieldValue)) {
+          // 支持多种 URL 格式：http(s)、本地路径（/files/output/、/files/input/、/output/、/input/）
+          // 本地路径会先通过 uploadRhAsset 转成 RH 云端文件名再提交
+          const isUrlLike =
+            /^https?:\/\//i.test(fieldValue || '') ||
+            (typeof fieldValue === 'string' && (
+              fieldValue.startsWith('/files/output/') ||
+              fieldValue.startsWith('/output/') ||
+              fieldValue.startsWith('/files/input/') ||
+              fieldValue.startsWith('/input/')
+            ));
+          if (fieldValue && isUrlLike) {
             try { const r = await uploadRhAsset(fieldValue); fieldValue = r.fileName; } catch {}
           }
         } else if (vt === 'number') {
@@ -691,7 +693,19 @@ const GuomanCharNode2 = ({ id, data, selected }: NodeProps) => {
       <GuomanModelPickerModal
         open={modelPickerOpen}
         onClose={() => setModelPickerOpen(false)}
-        onSelect={(modelName) => updateParam(paramKey('1569', 'lora_name'), modelName)}
+        onSelect={(modelName, model) => {
+          // 合并成一次 update，避免两次 update 之间闭包陈旧导致第一次的更新被第二次覆盖
+          const next = { ...paramValuesRef.current };
+          // 1. 更新角色模型名
+          next[paramKey('1569', 'lora_name')] = { value: modelName, sourceFromUpstream: false };
+          // 2. 如果模型带有 desc（去除 HTML 后非空），自动填充到角色外观字段
+          //    无 selector 上游时也能让外观跟着模型走，体验一致
+          const desc = stripHtml(model?.desc);
+          if (desc && desc !== '1.0') {
+            next[paramKey('1216', 'text')] = { value: desc, sourceFromUpstream: true };
+          }
+          update({ paramValues: next });
+        }}
         currentModel={getVal('1569', 'lora_name')}
       />
     </div>

@@ -6,10 +6,10 @@
  */
 import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Crown, ChevronDown, X } from 'lucide-react';
+import { Crown, ChevronDown } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useThemeStore } from '../../stores/theme';
-import GuomanModelPickerModal from '../GuomanModelPickerModal';
+import GuomanModelPickerModal, { stripHtml } from '../GuomanModelPickerModal';
 
 // ========== 固定配置 ==========
 const APP_NAME = '清风-国漫角色模型选择器';
@@ -40,7 +40,8 @@ const GuomanModelSelectorNode = ({ id, data, selected }: NodeProps) => {
     selectedModelName: string,
     model?: { desc?: string | null; thumbnailUrl?: string; resourceName?: string },
   ) => {
-    const desc = typeof model?.desc === 'string' ? model.desc : '';
+    // 用 stripHtml 清洗掉后端返回的 <p></p> 等 HTML 标签，下游拿到的就是纯文本
+    const desc = stripHtml(model?.desc);
     update({
       modelName: selectedModelName,
       modelDisplayName: model?.resourceName || selectedModelName,
@@ -50,18 +51,6 @@ const GuomanModelSelectorNode = ({ id, data, selected }: NodeProps) => {
       // 同时更新 text 字段，让 useUpstreamMaterials 能识别这个文本输出
       text: selectedModelName,
       prompt: selectedModelName,
-    });
-  };
-
-  // ========== 清除模型 ==========
-  const handleClearModel = () => {
-    update({
-      modelName: '',
-      modelDisplayName: '',
-      thumbnailUrl: '',
-      modelDesc: '',
-      text: '',
-      prompt: '',
     });
   };
 
@@ -108,17 +97,18 @@ const GuomanModelSelectorNode = ({ id, data, selected }: NodeProps) => {
         {/* 模型预览区 */}
         {modelName ? (
           <div style={{ marginBottom: 8 }}>
-            {/* 缩略图 */}
+            {/* 模型预览（完整展示, contain 不裁切） */}
             {thumbnailUrl && (
               <div style={{
-                width: '100%', height: 120, borderRadius: 8, overflow: 'hidden',
+                width: '100%', height: 220, borderRadius: 8, overflow: 'hidden',
                 marginBottom: 8, background: isDark ? '#1a1a1f' : '#f0f0f0',
                 border: `1px solid ${inputBorder}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <img
                   src={thumbnailUrl}
                   alt={modelDisplayName}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
               </div>
@@ -139,19 +129,6 @@ const GuomanModelSelectorNode = ({ id, data, selected }: NodeProps) => {
                 </div>
               )}
             </div>
-
-            {/* 清除按钮 */}
-            <button
-              onClick={handleClearModel}
-              style={{
-                width: '100%', height: 28, marginTop: 6, borderRadius: 6,
-                border: `1px solid ${inputBorder}`, background: 'transparent',
-                color: mutedColor, fontSize: 11, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              }}
-            >
-              <X size={12} /> 清除选择
-            </button>
           </div>
         ) : (
           /* 未选择状态 */

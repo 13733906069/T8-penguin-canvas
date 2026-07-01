@@ -10,8 +10,9 @@
  *   1644::value      — 是否随机动作（默认关闭，内部处理）
  *   1646::text       — 动作提示词（多行文本）
  *   1496::text       — 背景提示词（多行文本）
- *   577::width       — 宽度（数字）
- *   577::height      — 高度（数字）
+ *   577::width       — 宽度（数字，默认 720，SD/Flux 要求 8 的倍数）
+ *   577::height      — 高度（数字，默认 1280，SD/Flux 要求 8 的倍数）
+ *   577::batch_size  — 批次大小（数字，默认 1：一次生成几张图；上调会增加积分消耗）
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useNodeConnections, useNodesData, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
@@ -23,7 +24,7 @@ import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
-import GuomanModelPickerModal from '../GuomanModelPickerModal';
+import GuomanModelPickerModal, { stripHtml } from '../GuomanModelPickerModal';
 
 // ========== 固定配置 ==========
 const WEBAPP_ID = '2066139220363800578';
@@ -62,6 +63,9 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
 
   const appInfo = (data as any).appInfo || null;
   const paramValues: Record<string, { value: string; sourceFromUpstream?: boolean }> = (data as any).paramValues || {};
+  // 用 ref 跟踪最新 paramValues，避免 onSelect 和 useEffect 中闭包陈旧导致字段丢失
+  const paramValuesRef = useRef(paramValues);
+  paramValuesRef.current = paramValues;
   const instanceType: string = (data as any).instanceType || 'plus';
   const status: string = (data as any).status || 'idle';
   const taskId: string = (data as any).taskId || '';
@@ -124,57 +128,36 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
     return paramValues[paramKey(nodeId, fieldName)]?.value ?? fallback;
   };
 
-  // ========== 监听上游模型选择器输出，自动填充模型字段 ==========
+  // ========== 监听上游模型选择器输出，同步模型字段 + 角色外观 ==========
+  // 合并成一个 useEffect：分两个会导致连续两次 setNodes 调用互相覆盖（race condition），
+  // 表现为组件渲染时 model1569 拿不到上游新值。CharNode3 没有这个问题是因为它只有模型同步。
+  // 依赖 upstreamModelName / upstreamModelDesc（useMemo 派生值），与 CharNode3 风格一致。
   useEffect(() => {
     const modelKey = paramKey('1569', 'lora_name');
-
-    if (hasModelSelectorUpstream && upstreamModelName) {
-      // 有上游模型选择器连接，强制使用上游模型
-      const currentModel = paramValues[modelKey]?.value;
-      if (currentModel !== upstreamModelName) {
-        update({ paramValues: { ...paramValues, [modelKey]: { value: upstreamModelName, sourceFromUpstream: true } } });
-        logBus.info(`从上游模型选择器获取模型: ${upstreamModelName}`, src);
-      }
-    } else if (!hasModelSelectorUpstream) {
-      // 没有上游模型选择器连接，清除来自上游的模型标记
-      const modelData = paramValues[modelKey];
-      if (modelData?.sourceFromUpstream) {
-        update({ paramValues: { ...paramValues, [modelKey]: { value: modelData.value, sourceFromUpstream: false } } });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasModelSelectorUpstream, upstreamModelName]);
-
-  // ========== 监听上游模型选择器的角色外观描述（顶层 desc），自动填充外观字段 ==========
-  // 外观字段节点：1643::text。当 desc 为空或 "1.0" 时，保持默认占位符（extractDefaultValue）。
-  useEffect(() => {
     const appearanceKey = paramKey('1643', 'text');
-    const currentAppearance = paramValues[appearanceKey];
 
-    if (hasModelSelectorUpstream && upstreamModelDesc) {
-      // 上游提供了有效 desc，覆盖外观并标记为来自上游
-      if (currentAppearance?.value !== upstreamModelDesc) {
-        update({
-          paramValues: {
-            ...paramValues,
-            [appearanceKey]: { value: upstreamModelDesc, sourceFromUpstream: true },
-          },
-        });
-        logBus.info(`从上游模型选择器获取角色外观: ${upstreamModelDesc.slice(0, 30)}…`, src);
-      }
-    } else if (!hasModelSelectorUpstream || !upstreamModelDesc) {
-      // 没有 selector 连接，或者 desc 为空/"1.0"，清除上游标记回到默认
-      if (currentAppearance?.sourceFromUpstream) {
-        update({
-          paramValues: {
-            ...paramValues,
-            [appearanceKey]: { value: currentAppearance.value, sourceFromUpstream: false },
-          },
-        });
-      }
+    if (!hasModelSelectorUpstream) return;
+
+    // 用 ref 读最新 paramValues（避免连写两个字段时第二次拿到第一次没合并的旧值）
+    const pv = paramValuesRef.current;
+    const next: Record<string, { value: string; sourceFromUpstream?: boolean }> = { ...pv };
+    let changed = false;
+
+    if (upstreamModelName && pv[modelKey]?.value !== upstreamModelName) {
+      next[modelKey] = { value: upstreamModelName, sourceFromUpstream: true };
+      changed = true;
+    }
+    if (upstreamModelDesc && pv[appearanceKey]?.value !== upstreamModelDesc) {
+      next[appearanceKey] = { value: upstreamModelDesc, sourceFromUpstream: true };
+      changed = true;
+    }
+    if (changed) {
+      update({ paramValues: next });
+      if (next[modelKey]) logBus.info(`从上游模型选择器获取模型: ${next[modelKey].value}`, src);
+      if (next[appearanceKey]) logBus.info(`从上游模型选择器获取角色外观: ${(next[appearanceKey].value || '').slice(0, 30)}…`, src);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasModelSelectorUpstream, upstreamModelDesc]);
+  }, [hasModelSelectorUpstream, upstreamModelName, upstreamModelDesc]);
 
   // ========== 拉取应用信息 ==========
   const handleFetchInfo = async () => {
@@ -512,14 +495,15 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
           );
         })}
 
-        {/* 宽度/高度 */}
+        {/* 宽度/高度（577::EmptyLatentImage.width / .height） */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          {nodeInfoList.filter((it: any) => it.nodeId === '577').map((it: any, i: number) => {
+          {nodeInfoList.filter((it: any) => it.nodeId === '577' && (it.fieldName === 'width' || it.fieldName === 'height')).map((it: any, i: number) => {
             const k = paramKey(it.nodeId, it.fieldName);
             const value = paramValues[k]?.value ?? extractDefaultValue(it);
+            const label = it.fieldName === 'width' ? '宽度' : '高度';
             return (
               <div key={`dim-${i}`} style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: textColor, marginBottom: 3 }}>{it.fieldName === 'width' ? '宽度' : '高度'}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: textColor, marginBottom: 3 }}>{label}</div>
                 <input type="number" value={value} onChange={(e) => updateParam(k, e.target.value)} min={16} max={16384} step={8}
                   style={{ width: '100%', height: 28, padding: '0 8px', fontSize: 11, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, outline: 'none', boxSizing: 'border-box' }}
                 />
@@ -527,6 +511,25 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
             );
           })}
         </div>
+
+        {/* 批次大小（577::EmptyLatentImage.batch_size，一次生成几张图）
+            fallback 到 1：后端未返回字段或用户清空时，UI 显示 1（最常见且不浪费积分） */}
+        {nodeInfoList.filter((it: any) => it.nodeId === '577' && it.fieldName === 'batch_size').map((it: any, i: number) => {
+          const k = paramKey(it.nodeId, it.fieldName);
+          const value = (paramValues[k]?.value ?? extractDefaultValue(it)) || '1';
+          return (
+            <div key={`batch-${i}`} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>批次大小</span>
+                <span style={{ fontSize: 9, color: mutedColor }}>(一次生成几张)</span>
+                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#577</span>
+              </div>
+              <input type="number" value={value} onChange={(e) => updateParam(k, e.target.value)} min={1} max={16} step={1}
+                style={{ width: '100%', height: 28, padding: '0 8px', fontSize: 11, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+          );
+        })}
 
         {/* 实例类型 */}
         <div style={{ marginBottom: 8 }}>
@@ -593,7 +596,19 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
       <GuomanModelPickerModal
         open={modelPickerOpen}
         onClose={() => setModelPickerOpen(false)}
-        onSelect={(modelName) => updateParam(paramKey('1569', 'lora_name'), modelName)}
+        onSelect={(modelName, model) => {
+          // 合并成一次 update，避免两次 update 之间闭包陈旧导致第一次的更新被第二次覆盖
+          const next = { ...paramValuesRef.current };
+          // 1. 更新角色模型名
+          next[paramKey('1569', 'lora_name')] = { value: modelName, sourceFromUpstream: false };
+          // 2. 如果模型带有 desc（去除 HTML 后非空），自动填充到角色外观字段
+          //    无 selector 上游时也能让外观跟着模型走，体验一致
+          const desc = stripHtml(model?.desc);
+          if (desc && desc !== '1.0') {
+            next[paramKey('1643', 'text')] = { value: desc, sourceFromUpstream: true };
+          }
+          update({ paramValues: next });
+        }}
         currentModel={getVal('1569', 'lora_name')}
       />
     </div>

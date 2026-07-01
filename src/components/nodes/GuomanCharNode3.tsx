@@ -6,7 +6,7 @@
  *
  * 参数：
  *   923::image      — 上传图像（单张图片上传）
- *   917::lora_name  — 角色模型（文本输入 + 模型选择器）
+ *   948::lora_name  — 角色模型（文本输入 + 模型选择器）
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useNodeConnections, useNodesData, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
@@ -110,7 +110,7 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
 
   // ========== 监听上游模型选择器输出，自动填充模型字段 ==========
   useEffect(() => {
-    const modelKey = paramKey('917', 'lora_name');
+    const modelKey = paramKey('948', 'lora_name');
 
     if (hasModelSelectorUpstream && upstreamModelName) {
       // 有上游模型选择器连接，强制使用上游模型
@@ -295,7 +295,17 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
         let fieldValue: any = paramValues[k]?.value ?? extractDefaultValue(it);
         const vt = inferValueType(it?.fieldType);
         if (vt === 'image' || vt === 'video' || vt === 'audio') {
-          if (fieldValue && /^https?:\/\//i.test(fieldValue)) {
+          // 支持多种 URL 格式：http(s)、本地路径（/files/output/、/files/input/、/output/、/input/）
+          // 本地路径会先通过 uploadRhAsset 转成 RH 云端文件名再提交
+          const isUrlLike =
+            /^https?:\/\//i.test(fieldValue || '') ||
+            (typeof fieldValue === 'string' && (
+              fieldValue.startsWith('/files/output/') ||
+              fieldValue.startsWith('/output/') ||
+              fieldValue.startsWith('/files/input/') ||
+              fieldValue.startsWith('/input/')
+            ));
+          if (fieldValue && isUrlLike) {
             try { const r = await uploadRhAsset(fieldValue); fieldValue = r.fileName; } catch {}
           }
         } else if (vt === 'number') {
@@ -483,7 +493,7 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
         </div>
 
         {/* 角色模型（带模型选择器） */}
-        {nodeInfoList.filter((it: any) => it.nodeId === '917').map((it: any, i: number) => {
+        {nodeInfoList.filter((it: any) => it.nodeId === '948').map((it: any, i: number) => {
           const k = paramKey(it.nodeId, it.fieldName);
           const value = paramValues[k]?.value ?? extractDefaultValue(it);
           const isFromUpstream = paramValues[k]?.sourceFromUpstream === true;
@@ -492,7 +502,7 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>角色模型</span>
                 {isFromUpstream && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: 'rgba(56,189,248,.15)', color: '#38bdf8', fontWeight: 600 }}>上游</span>}
-                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#917</span>
+                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#948</span>
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
                 <input type="text" value={value} onChange={(e) => updateParam(k, e.target.value)} placeholder={it.description} disabled={hasModelSelectorUpstream}
@@ -573,8 +583,8 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
       <GuomanModelPickerModal
         open={modelPickerOpen}
         onClose={() => setModelPickerOpen(false)}
-        onSelect={(modelName) => updateParam(paramKey('917', 'lora_name'), modelName)}
-        currentModel={getVal('917', 'lora_name')}
+        onSelect={(modelName) => updateParam(paramKey('948', 'lora_name'), modelName)}
+        currentModel={getVal('948', 'lora_name')}
       />
     </div>
   );
