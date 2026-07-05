@@ -303,30 +303,25 @@ const GuomanModelLoopSelectorNode = ({ id, data, selected }: NodeProps) => {
       setVisibleError('还没有收藏模型，先在模型库里点星标收藏几个');
       return;
     }
-    // 优先从 randomAllPool 里筛出收藏 id 对应的 record
-    let favRecords = randomAllPool.filter((m) => favoriteIds.includes(m.id));
-    // 如果内存里没有，按收藏 ID 批量查询后端
-    if (favRecords.length === 0) {
-      setRandomAllLoading(true);
-      try {
-        const result = await getGuomanModelsByIds(favoriteIds);
-        if (!result.success) throw new Error(result.error || '获取收藏模型失败');
-        favRecords = result.data.records || [];
-      } catch (e: any) {
-        setVisibleError(e?.message || '获取收藏模型失败');
-        logBus.error(`随机（收藏）失败: ${e?.message}`, src);
+    setRandomAllLoading(true);
+    try {
+      // 直接按收藏 ID 从后端查询对应模型（不依赖 randomAllPool 是否加载过）
+      const result = await getGuomanModelsByIds(favoriteIds);
+      if (!result.success) throw new Error(result.error || '获取收藏模型失败');
+      const favRecords = result.data.records || [];
+      if (favRecords.length === 0) {
+        setVisibleError('未能从服务器找到收藏的模型，请先在模型库确认收藏有效');
         return;
-      } finally {
-        setRandomAllLoading(false);
       }
+      const picked = sampleRandomFavorites(favRecords, count);
+      update({ selectedItems: picked });
+      logBus.info(`随机（收藏）已抽取 ${picked.length} 个模型（含专属外观）`, src);
+    } catch (e: any) {
+      setVisibleError(e?.message || '获取收藏模型失败');
+      logBus.error(`随机（收藏）失败: ${e?.message}`, src);
+    } finally {
+      setRandomAllLoading(false);
     }
-    if (favRecords.length === 0) {
-      setVisibleError('未能从服务器找到收藏的模型，请先在模型库确认收藏有效');
-      return;
-    }
-    const picked = sampleRandomFavorites(favRecords, count);
-    update({ selectedItems: picked });
-    logBus.info(`随机（收藏）已抽取 ${picked.length} 个模型（含专属外观）`, src);
   };
 
   // ========== 移除单个已选模型 ==========

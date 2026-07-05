@@ -185,8 +185,11 @@ router.post('/by-ids', async (req, res) => {
       return res.json({ success: true, data: { records: [] } });
     }
 
+    // 用足够大的 size 一次性拉回当前用户的全部 LORA，再在内存中过滤目标 ids。
+    // RunningHub 的 size 参数通常有服务端上限，设 1000 与 /all 接口保持一致。
+    const HARDCAP = 1000;
     const payload = {
-      size: ids.length,
+      size: HARDCAP,
       current: 1,
       systemResource: false,
       resourceType: 'LORA',

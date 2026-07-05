@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Star, StarOff, Search, X, Loader2, Palette, ImageIcon, Play, Maximize2, Minimize2 } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useGuomanFavoritesStore } from '../stores/guomanFavorites';
-import { getGuomanModels, type GuomanModel } from '../services/api';
+import { getGuomanModels, getGuomanModelsByIds, type GuomanModel } from '../services/api';
 
 interface GuomanModelDrawerProps {
   open: boolean;
@@ -30,6 +30,11 @@ export default function GuomanModelDrawer({ open, onClose, onAddNode }: GuomanMo
 
   // Tab 切换
   const [activeTab, setActiveTab] = useState<TabKey>('all');
+
+  // 收藏模型数据（单独查询，避免依赖全部模型分页加载）
+  const [favoriteModels, setFavoriteModels] = useState<GuomanModel[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [favoritesError, setFavoritesError] = useState<string | null>(null);
 
   // 搜索
   const [searchText, setSearchText] = useState('');
@@ -96,12 +101,46 @@ export default function GuomanModelDrawer({ open, onClose, onAddNode }: GuomanMo
     }
   }, [debouncedSearch, loading]);
 
+  // 加载收藏模型（一次性按 ID 查询，不依赖分页）
+  const loadFavorites = useCallback(async () => {
+    if (favoriteIds.length === 0) {
+      setFavoriteModels([]);
+      setFavoritesError(null);
+      return;
+    }
+    setFavoritesLoading(true);
+    setFavoritesError(null);
+    try {
+      const result = await getGuomanModelsByIds(favoriteIds);
+      if (result.success) {
+        const records = result.data.records || [];
+        // 保持收藏顺序
+        const idToIndex = new Map(favoriteIds.map((id, idx) => [id, idx]));
+        records.sort((a, b) => (idToIndex.get(a.id) ?? 0) - (idToIndex.get(b.id) ?? 0));
+        setFavoriteModels(records);
+      } else {
+        setFavoritesError(result.error || '获取收藏模型失败');
+      }
+    } catch {
+      setFavoritesError('加载收藏失败，请稍后重试');
+    } finally {
+      setFavoritesLoading(false);
+    }
+  }, [favoriteIds]);
+
   // 初始加载 / 搜索重置后加载第一页
   useEffect(() => {
     if (open && models.length === 0 && !loading) {
       loadPage(1);
     }
   }, [open, models.length, loading, loadPage]);
+
+  // 切换到收藏 tab 或打开抽屉时加载收藏模型
+  useEffect(() => {
+    if (open && activeTab === 'favorites') {
+      loadFavorites();
+    }
+  }, [open, activeTab, loadFavorites]);
 
   // 无限滚动：观察 sentinel 元素
   useEffect(() => {
@@ -121,13 +160,10 @@ export default function GuomanModelDrawer({ open, onClose, onAddNode }: GuomanMo
     return () => observer.disconnect();
   }, [open, activeTab, loading, page, totalPages, loadPage]);
 
-  // 收藏模型列表（从全部模型中过滤）
-  const favoriteModels = useMemo(() => {
-    return models.filter((m) => favoriteIds.includes(m.id));
-  }, [models, favoriteIds]);
-
   // 当前 tab 显示的模型
   const displayModels = activeTab === 'all' ? models : favoriteModels;
+  const isDisplayLoading = activeTab === 'all' ? loading : favoritesLoading;
+  const displayError = activeTab === 'all' ? error : favoritesError;
 
   // 点击"去使用"按钮 → 创建国漫文生图节点
   const handleUseModel = (model: GuomanModel) => {
@@ -338,14 +374,22 @@ export default function GuomanModelDrawer({ open, onClose, onAddNode }: GuomanMo
         {/* ====== 模型网格 ====== */}
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }}>
           {/* 空状态 */}
-          {!loading && displayModels.length === 0 && (
+          {!isDisplayLoading && displayModels.length === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
               <ImageIcon size={40} style={{ color: mutedText }} />
               <span style={{ fontSize: 12, color: mutedText }}>
                 {activeTab === 'favorites'
                   ? '还没有收藏模型，点击星标收藏吧'
-                  : error || '没有找到模型'}
+                  : displayError || '没有找到模型'}
               </span>
+            </div>
+          )}
+
+          {/* 加载中 */}
+          {isDisplayLoading && displayModels.length === 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
+              <Loader2 size={28} style={{ color: mutedText, animation: 'spin 1s linear infinite' }} />
+              <span style={{ fontSize: 12, color: mutedText }}>加载中…</span>
             </div>
           )}
 
@@ -452,7 +496,7 @@ export default function GuomanModelDrawer({ open, onClose, onAddNode }: GuomanMo
           </div>
 
           {/* 加载指示器 */}
-          {loading && (
+          {isDisplayLoading && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 0', gap: 8 }}>
               <Loader2 size={16} style={{ color: mutedText, animation: 'spin 1s linear infinite' }} />
               <span style={{ fontSize: 12, color: mutedText }}>加载中...</span>
