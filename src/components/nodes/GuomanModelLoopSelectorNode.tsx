@@ -26,6 +26,7 @@ import { logBus } from '../../stores/logs';
 import { topologicalSort } from '../../utils/topologicalSort';
 import { getGuomanModelsAll, type GuomanModel } from '../../services/api';
 import GuomanModelPickerModal from '../GuomanModelPickerModal';
+import { attachWheelBlock } from '../../utils/wheelBlock';
 
 // ========== 固定配置 ==========
 const APP_NAME = '清风-国漫角色模型循环选择器';
@@ -441,8 +442,8 @@ const GuomanModelLoopSelectorNode = ({ id, data, selected }: NodeProps) => {
         const nextResults = selectedItems.map((it, idx) => ({
           model: it.name,
           status: idx < i ? (iterationResults[idx]?.status || 'success')
-            : idx === i ? ((chainOk && thisImages.length > 0 ? 'success' : 'failed') as const)
-            : 'pending' as const,
+            : idx === i ? (chainOk && thisImages.length > 0 ? 'success' : 'failed')
+            : 'pending',
         }));
         update({
           iterationResults: nextResults,
@@ -529,7 +530,9 @@ const GuomanModelLoopSelectorNode = ({ id, data, selected }: NodeProps) => {
       </div>
 
       {/* 内容区 (可滚动，运行按钮固定在底部) */}
-      <div style={{ padding: '10px 12px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
+      <div
+        style={{ padding: '10px 12px', overflowY: 'auto', flex: 1, minHeight: 0 }}
+      >
         {/* 模式选择 */}
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: textColor, marginBottom: 4 }}>选择模式</div>
@@ -655,11 +658,14 @@ const GuomanModelLoopSelectorNode = ({ id, data, selected }: NodeProps) => {
             <div style={{ fontSize: 10, color: mutedColor, marginBottom: 4 }}>
               已选模型（{selectedItems.length}）
             </div>
-            <div style={{
-              maxHeight: 160, overflowY: 'auto',
-              background: isDark ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.02)',
-              border: `1px solid ${inputBorder}`, borderRadius: 6, padding: 4,
-            }}>
+            <div
+              ref={(el) => { if (el) attachWheelBlock(el); }}
+              style={{
+                maxHeight: 160, overflowY: 'auto',
+                background: isDark ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.02)',
+                border: `1px solid ${inputBorder}`, borderRadius: 6, padding: 4,
+              }}
+            >
               {selectedItems.map((it, idx) => {
                 const r = iterationResults[idx];
                 const resultStatus = r?.status || 'pending';
@@ -717,82 +723,6 @@ const GuomanModelLoopSelectorNode = ({ id, data, selected }: NodeProps) => {
                       >
                         <X size={10} />
                       </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* 已生成产物缩略图网格 (循环节点内置聚合显示，方便一眼看完)
-            适配 string[][]：每轮对应一个格子，内部再 2x2 缩略图（>4 张 +N 角标） */}
-        {iterationImages.length > 0 && iterationImages.some((arr: string[]) => Array.isArray(arr) && arr.length > 0) && (
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 10, color: mutedColor, marginBottom: 4 }}>
-              已生成产物（{iterationImages.reduce((s: number, arr: string[]) => s + (Array.isArray(arr) ? arr.length : 0), 0)} 张 / 共 {iterationImages.length} 轮）
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4 }}>
-              {iterationImages.map((imgs: string[], idx: number) => {
-                const total = imgs.length;
-                const visible = imgs.slice(0, 4);
-                const more = total - visible.length;
-                return (
-                  <div
-                    key={`gen-${idx}`}
-                    style={{
-                      borderRadius: 6, overflow: 'hidden',
-                      border: idx === currentIndex
-                        ? `2px solid ${COLOR}`
-                        : `1px solid ${inputBorder}`,
-                      background: isDark ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.04)',
-                    }}
-                    title={selectedItems[idx]?.name || `第 ${idx + 1} 轮`}
-                  >
-                    {/* 轮次标签 + 数量 */}
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '2px 6px', fontSize: 9, color: mutedColor,
-                      background: idx === currentIndex
-                        ? (isDark ? 'rgba(217,119,6,.16)' : 'rgba(217,119,6,.06)')
-                        : 'transparent',
-                    }}>
-                      <span>第 {idx + 1} 轮</span>
-                      <span style={{ fontWeight: 700, color: total > 0 ? (isDark ? '#fde68a' : '#b45309') : mutedColor }}>
-                        {total} 张
-                      </span>
-                    </div>
-                    {/* 缩略图小网格 (2x2) */}
-                    {total > 0 ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1, aspectRatio: '1 / 1' }}>
-                        {visible.map((url, j) => (
-                          <div key={j} style={{ position: 'relative', overflow: 'hidden', background: '#000' }}>
-                            <img
-                              src={url} alt="" loading="lazy"
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                            />
-                            {j === 3 && more > 0 && (
-                              <div style={{
-                                position: 'absolute', inset: 0,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: 'rgba(0,0,0,.55)', color: '#fff',
-                                fontSize: 12, fontWeight: 700,
-                              }}>
-                                +{more}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{
-                        aspectRatio: '1 / 1',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 10, color: mutedColor, textAlign: 'center', padding: 6,
-                      }}>
-                        {idx === currentIndex ? '生成中…' : '暂无产物'}
-                      </div>
                     )}
                   </div>
                 );

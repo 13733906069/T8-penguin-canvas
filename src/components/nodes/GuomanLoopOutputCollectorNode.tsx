@@ -10,65 +10,17 @@
  */
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Handle, Position, useNodeConnections, useNodesData, useReactFlow, type NodeProps, type Node } from '@xyflow/react';
-import { LayoutGrid, X, ZoomIn, ChevronDown, PackageOpen } from 'lucide-react';
+import { LayoutGrid, ZoomIn, ChevronDown, PackageOpen, Package } from 'lucide-react';
 import { useThemeStore } from '../../stores/theme';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { logBus } from '../../stores/logs';
+import ImageFullscreenModal from '../ImageFullscreenModal';
 
 // ========== 固定配置 ==========
 const APP_NAME = '清风-国漫循环输出收集器';
 const COLOR = '#10b981'; // emerald-500
 
 type SelectedItem = { name: string; desc: string };
-
-// ========== 大图预览弹窗（轻量，原生 img 即可） ==========
-// 关键: objectFit: 'contain' + 紧凑 padding，让浏览器在约束容器内完整显示原图
-//       （不会按 cover 方式裁剪，而是按比例 contain 留黑边）
-function PreviewModal({ url, onClose }: { url: string; onClose: () => void }) {
-  const { theme } = useThemeStore();
-  const isDark = theme === 'dark';
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: isDark ? 'rgba(0,0,0,.92)' : 'rgba(0,0,0,.88)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 8,
-      }}
-    >
-      <button
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-        style={{
-          position: 'absolute', top: 12, right: 12,
-          width: 36, height: 36, borderRadius: 10,
-          border: 'none', background: 'rgba(255,255,255,.12)',
-          color: '#fff', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1,
-        }}
-        title="关闭"
-      >
-        <X size={18} />
-      </button>
-      {/* 关闭按钮之外的图片：用 contain 保证不被裁剪，留黑边即可 */}
-      <img
-        src={url}
-        alt=""
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: 'calc(100vw - 16px)',
-          maxHeight: 'calc(100vh - 16px)',
-          width: 'auto',
-          height: 'auto',
-          objectFit: 'contain',
-          borderRadius: 8,
-          boxShadow: '0 20px 60px rgba(0,0,0,.5)',
-        }}
-      />
-    </div>
-  );
-}
 
 // ========== 主组件 ==========
 const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
@@ -122,9 +74,21 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
   const rf = useReactFlow();
   const src = `[${APP_NAME}]`;
 
+  /** 提取指定轮次的图为 OutputNode */
+  const handleExtractRound = (roundIdx: number) => {
+    const imgs = iterationImages[roundIdx];
+    if (!Array.isArray(imgs) || imgs.length === 0) {
+      setVisibleError(`第 ${roundIdx + 1} 轮没有可提取的图像`);
+      return;
+    }
+    const modelName = selectedItems[roundIdx]?.name || `第 ${roundIdx + 1} 轮`;
+    const flat = imgs.map((url) => ({ url, round: roundIdx, modelName }));
+    createOutputNodesFromFlat(flat);
+    logBus.success(`已提取第 ${roundIdx + 1} 轮 ${flat.length} 张图为输出节点 · ${modelName}`, src);
+  };
+
   /** 把所有图逐个提取为 OutputNode，放到循环收集器节点右侧 */
   const handleBatchExtract = () => {
-    // 从所有轮次中按顺序提取所有图
     const flat: Array<{ url: string; round: number; modelName: string }> = [];
     iterationImages.forEach((imgs: string[], idx: number) => {
       const modelName = selectedItems[idx]?.name || `第 ${idx + 1} 轮`;
@@ -136,7 +100,11 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
       setVisibleError('没有可提取的图像');
       return;
     }
-    // 从 RF store 拿到当前全部节点，计算本节点位置偏移
+    createOutputNodesFromFlat(flat);
+    logBus.success(`已提取 ${flat.length} 张图为输出节点 · 第 ${flat[0].modelName} 等`, src);
+  };
+
+  const createOutputNodesFromFlat = (flat: Array<{ url: string; round: number; modelName: string }>) => {
     const allNodes = rf.getNodes();
     const myNode = allNodes.find((n) => n.id === id);
     if (!myNode) return;
@@ -151,7 +119,6 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
     const CARD_W = 200;
     const CARD_H = 260;
     const GAP = 16;
-    // 从本节点右侧开始排
     const startX = myRect.x + myRect.w + 40;
     const startY = myRect.y;
     const newNodes: Node[] = flat.map((item, index) => {
@@ -159,10 +126,6 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
       const row = Math.floor(index / COLS);
       const x = startX + col * (CARD_W + GAP);
       const y = startY + row * (CARD_H + GAP);
-      // v1.5.0 关键: OutputNode 的"独立模式"读 directImageUrl 字段（第 359-364 行的 direct 字段收集），
-      // 而不是从上游节点读 imageUrl。所以给新建的节点设置 directImageUrl 才能在没有上游连接时显示图。
-      // 同时也设 imageUrls 数组，让 OutputNode 知道这有 1 个图（启用单图布局）。
-      // 加一条收集器→OutputNode 的连线，让画布看得出关联。
       const newId = `loop-out-${Date.now()}-${index}`;
       const outputEdge = {
         id: `loop-out-edge-${newId}`,
@@ -187,7 +150,6 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
       } as Node;
     });
     rf.addNodes(newNodes);
-    logBus.success(`已提取 ${flat.length} 张图为输出节点 · 第 ${flat[0].modelName} 等`, src);
   };
 
   // ========== 主题 ==========
@@ -348,6 +310,33 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
                 }}>
                   {totalThisRound} 张
                 </span>
+                {/* 提取本轮按钮 */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setVisibleError(null);
+                    handleExtractRound(idx);
+                  }}
+                  disabled={totalThisRound === 0}
+                  title="只提取本轮产物为输出节点"
+                  style={{
+                    marginLeft: 4,
+                    height: 20, padding: '0 8px', borderRadius: 4,
+                    border: `1px solid ${COLOR}`,
+                    background: totalThisRound === 0
+                      ? (isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.04)')
+                      : 'rgba(16,185,129,.12)',
+                    color: totalThisRound === 0 ? mutedColor : '#34d399',
+                    fontSize: 10, fontWeight: 700,
+                    cursor: totalThisRound === 0 ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 3,
+                    opacity: totalThisRound === 0 ? 0.5 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Package size={10} />
+                  提取本轮
+                </button>
               </button>
 
               {/* 该轮的图像网格 (折叠时隐藏) */}
@@ -370,27 +359,38 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
                           style={{
                             position: 'relative', aspectRatio: '1 / 1',
                             borderRadius: 4, overflow: 'hidden', cursor: 'zoom-in',
-                            background: '#000',
+                            background: isDark ? '#0a0a0a' : '#f0f0f0',
+                            border: `1px solid ${inputBorder}`,
                           }}
                           title="点击查看大图"
                         >
                           <img
                             src={url} alt="" loading="lazy"
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            style={{
+                              width: '100%', height: '100%',
+                              objectFit: 'contain', display: 'block',
+                            }}
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
-                          <div style={{
-                            position: 'absolute', inset: 0,
-                            background: 'linear-gradient(180deg, transparent 60%, rgba(0,0,0,.4))',
-                            opacity: 0, transition: 'opacity .15s',
-                            display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 4,
-                            color: '#fff', fontSize: 9, fontWeight: 700,
-                          }}
-                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}
+                          {/* 右下角放大镜按钮：点击用 OutputNode 同款全屏大图 */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewUrl(url);
+                            }}
+                            style={{
+                              position: 'absolute', right: 4, bottom: 4,
+                              width: 24, height: 24, borderRadius: 5,
+                              border: 'none',
+                              background: 'rgba(0,0,0,.55)',
+                              color: '#fff', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              padding: 0,
+                            }}
+                            title="查看大图"
                           >
-                            <ZoomIn size={11} />
-                          </div>
+                            <ZoomIn size={12} />
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -402,8 +402,8 @@ const GuomanLoopOutputCollectorNode = ({ id, data, selected }: NodeProps) => {
         })}
       </div>
 
-      {/* 大图预览弹窗 */}
-      {previewUrl && <PreviewModal url={previewUrl} onClose={() => setPreviewUrl(null)} />}
+      {/* 全屏查看大图：与 OutputNode 同款 ImageFullscreenModal */}
+      {previewUrl && <ImageFullscreenModal url={previewUrl} onClose={() => setPreviewUrl(null)} />}
     </div>
   );
 };

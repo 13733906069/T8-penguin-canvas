@@ -72,11 +72,13 @@ export type NodeType =
   | 'topaz-video-upscale'
   // 3D (1)
   | 'panorama-3d'
-  // 国漫角色制作 (4)
+  // 国漫角色制作 (6)
   | 'guoman-char-1'
   | 'guoman-char-2'
   | 'guoman-char-3'
   | 'guoman-model-selector'
+  | 'guoman-model-loop-selector'
+  | 'guoman-loop-output-collector'
   // Input/Output 素材 (2) - 上传素材(图像/视频/音频三合一) + 输出素材(文本/图像/视频/音频预览)
   | 'upload'
   | 'material-set'

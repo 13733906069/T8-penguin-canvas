@@ -8,13 +8,14 @@ import {
   type NodeProps,
   type Node,
 } from '@xyflow/react';
-import { Box, MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check, Edit3, GitCompare, Trash2 } from 'lucide-react';
+import { Box, MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check, Edit3, GitCompare, Trash2, Maximize2, X } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import { PORT_COLOR } from '../../config/portTypes';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
 import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
+import ImageFullscreenModal from '../ImageFullscreenModal';
 import ImageCompareModal from '../ImageCompareModal';
 import CollectionSplitButton from '../CollectionSplitButton';
 import ImageHoverPreview from '../ImageHoverPreview';
@@ -126,6 +127,8 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   // 拖角后由 ResizableCorners onResize 同步具体 px — 保证节点始终有具体尺寸 → wrapper measured 准确
   // → keepAspectRatio 生效 (同比例缩放) + handleBounds 准确 (连线稳定)
   const [size, setSize] = useState<{ w: number; h?: number }>({ w: 320 });
+  // 全屏查看器状态：当前正在放大查看的图 URL（点工具栏关闭/背景即清空）
+  const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
 
   // 订阅连入本节点 target handle 的连接变化
   const connections = useNodeConnections({ id, handleType: 'target' });
@@ -1266,6 +1269,28 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
                       >
                         <Trash2 size={collected.images.length >= 2 ? 10 : 13} />
                       </button>
+                      {/* 查看大图按钮：删除按钮下面的第 4 个按钮，全屏展示并支持旋转/缩放/平移 */}
+                      <button
+                        type="button"
+                        className="nodrag nopan t8-btn t8-mini-icon-button t8-material-fullscreen-button t8-material-action-button p-0 shadow-md transition"
+                        title={`查看大图 ${i + 1}（支持旋转/缩放/平移）`}
+                        aria-label={`查看大图 ${i + 1}`}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setFullscreenUrl(u);
+                        }}
+                      >
+                        <Maximize2 size={collected.images.length >= 2 ? 10 : 13} />
+                      </button>
                     </div>
                     <SmartImage
                       src={u}
@@ -1539,6 +1564,13 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           resultUrl={compareState.resultUrl}
           inputCandidates={compareState.candidates}
           onClose={() => setCompareState(null)}
+        />
+      )}
+      {/* 全屏查看大图：删除按钮下面的第 4 个 Maximize2 触发；支持旋转/缩放/平移 */}
+      {fullscreenUrl && (
+        <ImageFullscreenModal
+          url={fullscreenUrl}
+          onClose={() => setFullscreenUrl(null)}
         />
       )}
     </div>
