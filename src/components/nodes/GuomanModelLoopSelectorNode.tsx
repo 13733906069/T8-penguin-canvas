@@ -24,7 +24,7 @@ import { useRunBusStore } from '../../stores/runBus';
 import { useGuomanFavoritesStore } from '../../stores/guomanFavorites';
 import { logBus } from '../../stores/logs';
 import { topologicalSort } from '../../utils/topologicalSort';
-import { getGuomanModelsAll, type GuomanModel } from '../../services/api';
+import { getGuomanModelsAll, getGuomanModelsByIds, type GuomanModel } from '../../services/api';
 import GuomanModelPickerModal from '../GuomanModelPickerModal';
 import { attachWheelBlock } from '../../utils/wheelBlock';
 
@@ -297,16 +297,31 @@ const GuomanModelLoopSelectorNode = ({ id, data, selected }: NodeProps) => {
   };
 
   // ========== 随机收藏 ==========
-  const handleRandomFavorites = () => {
+  const handleRandomFavorites = async () => {
     setVisibleError(null);
     if (favoriteIds.length === 0) {
       setVisibleError('还没有收藏模型，先在模型库里点星标收藏几个');
       return;
     }
-    // 从 randomAllPool 里筛出收藏 id 对应的 record；如果池里没有则提示用户先随机全部拉一次
-    const favRecords = randomAllPool.filter((m) => favoriteIds.includes(m.id));
+    // 优先从 randomAllPool 里筛出收藏 id 对应的 record
+    let favRecords = randomAllPool.filter((m) => favoriteIds.includes(m.id));
+    // 如果内存里没有，按收藏 ID 批量查询后端
     if (favRecords.length === 0) {
-      setVisibleError('收藏还没在内存中。请先点一次"随机全部"把模型拉进来，或者切到"随机收藏"前先在模型库收藏至少一个。');
+      setRandomAllLoading(true);
+      try {
+        const result = await getGuomanModelsByIds(favoriteIds);
+        if (!result.success) throw new Error(result.error || '获取收藏模型失败');
+        favRecords = result.data.records || [];
+      } catch (e: any) {
+        setVisibleError(e?.message || '获取收藏模型失败');
+        logBus.error(`随机（收藏）失败: ${e?.message}`, src);
+        return;
+      } finally {
+        setRandomAllLoading(false);
+      }
+    }
+    if (favRecords.length === 0) {
+      setVisibleError('未能从服务器找到收藏的模型，请先在模型库确认收藏有效');
       return;
     }
     const picked = sampleRandomFavorites(favRecords, count);

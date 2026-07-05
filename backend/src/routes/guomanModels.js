@@ -173,4 +173,68 @@ router.get('/all', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/guoman-models/by-ids
+ * 按模型 ID 列表批量查询模型详情，供随机收藏模式使用。
+ *  body: { ids: string[] }
+ */
+router.post('/by-ids', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((id) => typeof id === 'string' && id) : [];
+    if (ids.length === 0) {
+      return res.json({ success: true, data: { records: [] } });
+    }
+
+    const payload = {
+      size: ids.length,
+      current: 1,
+      systemResource: false,
+      resourceType: 'LORA',
+      userId: RH_USER_ID,
+      resourceName: '',
+      reloadData: false,
+      sort: '',
+      communityOnly: true,
+    };
+
+    const response = await fetch(RH_API_URL, {
+      method: 'POST',
+      headers: RH_HEADERS,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        success: false,
+        error: `RunningHub API 返回 HTTP ${response.status}`,
+      });
+    }
+
+    const data = await response.json();
+    if (data.code !== 0) {
+      return res.status(502).json({
+        success: false,
+        error: data.msg || 'RunningHub API 返回错误',
+      });
+    }
+
+    const idSet = new Set(ids);
+    const rawRecords = data.data?.records || [];
+    const records = rawRecords
+      .filter((item) => item?.id && idSet.has(item.id))
+      .map(slimItem);
+
+    res.json({
+      success: true,
+      data: { records },
+    });
+  } catch (error) {
+    const msg = error?.name === 'TimeoutError'
+      ? '调用 RunningHub API 超时'
+      : error?.message || '按 ID 获取国漫模型失败';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
 module.exports = router;

@@ -1023,3 +1023,14 @@ export interface GuomanModelsAllPayload {
 export function getGuomanModelsAll() {
   return safeRequest<GuomanModelsAllPayload>(`${BASE}/guoman-models/all`);
 }
+
+/**
+ * 按模型 ID 列表批量查询国漫模型详情
+ * @param ids 模型 ID 数组
+ */
+export function getGuomanModelsByIds(ids: string[]) {
+  return safeRequest<{ records: GuomanModel[] }>(`${BASE}/guoman-models/by-ids`, {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
