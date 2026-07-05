@@ -75,6 +75,12 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [visibleError, setVisibleError] = useState<string | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  // 跟踪"随机动作"开关状态：true=开启(隐藏动作提示词), false=关闭(显示动作提示词)
+  // 初始值从已有 paramValues 派生，防止打开已保存画布时与字段实际状态不一致
+  const [randomActionOpen, setRandomActionOpen] = useState(() => {
+    const k = paramKey('1644', 'value');
+    return paramValues[k]?.value === 'true' || paramValues[k]?.value === '1';
+  });
   const mountedRef = useRef(true);
   const currentPollKeyRef = useRef<string | null>(taskId ? pollKey(id, taskId) : null);
 
@@ -88,10 +94,12 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
   const upstreamIds = useMemo(() => Array.from(new Set(conns.map((c) => c.source))), [conns]);
   const upstreamNodes = useNodesData(upstreamIds);
 
-  // 找到上游的模型选择器节点
+  // 找到上游的模型选择器节点 (单选选择器 或 循环选择器都识别)
   const modelSelectorNode = useMemo(() => {
     if (!Array.isArray(upstreamNodes)) return null;
-    return upstreamNodes.find((n: any) => n?.type === 'guoman-model-selector') || null;
+    return upstreamNodes.find((n: any) =>
+      n?.type === 'guoman-model-selector' || n?.type === 'guoman-model-loop-selector'
+    ) || null;
   }, [upstreamNodes]);
 
   // 是否有上游模型选择器连接
@@ -321,6 +329,16 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, taskId]);
 
+  // 监听 paramValues 中"随机动作"字段值，确保开关 state 与之同步
+  // (例如 fetchRhAppInfo 完成、或从上游同步参数后，state 自动跟随)
+  useEffect(() => {
+    const k = paramKey('1644', 'value');
+    const v = paramValues[k]?.value;
+    const next = v === 'true' || v === '1';
+    if (next !== randomActionOpen) setRandomActionOpen(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramValues[paramKey('1644', 'value')]?.value]);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; stopPoll(); };
@@ -342,6 +360,12 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         background: bg,
         backdropFilter: 'blur(12px)',
         width: 300,
+        // 改用 flex 列布局，让内容区可滚动，运行按钮粘在底部始终可见
+        display: 'flex',
+        flexDirection: 'column',
+        // 限制最大高度，超过则内部滚动；同时给一个最小高度，防止内容太少时按钮挤出去
+        maxHeight: 600,
+        minHeight: 200,
         borderRadius: 12,
         border: `2px solid ${borderColor}`,
         boxShadow: selected ? `0 0 0 1px ${COLOR}, 0 16px 40px rgba(249,115,22,.18)` : undefined,
@@ -357,6 +381,7 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
         borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
         background: 'linear-gradient(135deg, rgba(249,115,22,.12), transparent)',
+        flexShrink: 0, // 头部固定不折叠
       }}>
         <div style={{
           width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -385,8 +410,8 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         </button>
       </div>
 
-      {/* 内容区 */}
-      <div style={{ padding: '10px 12px', maxHeight: 500, overflowY: 'auto' }}>
+      {/* 内容区 - 仅这一块可滚动，使运行按钮始终在底部可见 */}
+      <div style={{ padding: '10px 12px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
         {fetchingInfo && !appInfo && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '16px 0', justifyContent: 'center', color: mutedColor }}>
             <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
@@ -443,10 +468,15 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
         {nodeInfoList.filter((it: any) => it.nodeId === '1644').map((it: any) => {
           const k = paramKey(it.nodeId, it.fieldName);
           const value = paramValues[k]?.value ?? extractDefaultValue(it);
+          // 将开关状态同步到 randomActionOpen state，用于控制动作提示词的显隐
           return (
             <div key="random-action" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>随机动作</span>
-              <button onClick={() => updateParam(k, value === 'true' ? 'false' : 'true')}
+              <button onClick={() => {
+                const next = value === 'true' ? 'false' : 'true';
+                updateParam(k, next);
+                setRandomActionOpen(next === 'true');
+              }}
                 style={{ width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', background: value === 'true' ? COLOR : isDark ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.12)', position: 'relative', transition: 'background .2s' }}
               >
                 <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: value === 'true' ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
@@ -457,8 +487,8 @@ const GuomanCharNode1 = ({ id, data, selected }: NodeProps) => {
           );
         })}
 
-        {/* 动作提示词 */}
-        {nodeInfoList.filter((it: any) => it.nodeId === '1646').map((it: any, i: number) => {
+        {/* 动作提示词（随机动作开启时隐藏） */}
+        {!randomActionOpen && nodeInfoList.filter((it: any) => it.nodeId === '1646').map((it: any, i: number) => {
           const k = paramKey(it.nodeId, it.fieldName);
           const value = paramValues[k]?.value ?? extractDefaultValue(it);
           const isFromUpstream = paramValues[k]?.sourceFromUpstream === true;

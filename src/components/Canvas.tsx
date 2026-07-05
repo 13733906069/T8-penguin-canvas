@@ -1082,6 +1082,8 @@ const GuomanCharNode1 = lazyCanvasNode(() => import('./nodes/GuomanCharNode1'), 
 const GuomanCharNode2 = lazyCanvasNode(() => import('./nodes/GuomanCharNode2'), 'GuomanCharNode2');
 const GuomanCharNode3 = lazyCanvasNode(() => import('./nodes/GuomanCharNode3'), 'GuomanCharNode3');
 const GuomanModelSelectorNode = lazyCanvasNode(() => import('./nodes/GuomanModelSelectorNode'), 'GuomanModelSelectorNode');
+const GuomanModelLoopSelectorNode = lazyCanvasNode(() => import('./nodes/GuomanModelLoopSelectorNode'), 'GuomanModelLoopSelectorNode');
+const GuomanLoopOutputCollectorNode = lazyCanvasNode(() => import('./nodes/GuomanLoopOutputCollectorNode'), 'GuomanLoopOutputCollectorNode');
 const BrowserNode = lazyCanvasNode(() => import('./nodes/BrowserNode'), 'BrowserNode');
 const FrameExtractorNode = lazyCanvasNode(() => import('./nodes/FrameExtractorNode'), 'FrameExtractorNode');
 const FramePairNode = lazyCanvasNode(() => import('./nodes/FramePairNode'), 'FramePairNode');
@@ -1139,6 +1141,8 @@ const SPECIFIC_NODES: Record<string, any> = {
   'guoman-char-2': GuomanCharNode2,
   'guoman-char-3': GuomanCharNode3,
   'guoman-model-selector': GuomanModelSelectorNode,
+  'guoman-model-loop-selector': GuomanModelLoopSelectorNode,
+  'guoman-loop-output-collector': GuomanLoopOutputCollectorNode,
   // Special (5)
   'multi-angle-3d': PresetImageNode,
   'panorama-720': PresetImageNode,

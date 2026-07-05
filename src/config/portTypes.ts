@@ -114,6 +114,11 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   'guoman-char-3': { inputs: ['text', 'image'], outputs: ['image'] },
   // 清风-国漫角色模型选择器：无需输入，输出文本（模型名称）
   'guoman-model-selector': { inputs: [], outputs: ['text'] },
+  // 清风-国漫角色模型循环选择器：运行时依次变更 modelName/modelDesc 触发下游串行执行；
+  // 同时把每轮下游产物聚合为 imageUrls，可直接接输出素材展示所有生成图。
+  'guoman-model-loop-selector': { inputs: [], outputs: ['text', 'image'] },
+  // 清风-国漫循环输出收集器：专接循环选择器，按轮次分组展示所有产物图
+  'guoman-loop-output-collector': { inputs: ['image'], outputs: ['image'] },
 
   // ========== ComfyUI ==========
   // ComfyUI超市：本地 workflow 应用运行器，可按 manifest 消费/输出四类素材。

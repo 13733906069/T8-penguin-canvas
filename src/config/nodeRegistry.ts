@@ -16,6 +16,10 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'guoman-char-2', label: '清风-国漫角色姿势复刻', category: 'guoman', description: 'RunningHub 国漫角色姿势复刻专用节点（清风），支持姿势图上传/角色模型/外观/背景自定义', icon: 'Wand2', color: 'violet' },
   { type: 'guoman-char-3', label: '清风-国漫角色放大', category: 'guoman', description: 'RunningHub 国漫角色放大专用节点（清风），支持图像上传和角色模型选择', icon: 'ZoomIn', color: 'cyan' },
   { type: 'guoman-model-selector', label: '清风-国漫角色模型选择器', category: 'guoman', description: '国漫角色模型选择器（清风），选择模型后可连接到任意国漫角色节点', icon: 'Crown', color: 'amber' },
+  // 模型循环选择器：多选/随机全部/随机收藏三种策略，下游串行触发国漫执行节点
+  { type: 'guoman-model-loop-selector', label: '清风-国漫角色模型循环选择器', category: 'guoman', description: '多模型循环选择器：手动多选 / 随机全部 / 随机收藏，运行期串行驱动下游国漫角色节点', icon: 'Crown', color: 'amber' },
+  // 国漫循环输出收集器：搭配 guoman-model-loop-selector 使用，按轮次分组展示每张产物图
+  { type: 'guoman-loop-output-collector', label: '清风-国漫循环输出收集器', category: 'guoman', description: '搭配"国漫角色模型循环选择器"使用：按轮次分组展示每张产物图，可点击放大查看', icon: 'GalleryHorizontalEnd', color: 'emerald' },
 
   // ========== Input 素材资源 ==========
   { type: 'upload', label: '上传素材', category: 'input', description: '图像 / 视频 / 音频 三合一上传(自适应输出端口)', icon: 'Upload', color: 'emerald' },

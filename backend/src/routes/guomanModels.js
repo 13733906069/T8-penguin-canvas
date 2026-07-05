@@ -116,4 +116,61 @@ router.get('/', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/guoman-models/all
+ * 一次拉全部模型（不分页），供循环选择器随机抽取使用。
+ * 限制 total ≤ 1000 防止 RH 侧数据膨胀时打爆前端；超时时间适当延长。
+ */
+router.get('/all', async (req, res) => {
+  try {
+    const HARDCAP = 1000; // 防御性上限：防止用户 LORA 库特别大时阻塞前端
+    const payload = {
+      size: HARDCAP,
+      current: 1,
+      systemResource: false,
+      resourceType: 'LORA',
+      userId: RH_USER_ID,
+      resourceName: '',
+      reloadData: false,
+      sort: '',
+      communityOnly: true,
+    };
+
+    const response = await fetch(RH_API_URL, {
+      method: 'POST',
+      headers: RH_HEADERS,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        success: false,
+        error: `RunningHub API 返回 HTTP ${response.status}`,
+      });
+    }
+
+    const data = await response.json();
+    if (data.code !== 0) {
+      return res.status(502).json({
+        success: false,
+        error: data.msg || 'RunningHub API 返回错误',
+      });
+    }
+
+    const rawRecords = data.data?.records || [];
+    const records = rawRecords.map(slimItem);
+    const total = parseInt(data.data?.total) || records.length;
+    res.json({
+      success: true,
+      data: { records, total, cap: HARDCAP, truncated: total > HARDCAP },
+    });
+  } catch (error) {
+    const msg = error?.name === 'TimeoutError'
+      ? '调用 RunningHub API 超时'
+      : error?.message || '获取国漫模型失败';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
 module.exports = router;

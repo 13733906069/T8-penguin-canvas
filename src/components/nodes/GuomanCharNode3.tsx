@@ -85,9 +85,12 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
   const upstreamNodes = useNodesData(upstreamIds);
 
   // 找到上游的模型选择器节点
+  // 找到上游的模型选择器节点 (单选选择器 或 循环选择器都识别)
   const modelSelectorNode = useMemo(() => {
     if (!Array.isArray(upstreamNodes)) return null;
-    return upstreamNodes.find((n: any) => n?.type === 'guoman-model-selector') || null;
+    return upstreamNodes.find((n: any) =>
+      n?.type === 'guoman-model-selector' || n?.type === 'guoman-model-loop-selector'
+    ) || null;
   }, [upstreamNodes]);
 
   // 是否有上游模型选择器连接

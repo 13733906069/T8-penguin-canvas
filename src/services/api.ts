@@ -985,3 +985,17 @@ export function getGuomanModels(page = 1, size = 30, search?: string) {
   if (search) params.set('search', search);
   return safeRequest<GuomanModelsPage>(`${BASE}/guoman-models?${params}`);
 }
+
+/**
+ * 一次性拉取全部国漫模型（用于循环选择器随机抽取）
+ * - 后端硬上限 1000 条，超过时返回 truncated=true，循环节点应展示提醒
+ */
+export interface GuomanModelsAllPayload {
+  records: GuomanModel[];
+  total: number;
+  cap: number;
+  truncated: boolean;
+}
+export function getGuomanModelsAll() {
+  return safeRequest<GuomanModelsAllPayload>(`${BASE}/guoman-models/all`);
+}

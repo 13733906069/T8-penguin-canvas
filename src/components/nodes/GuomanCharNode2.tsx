@@ -10,6 +10,7 @@
  *   1216::text       — 角色外观（多行文本）
  *   1690::value      — 是否需要自定义背景（布尔开关）
  *   1496::text       — 背景提示词（条件显示）
+ *   577::batch_size  — 批次大小（数字，默认 2：一次生成几张图；上调会增加积分消耗）
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useNodeConnections, useNodesData, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
@@ -90,10 +91,12 @@ const GuomanCharNode2 = ({ id, data, selected }: NodeProps) => {
   const upstreamIds = useMemo(() => Array.from(new Set(conns.map((c) => c.source))), [conns]);
   const upstreamNodes = useNodesData(upstreamIds);
 
-  // 找到上游的模型选择器节点
+  // 找到上游的模型选择器节点 (单选选择器 或 循环选择器都识别)
   const modelSelectorNode = useMemo(() => {
     if (!Array.isArray(upstreamNodes)) return null;
-    return upstreamNodes.find((n: any) => n?.type === 'guoman-model-selector') || null;
+    return upstreamNodes.find((n: any) =>
+      n?.type === 'guoman-model-selector' || n?.type === 'guoman-model-loop-selector'
+    ) || null;
   }, [upstreamNodes]);
 
   // 是否有上游模型选择器连接
@@ -639,6 +642,25 @@ const GuomanCharNode2 = ({ id, data, selected }: NodeProps) => {
             <option value="pro">Pro</option>
           </select>
         </div>
+
+        {/* 批次大小（577::EmptyLatentImage.batch_size，一次生成几张图）
+            fallback 到 2：用户当前请求的默认批次大小，后端未返回字段或用户清空时仍可工作 */}
+        {nodeInfoList.filter((it: any) => it.nodeId === '577' && it.fieldName === 'batch_size').map((it: any, i: number) => {
+          const k = paramKey(it.nodeId, it.fieldName);
+          const value = (paramValues[k]?.value ?? extractDefaultValue(it)) || '2';
+          return (
+            <div key={`batch-${i}`} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: textColor }}>批次大小</span>
+                <span style={{ fontSize: 9, color: mutedColor }}>(一次生成几张)</span>
+                <span style={{ fontSize: 9, color: mutedColor, marginLeft: 'auto' }}>#577</span>
+              </div>
+              <input type="number" value={value} onChange={(e) => updateParam(k, e.target.value)} min={1} max={16} step={1}
+                style={{ width: '100%', height: 28, padding: '0 8px', fontSize: 11, color: textColor, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 6, outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+          );
+        })}
 
         {/* 进度条 */}
         {isBusy && (

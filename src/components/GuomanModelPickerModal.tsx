@@ -21,11 +21,23 @@ interface GuomanModelPickerModalProps {
    */
   onSelect: (modelName: string, model?: GuomanModel) => void;
   currentModel?: string;
+  /**
+   * 多选模式 (供循环选择器使用)
+   * - true：用户点击卡片切换选中态，不再自动关闭；底部/顶部多一个"确认"按钮
+   * - false (默认)：单选，点击直接 onSelect + 关闭
+   * 多选模式下 onSelect 仍会被每次切换调用（用于实时反映到上游 UI），
+   * 但结束必须由 onConfirm 触发关闭
+   */
+  multiMode?: boolean;
+  /** 多选上限（建议由节点传 count）；超出时点击会被拒绝并提示 */
+  maxCount?: number;
+  /** 多选确认回调：用户点确认按钮时触发，参数为已选文件名数组 */
+  onConfirm?: (selectedNames: string[]) => void;
 }
 
 type TabKey = 'all' | 'favorites';
 
-export default function GuomanModelPickerModal({ open, onClose, onSelect, currentModel }: GuomanModelPickerModalProps) {
+export default function GuomanModelPickerModal({ open, onClose, onSelect, currentModel, multiMode = false, maxCount, onConfirm }: GuomanModelPickerModalProps) {
   const { theme } = useThemeStore();
   const isDark = theme === 'dark';
 
@@ -42,6 +54,10 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // 多选模式：本轮用户暂选的模型文件名集合 (含已传 currentModel 视为初始)
+  const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  // 超出上限时的轻提示，3 秒自动消失
+  const [overLimitMsg, setOverLimitMsg] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -61,9 +77,13 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
     setError(null);
   }, []);
 
+  // 多选模式打开时清掉暂存选区；单选沿用 currentModel 不重置 (保持 behavior 一致)
   useEffect(() => {
-    if (open) resetAndLoad();
-  }, [debouncedSearch, open, resetAndLoad]);
+    if (open) {
+      if (multiMode) setSelectedNames([]);
+      resetAndLoad();
+    }
+  }, [debouncedSearch, open, multiMode, resetAndLoad]);
 
   const loadPage = useCallback(async (pageNum: number) => {
     if (loading) return;
@@ -226,12 +246,33 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
               )}
             </div>
 
-            {/* 当前选中 */}
-            {currentModel && (
+            {/* 当前选中（单选显示模型名；多选显示已选数量） */}
+            {multiMode ? (
+              <div style={{ fontSize: 12, color: accent, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                已选 {selectedNames.length}{typeof maxCount === 'number' && maxCount > 0 ? ` / ${maxCount}` : ''}
+              </div>
+            ) : currentModel ? (
               <div style={{ fontSize: 12, color: accent, fontWeight: 600, whiteSpace: 'nowrap' }}>
                 当前：{currentModel}
               </div>
-            )}
+            ) : null}
+
+            {/* 多选模式：确认按钮。单选：原关闭按钮 */}
+            {multiMode ? (
+              <button
+                onClick={() => { onConfirm?.(selectedNames); onClose(); }}
+                disabled={selectedNames.length === 0}
+                style={{
+                  height: 34, padding: '0 16px', borderRadius: 10, border: 'none',
+                  background: accent, color: '#fff', fontSize: 13, fontWeight: 700,
+                  cursor: selectedNames.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: selectedNames.length === 0 ? 0.5 : 1,
+                  flexShrink: 0,
+                }}
+              >
+                确认 ({selectedNames.length})
+              </button>
+            ) : null}
 
             {/* 关闭 */}
             <button onClick={onClose}
@@ -242,6 +283,18 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
           </div>
 
           {/* 模型网格 */}
+          {overLimitMsg && (
+            <div style={{
+              padding: '8px 20px',
+              background: 'rgba(239,68,68,.1)',
+              borderBottom: `1px solid ${bd}`,
+              color: '#ef4444',
+              fontSize: 12,
+              fontWeight: 600,
+            }}>
+              ⚠ {overLimitMsg}
+            </div>
+          )}
           <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
 
             {/* 空状态 */}
@@ -260,11 +313,37 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
                 // 取第一个版本的 versionResourceName，去掉路径前缀只保留文件名
                 const rawName = model.versions?.[0]?.versionResourceName || model.versions?.[0]?.resourceStorageName || '';
                 const modelFileName = rawName ? rawName.replace(/^.*[\\/]/, '') : model.resourceName;
-                const isSelected = currentModel === modelFileName;
+                const isSelected = multiMode
+                  ? selectedNames.includes(modelFileName)
+                  : currentModel === modelFileName;
                 const isFav = isFavorite(model.id);
                 return (
                   <div key={model.id}
-                    onClick={() => { onSelect(modelFileName, model); onClose(); }}
+                    onClick={() => {
+                      // 多选模式：切换选中，超出上限提示并不加入
+                      if (multiMode) {
+                        if (selectedNames.includes(modelFileName)) {
+                          // 已选 → 取消选择
+                          setSelectedNames((prev) => prev.filter((n) => n !== modelFileName));
+                          setOverLimitMsg(null);
+                          onSelect(modelFileName, model);
+                        } else {
+                          // 未选 → 检查上限
+                          if (typeof maxCount === 'number' && maxCount > 0 && selectedNames.length >= maxCount) {
+                            setOverLimitMsg(`数量超过啦！最多只能选 ${maxCount} 个`);
+                            window.setTimeout(() => setOverLimitMsg(null), 2200);
+                            return;
+                          }
+                          setSelectedNames((prev) => [...prev, modelFileName]);
+                          setOverLimitMsg(null);
+                          onSelect(modelFileName, model);
+                        }
+                        return;
+                      }
+                      // 单选模式：原有行为
+                      onSelect(modelFileName, model);
+                      onClose();
+                    }}
                     style={{
                       borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
                       border: `2px solid ${isSelected ? accent : bd}`,
@@ -305,8 +384,8 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
                         {isFav ? <Star size={15} fill="currentColor" /> : <StarOff size={15} />}
                       </button>
 
-                      {/* 选中标记 */}
-                      {isSelected && (
+                      {/* 选中标记：单选用右下角提示卡，多选用左下角勾选数 */}
+                      {isSelected && !multiMode && (
                         <div style={{
                           position: 'absolute', bottom: 8, left: 8,
                           padding: '3px 10px', borderRadius: 6,
@@ -314,6 +393,17 @@ export default function GuomanModelPickerModal({ open, onClose, onSelect, curren
                           boxShadow: '0 2px 6px rgba(0,0,0,.25)',
                         }}>
                           ✓ 当前使用
+                        </div>
+                      )}
+                      {isSelected && multiMode && (
+                        <div style={{
+                          position: 'absolute', top: 8, left: 8,
+                          width: 26, height: 26, borderRadius: '50%',
+                          background: accent, color: '#fff', fontSize: 14, fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          boxShadow: '0 2px 6px rgba(0,0,0,.25)',
+                        }}>
+                          ✓
                         </div>
                       )}
                     </div>
