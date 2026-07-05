@@ -109,7 +109,7 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
 }> = {
   'openai-compatible': {
     subtitle: '接入兼容 OpenAI 格式的图像 / 视频 / LLM 服务',
-    description: '适合接入你自己的中转站、One API、New API 或其他兼容 /v1/chat/completions、/v1/images/generations、/v1/videos/generations 的服务。',
+    description: '适合接入你自己的中转站、One API、New API 或其他兼容 /v1/chat/completions、/v1/images/generations、/v1/images/edits、/v1/videos/generations 的服务。',
     nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
     connectionHint: 'Base URL 填到 /v1 这一层，例如 https://api.example.com/v1；Key 留空会保留后端已保存的密钥。',
     modelHint: '每行一个模型名。只填你确实要在节点里选择的模型，空白时会使用内置兜底示例。',

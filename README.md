@@ -10,13 +10,13 @@ https://www.runninghub.cn/?inviteCode=rh-v1121
 My favorite girl Go YounJung
 # 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
-> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.3.8
+> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.4.1
 >
 > GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
 一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器和桌面端均可使用。
 
-![status](https://img.shields.io/badge/version-v2.3.8-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
+![status](https://img.shields.io/badge/version-v2.4.1-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
@@ -39,6 +39,9 @@ My favorite girl Go YounJung
 - 🧺 **画布级批量导入 + 素材合集打散**：上传节点支持一次选择多张图 / 多个视频 / 多段音频；也可直接把剪贴板或文件拖到画布，同类型多素材自动形成合集，上传和输出合集都可一键打散为多个独立素材节点
 - 👁️ **上传 / 输出图像原图悬停预览**（v1.8.7）：上传素材与输出素材的图像卡片在 hover 时显示小眼睛按钮，鼠标停在按钮上可按 100% 原尺寸预览，超出视口时自动等比收进可见区域，输出素材入口位于图像对比按钮下方
 - 🧾 **提示词模板库媒体套件**（v2.1.2）：图像 / 视频 / 音频 / 文本素材可从节点右键直接保存到提示词模板库，连同原 Prompt、标题、标签和配套媒体一起沉淀；右键保存时可选择或新建模板分类，模板库支持分类新增 / 删除 / 重命名，预览采用懒加载并支持图像 100% 查看
+- 🧩 **v2.4.1 Agnes 专用图像编辑热修自动更新版**：扩展 API 平台里的 Agnes AI 专用适配器按官方文生图 / 图生图文档保持 `/v1/images/generations` JSON，图像编辑参考图统一写入 `extra_body.image`，`imageUrls` / `imageUrl` / `image` 等入口别名都会正确传给上游，避免专用 Agnes 图像编辑 503 或退化为无参考图生成。
+- 🧩 **v2.4.0 Agnes 图像编辑与生成停止自动更新版**：Agnes 在扩展 OpenAI 兼容配置下的图像编辑按官方文档改走 `/v1/images/generations` JSON 与 `extra_body.image`，避免误打 `/v1/images/edits` multipart 导致 503；提示词库和素材右键分类新增 / 重命名改为 Electron 内联表单；图像、视频、SD2.0 节点生成中可停止本地轮询并立即重新发起新任务。
+- 🍌 **v2.3.9 Gemini 官方图像与完整剪辑台自动更新版**：图像节点新增 `gemini-3.1-flash-lite-image` 与 `gemini-3-pro-image`，两者走 Gemini 官方 `generateContent` 图像格式并兼容异步任务返回；OpenAI 兼容扩展支持 `/v1/images/edits` 参考图编辑；资源库“我的资产”支持先选分类再上传本地文件；完整视频剪辑台补齐宽屏实底布局、63 个转场、ffprobe/xfade 打包校验与任务异常反馈。
 - 🎬 **v2.3.8 视频剪辑与创作者工作流自动更新版**：新增核心「视频剪辑」节点，支持多视频上传/上游导入/跨画布追加、缩略图时间线、裁剪排序、片段拆分、转场滤镜、音频策略、异步 ffmpeg 合成、取消任务、下载成片和输出给下游；批量素材处理 RH 并发扩展到 1-10，并同步第十四弹教程、Gemini 正式模型名和左下角模型说明。
 - 🧩 **v2.3.7 网页反推 Electron 回传修复版**：Chrome 网页图片反推插件在 Electron 安装包场景下会优先通过本地桥接把提示词 / 图片 / 图文结果送回正在运行的桌面画布，不再误开 `127.0.0.1` 错误页；同时保留发送到当前选中生成目标框的回填逻辑。
 - 🧩 **v2.3.6 工作台与批量处理体验自动更新版**：VibeX 工作台顶部补充 Chrome 插件安装目录和说明，插件 manifest 升级到 1.1.0；批量素材处理改成一次只启用一种策略，并在并发执行时显示每个素材的等待 / 处理 / 完成 / 失败状态；左下角模型注意事项补充 Seedance2.0 mini、原生4K 和预扣退补说明。Electron 安装包继续带上网页图片反推插件目录 `resources/extension/web-image-reverse/`。

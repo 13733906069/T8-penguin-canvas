@@ -100,6 +100,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const { getEdges, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const pollTimer = useRef<number | null>(null);
+  const pollRejectRef = useRef<((reason?: any) => void) | null>(null);
+  const generationRunRef = useRef(0);
   const src = `video:${id.slice(0, 6)}`;
 
   // 主题适配 (默认科技风深色, 传递给聚合预览区)
@@ -355,7 +357,26 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     }
   };
 
-  useEffect(() => () => stopPoll(), []);
+  const nextGenerationRun = () => {
+    generationRunRef.current += 1;
+    return generationRunRef.current;
+  };
+  const isCurrentGenerationRun = (runId: number) => generationRunRef.current === runId;
+  const rejectStoppedGeneration = (reject: (reason?: any) => void) => {
+    if (pollRejectRef.current === reject) {
+      pollRejectRef.current = null;
+      stopPoll();
+    }
+    reject(new Error('用户已停止生成'));
+  };
+  const cancelActivePoll = () => {
+    const reject = pollRejectRef.current;
+    pollRejectRef.current = null;
+    stopPoll();
+    if (reject) reject(new Error('用户已停止生成'));
+  };
+
+  useEffect(() => () => cancelActivePoll(), []);
 
   // 切主模型时重置所有参数为该模型默认值(避免跨模型参数遗留)
   const switchMainModel = (nextId: string) => {
@@ -377,16 +398,22 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   //   useRunTrigger 认为 runFn 完成 markDone(true)。 但实际任务 videoUrl 还未赋值 → LoopNode awaitNode
   //   立即继续 → extractFromNode 读不到 videoUrl → result=null → failCount++。
   //   修复: 轮询完成才 resolve，handleGenerate await 它，markDone 时机=任务真正结束。
-  const startPolling = (tid: string): Promise<void> => {
+  const startPolling = (tid: string, runId: number): Promise<void> => {
     stopPoll();
     return new Promise<void>((resolve, reject) => {
+      pollRejectRef.current = reject;
       let elapsed = 0;
       const POLL_INT = VIDEO_POLL_INTERVAL_MS;
       const MAX = VIDEO_MAX_POLL; // 60 分钟
       let lastProgress = '';
       pollTimer.current = window.setInterval(async () => {
         elapsed += 1;
+        if (!isCurrentGenerationRun(runId)) {
+          rejectStoppedGeneration(reject);
+          return;
+        }
         if (elapsed > MAX) {
+          pollRejectRef.current = null;
           stopPoll();
           update({ status: 'error', error: '轮询超时' });
           setError('轮询超时');
@@ -396,17 +423,23 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         }
         try {
           const r = await queryVideo(tid, apiModel);
+          if (!isCurrentGenerationRun(runId)) {
+            rejectStoppedGeneration(reject);
+            return;
+          }
           if (r.progress && r.progress !== lastProgress) {
             lastProgress = r.progress;
             logBus.debug(`[${elapsed}/${MAX}] status=${r.status} progress=${r.progress}`, src);
           }
           if (r.status === 'SUCCESS' && r.videoUrl) {
+            pollRejectRef.current = null;
             stopPoll();
             update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
             logBus.success(`任务完成 → ${r.videoUrl}`, src);
             taskCompletionSound.notifyComplete(id, 'video');
             resolve();
           } else if (r.status === 'FAILURE') {
+            pollRejectRef.current = null;
             stopPoll();
             const msg = r.failReason || '生成失败';
             update({ status: 'error', error: msg });
@@ -417,6 +450,10 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             update({ status: 'polling', progress: r.progress || '' });
           }
         } catch (e: any) {
+          if (!isCurrentGenerationRun(runId)) {
+            rejectStoppedGeneration(reject);
+            return;
+          }
           // 偶尔失败不停止
           console.warn('轮询出错', e?.message);
         }
@@ -428,15 +465,21 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const falPollRef = useRef<{ responseUrl?: string; endpoint?: string; requestId?: string } | null>(null);
 
   // v1.2.9.11: 同样改造为 Promise（理由同 startPolling）
-  const startFalPolling = (): Promise<void> => {
+  const startFalPolling = (runId: number): Promise<void> => {
     stopPoll();
     return new Promise<void>((resolve, reject) => {
+      pollRejectRef.current = reject;
       let elapsed = 0;
       const POLL_INT = VIDEO_FAL_POLL_INTERVAL_MS;
       const MAX = VIDEO_FAL_MAX_POLL; // 60分钟
       pollTimer.current = window.setInterval(async () => {
         elapsed += 1;
+        if (!isCurrentGenerationRun(runId)) {
+          rejectStoppedGeneration(reject);
+          return;
+        }
         if (elapsed > MAX) {
+          pollRejectRef.current = null;
           stopPoll();
           update({ status: 'error', error: 'FAL 轮询超时' });
           setError('FAL 轮询超时');
@@ -446,14 +489,20 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         }
         try {
           const r = await queryVideoFal(falPollRef.current!);
+          if (!isCurrentGenerationRun(runId)) {
+            rejectStoppedGeneration(reject);
+            return;
+          }
           if (elapsed % 10 === 0) logBus.debug(`[FAL ${elapsed}/${MAX}] status=${r.status}`, src);
           if (r.status === 'completed' && r.videoUrl) {
+            pollRejectRef.current = null;
             stopPoll();
             update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
             logBus.success(`FAL 视频完成 → ${r.videoUrl}`, src);
             taskCompletionSound.notifyComplete(id, 'video');
             resolve();
           } else if (r.status === 'failed') {
+            pollRejectRef.current = null;
             stopPoll();
             const msg = r.error || 'FAL 生成失败';
             update({ status: 'error', error: msg });
@@ -464,6 +513,10 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             update({ status: 'polling', progress: `${Math.min(95, Math.round(20 + elapsed / MAX * 75))}%` });
           }
         } catch (e: any) {
+          if (!isCurrentGenerationRun(runId)) {
+            rejectStoppedGeneration(reject);
+            return;
+          }
           console.warn('FAL 轮询出错', e?.message);
         }
       }, POLL_INT);
@@ -490,6 +543,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       logBus.error('生成中止: Grok 1.5 New 缺少参考图', src);
       return;
     }
+    const runId = nextGenerationRun();
+    cancelActivePoll();
+    falPollRef.current = null;
     taskCompletionSound.primeAudio();
     update({ status: 'submitting', error: null, videoUrl: null, taskId: null });
     try {
@@ -521,6 +577,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             ? { ...providerParams, frameMode: jimengSeedanceMode }
             : providerParams,
         });
+        if (!isCurrentGenerationRun(runId)) return;
         const nextVideoUrl = r.videoUrls[0];
         if (!nextVideoUrl) throw new Error('扩展平台没有返回视频。');
         update({
@@ -606,6 +663,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         );
 
         const r = await submitVideoFal(falReq);
+        if (!isCurrentGenerationRun(runId)) return;
         if (r.sync && r.videoUrl) {
           update({ status: 'success', videoUrl: r.videoUrl, lastPrompt: finalPrompt, progress: '100%' });
           logBus.success(`FAL 同步完成 → ${r.videoUrl}`, src);
@@ -615,7 +673,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           update({ status: 'polling', lastPrompt: finalPrompt, progress: '15%' });
           logBus.info(`FAL 异步任务 requestId=${r.requestId} 进入轮询…`, src);
           // v1.2.9.11: await 让 useRunTrigger 等到任务真正完成才 markDone
-          await startFalPolling();
+          await startFalPolling(runId);
         }
         return;
       }
@@ -632,7 +690,11 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         } else {
           const arr: string[] = [];
           for (const u of refs) {
-            try { arr.push(await urlToBase64(u)); }
+            try {
+              const encoded = await urlToBase64(u);
+              if (!isCurrentGenerationRun(runId)) return;
+              arr.push(encoded);
+            }
             catch (e) { console.warn('图像编码失败', e); }
           }
           if (arr.length) images = arr;
@@ -682,11 +744,13 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       );
 
       const r = await submitVideo(payload);
+      if (!isCurrentGenerationRun(runId)) return;
       update({ status: 'polling', taskId: r.taskId, lastPrompt: finalPrompt, progress: '0%' });
       logBus.info(`异步任务已提交 taskId=${r.taskId} 进入轮询…`, src);
       // v1.2.9.11: await 让 useRunTrigger 等到任务真正完成才 markDone
-      await startPolling(r.taskId);
+      await startPolling(r.taskId, runId);
     } catch (e: any) {
+      if (!isCurrentGenerationRun(runId)) return;
       const msg = e?.message || '提交失败';
       setError(msg);
       update({ status: 'error', error: msg });
@@ -695,9 +759,12 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   };
 
   const handleStop = () => {
-    stopPoll();
-    update({ status: 'idle' });
-    logBus.warn('用户主动停止', src);
+    generationRunRef.current += 1;
+    cancelActivePoll();
+    falPollRef.current = null;
+    setError(null);
+    update({ status: 'idle', progress: '已停止', error: null, taskId: null });
+    logBus.warn('用户主动停止：已停止本地轮询，远端任务可能仍会完成', src);
   };
 
   // 批量运行接入

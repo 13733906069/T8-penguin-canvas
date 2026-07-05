@@ -71,6 +71,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const hasAutoOutput = useHasAutoOutput(id);
   const [error, setError] = useState<string | null>(null);
   const pollTimer = useRef<number | null>(null);
+  const pollRejectRef = useRef<((reason?: any) => void) | null>(null);
+  const generationRunRef = useRef(0);
   const src = `seedance:${id.slice(0, 6)}`;
 
   // 主题适配
@@ -237,20 +239,45 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     }
   };
 
-  useEffect(() => () => stopPoll(), []);
+  const nextGenerationRun = () => {
+    generationRunRef.current += 1;
+    return generationRunRef.current;
+  };
+  const isCurrentGenerationRun = (runId: number) => generationRunRef.current === runId;
+  const rejectStoppedGeneration = (reject: (reason?: any) => void) => {
+    if (pollRejectRef.current === reject) {
+      pollRejectRef.current = null;
+      stopPoll();
+    }
+    reject(new Error('用户已停止生成'));
+  };
+  const cancelActivePoll = () => {
+    const reject = pollRejectRef.current;
+    pollRejectRef.current = null;
+    stopPoll();
+    if (reject) reject(new Error('用户已停止生成'));
+  };
+
+  useEffect(() => () => cancelActivePoll(), []);
 
   // v1.2.9.11: 返回 Promise，调用方 await 直到任务真正成功/失败/超时才 resolve/reject。
   //   在循环器中使用时，不 await 会导致 useRunTrigger 提前 markDone → LoopNode 读不到 videoUrl → result=null → failCount++。
-  const startPolling = (tid: string): Promise<void> => {
+  const startPolling = (tid: string, runId: number): Promise<void> => {
     stopPoll();
     return new Promise<void>((resolve, reject) => {
+      pollRejectRef.current = reject;
       let elapsed = 0;
       const POLL_MS = Math.max(2, pollInt) * 1000;
       const MAX = Math.max(10, maxPoll, seedanceMinPollCount(POLL_MS));
       let lastProgress = '';
       pollTimer.current = window.setInterval(async () => {
         elapsed += 1;
+        if (!isCurrentGenerationRun(runId)) {
+          rejectStoppedGeneration(reject);
+          return;
+        }
         if (elapsed > MAX) {
+          pollRejectRef.current = null;
           stopPoll();
           update({ status: 'error', error: '轮询超时' });
           setError('轮询超时');
@@ -260,6 +287,10 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
         }
         try {
           const r = await querySeedance(tid);
+          if (!isCurrentGenerationRun(runId)) {
+            rejectStoppedGeneration(reject);
+            return;
+          }
           // 进度条估算 (对齐主项目: 30 + a*65/max)
           const pct = Math.min(95, Math.round(30 + (elapsed * 65) / MAX));
           if (r.progress && r.progress !== lastProgress) {
@@ -269,12 +300,14 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
             logBus.debug(`[${elapsed}/${MAX}] status=${r.status}`, src);
           }
           if (r.status === 'succeeded' && r.videoUrl) {
+            pollRejectRef.current = null;
             stopPoll();
             update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
             logBus.success(`任务完成 → ${r.videoUrl}`, src);
             taskCompletionSound.notifyComplete(id, 'seedance');
             resolve();
           } else if (r.status === 'failed') {
+            pollRejectRef.current = null;
             stopPoll();
             const msg = r.failReason || '生成失败';
             update({ status: 'error', error: msg });
@@ -285,6 +318,10 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
             update({ status: 'polling', progress: `${pct}%` });
           }
         } catch (e: any) {
+          if (!isCurrentGenerationRun(runId)) {
+            rejectStoppedGeneration(reject);
+            return;
+          }
           // 偶发失败不停止
           console.warn('Seedance 轮询出错', e?.message);
         }
@@ -302,6 +339,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       logBus.error('生成中止: 缺少 prompt', src);
       return;
     }
+    const runId = nextGenerationRun();
+    cancelActivePoll();
     taskCompletionSound.primeAudio();
     update({ status: 'submitting', error: null, videoUrl: null, taskId: null });
 
@@ -339,6 +378,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                 frameMode: activeFrameMode,
               },
         });
+        if (!isCurrentGenerationRun(runId)) return;
         const nextVideoUrl = r.videoUrls[0];
         if (!nextVideoUrl) throw new Error('扩展平台没有返回视频。');
         update({
@@ -405,11 +445,13 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       );
 
       const r = await submitSeedance(payload);
+      if (!isCurrentGenerationRun(runId)) return;
       update({ status: 'polling', taskId: r.taskId, lastPrompt: finalPrompt, progress: '15%' });
       logBus.info(`异步任务已提交 taskId=${r.taskId}, 进入轮询…`, src);
       // v1.2.9.11: await 让 useRunTrigger 等到任务真正完成才 markDone，循环器才能拿到 videoUrl
-      await startPolling(r.taskId);
+      await startPolling(r.taskId, runId);
     } catch (e: any) {
+      if (!isCurrentGenerationRun(runId)) return;
       const msg = e?.message || '提交失败';
       setError(msg);
       update({ status: 'error', error: msg });
@@ -418,9 +460,11 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   };
 
   const handleStop = () => {
-    stopPoll();
-    update({ status: 'idle' });
-    logBus.warn('用户主动停止', src);
+    generationRunRef.current += 1;
+    cancelActivePoll();
+    setError(null);
+    update({ status: 'idle', progress: '已停止', error: null, taskId: null });
+    logBus.warn('用户主动停止：已停止本地轮询，远端任务可能仍会完成', src);
   };
 
   // 批量运行接入

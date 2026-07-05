@@ -83,6 +83,44 @@ test('Agnes adapter sends image JSON extra_body and normalizes returned URLs', a
   });
 });
 
+test('Agnes adapter sends image edit aliases in extra_body.image without edits-only fields', async () => {
+  const agnes = adapters.getAdapterForProtocol('agnes');
+  const calls: any[] = [];
+  const provider = {
+    id: 'agnes',
+    protocol: 'agnes',
+    baseUrl: 'https://apihub.agnes-ai.com/v1/',
+    apiKey: 'sk-secret',
+    imageModels: ['agnes-image-2.1-flash'],
+  };
+
+  const result = await agnes.generateImage(provider, {
+    prompt: 'make the cup matte black',
+    model: 'agnes-image-2.1-flash',
+    size: '1024x1024',
+    imageUrls: ['data:image/png;base64,QUJD'],
+    response_format: 'url',
+  } as any, {
+    fetchImpl: async (url: string, init: any) => {
+      calls.push({ url, init, body: JSON.parse(init.body) });
+      return jsonResponse({ data: [{ url: 'https://cdn.example.com/agnes-edited.png' }] });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.imageUrls, ['https://cdn.example.com/agnes-edited.png']);
+  assert.equal(calls[0].url, 'https://apihub.agnes-ai.com/v1/images/generations');
+  assert.equal(calls[0].body.model, 'agnes-image-2.1-flash');
+  assert.equal(calls[0].body.prompt, 'make the cup matte black');
+  assert.equal(calls[0].body.size, '1024x1024');
+  assert.deepEqual(calls[0].body.extra_body, {
+    image: ['data:image/png;base64,QUJD'],
+    response_format: 'url',
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(calls[0].body, 'response_format'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(calls[0].body, 'tags'), false);
+});
+
 test('Agnes adapter converts video controls to width height and polls agnesapi', async () => {
   const agnes = adapters.getAdapterForProtocol('agnes');
   const calls: any[] = [];

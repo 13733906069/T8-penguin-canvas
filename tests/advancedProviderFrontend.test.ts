@@ -341,6 +341,14 @@ test('Agnes provider settings and video node controls are exposed', () => {
   assert.match(videoNode, /numFrames/);
 });
 
+test('OpenAI compatible provider settings advertise image edit endpoint', () => {
+  const settings = fs.readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
+
+  assert.match(settings, /\/v1\/images\/generations/);
+  assert.match(settings, /\/v1\/images\/edits/);
+  assert.match(settings, /\/v1\/chat\/completions/);
+});
+
 test('advanced provider API keys have bounded visibility toggles', () => {
   const settings = fs.readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8');

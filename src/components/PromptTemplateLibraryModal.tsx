@@ -59,6 +59,10 @@ interface PromptTemplateLibraryModalProps {
 
 type SourceFilter = 'all' | 'builtin' | 'mine';
 
+type PromptCategoryDialogState =
+  | { mode: 'add'; kind: PromptTemplateKind; value: string }
+  | { mode: 'rename'; category: PromptTemplateCategory; value: string };
+
 interface EditDraft {
   id?: string;
   kind: PromptTemplateKind;
@@ -93,10 +97,14 @@ function textForSearch(item: PromptTemplateItem) {
 
 async function copyText(value: string) {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      return false;
+    }
   }
-  if (typeof window !== 'undefined') window.prompt('复制文本:', value);
+  return false;
 }
 
 function downloadJson(filename: string, data: unknown) {
@@ -175,6 +183,7 @@ export default function PromptTemplateLibraryModal({
   const [selectedId, setSelectedId] = useState('');
   const [message, setMessage] = useState('');
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [promptCategoryDialog, setPromptCategoryDialog] = useState<PromptCategoryDialogState | null>(null);
   const [busy, setBusy] = useState('');
 
   useEffect(() => {
@@ -185,6 +194,7 @@ export default function PromptTemplateLibraryModal({
       setActiveKind(initialKind);
       setMessage('');
       setEditDraft(null);
+      setPromptCategoryDialog(null);
     }
   }, [initialKind, open]);
 
@@ -375,14 +385,45 @@ export default function PromptTemplateLibraryModal({
   };
 
   const addCategory = () => {
-    const name = window.prompt(activeKind === 'image' ? '新建图像模板分类' : '新建视频模板分类');
-    if (!name?.trim()) return;
+    setMessage('');
+    setPromptCategoryDialog({ mode: 'add', kind: activeKind, value: '' });
+  };
+
+  const renameCategory = (category: PromptTemplateCategory) => {
+    if (category.builtIn) return;
+    setMessage('');
+    setPromptCategoryDialog({
+      mode: 'rename',
+      category,
+      value: language === 'en' ? category.labelEn : category.labelZh,
+    });
+  };
+
+  const submitPromptCategoryDialog = () => {
+    if (!promptCategoryDialog) return;
+    const name = promptCategoryDialog.value.trim();
+    if (!name) {
+      setMessage('请填写分类名称');
+      return;
+    }
+    if (promptCategoryDialog.mode === 'rename') {
+      const category = promptCategoryDialog.category;
+      persist((prev) => ({
+        ...prev,
+        customCategories: prev.customCategories.map((cat) => (
+          cat.id === category.id ? { ...cat, labelZh: name, labelEn: name } : cat
+        )),
+      }));
+      setPromptCategoryDialog(null);
+      setMessage(`已重命名分类：${name}`);
+      return;
+    }
     const id = `custom-${activeKind}-${Date.now().toString(36)}`;
     const category: PromptTemplateCategory = {
       id,
-      kind: activeKind,
-      labelZh: name.trim(),
-      labelEn: name.trim(),
+      kind: promptCategoryDialog.kind,
+      labelZh: name,
+      labelEn: name,
       descriptionZh: '我的提示词分类',
       descriptionEn: 'My prompt category',
       order: 1000 + state.customCategories.length,
@@ -390,18 +431,8 @@ export default function PromptTemplateLibraryModal({
     };
     persist((prev) => ({ ...prev, customCategories: [...prev.customCategories, category] }));
     setCategoryId(id);
-  };
-
-  const renameCategory = (category: PromptTemplateCategory) => {
-    if (category.builtIn) return;
-    const name = window.prompt('重命名分类', language === 'en' ? category.labelEn : category.labelZh);
-    if (!name?.trim()) return;
-    persist((prev) => ({
-      ...prev,
-      customCategories: prev.customCategories.map((cat) => (
-        cat.id === category.id ? { ...cat, labelZh: name.trim(), labelEn: name.trim() } : cat
-      )),
-    }));
+    setPromptCategoryDialog(null);
+    setMessage(`已创建分类：${name}`);
   };
 
   const deleteCategory = (category: PromptTemplateCategory) => {
@@ -494,6 +525,10 @@ export default function PromptTemplateLibraryModal({
   const activeCategory = categories.find((cat) => cat.id === categoryId) || null;
   const selectedText = selected ? getPromptTemplateText(selected, language, false) : '';
   const selectedFullText = selected ? getPromptTemplateText(selected, language, true) : '';
+  const handleCopyText = async (text: string) => {
+    const copied = await copyText(text);
+    setMessage(copied ? '已复制到剪贴板' : '当前环境无法直接写入剪贴板，请在提示词内容框中手动选择复制。');
+  };
 
   return createPortal(
     <div
@@ -540,6 +575,7 @@ export default function PromptTemplateLibraryModal({
                     setActiveKind(kind);
                     setCategoryId('all');
                     setSelectedId('');
+                    setPromptCategoryDialog(null);
                   }}
                 >
                   {kindLabel(kind, language)}
@@ -585,6 +621,33 @@ export default function PromptTemplateLibraryModal({
             <button type="button" className={`mt-3 w-full ${buttonClass}`} onClick={addCategory}>
               <Plus size={13} /> 分类
             </button>
+            {promptCategoryDialog && (
+              <form
+                data-prompt-template-category-dialog
+                className={`mt-2 rounded-md border p-2 ${isPixel ? 'border-[var(--px-ink)] bg-[var(--px-surface)]' : isDark ? 'border-white/10 bg-white/[0.04]' : 'border-black/10 bg-white'}`}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitPromptCategoryDialog();
+                }}
+              >
+                <div className={`mb-1 text-[10px] font-bold ${subtle}`}>
+                  {promptCategoryDialog.mode === 'add'
+                    ? `${kindLabel(promptCategoryDialog.kind, language)}新分类`
+                    : '重命名分类'}
+                </div>
+                <input
+                  className={`${inputClass} h-8 w-full`}
+                  value={promptCategoryDialog.value}
+                  onChange={(event) => setPromptCategoryDialog((dialog) => (dialog ? { ...dialog, value: event.target.value } : dialog))}
+                  placeholder="输入分类名称"
+                  autoFocus
+                />
+                <div className="mt-2 flex justify-end gap-1.5">
+                  <button type="button" className={buttonClass} onClick={() => setPromptCategoryDialog(null)}>取消</button>
+                  <button type="submit" className={primaryClass}>保存</button>
+                </div>
+              </form>
+            )}
             {state.hiddenBuiltInIds.length > 0 && (
               <button
                 type="button"
@@ -827,10 +890,10 @@ export default function PromptTemplateLibraryModal({
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" className={buttonClass} onClick={() => copyText(selectedText)}>
+                    <button type="button" className={buttonClass} onClick={() => void handleCopyText(selectedText)}>
                       <Copy size={13} /> 复制正向
                     </button>
-                    <button type="button" className={buttonClass} onClick={() => copyText(selectedFullText)}>
+                    <button type="button" className={buttonClass} onClick={() => void handleCopyText(selectedFullText)}>
                       <FileDown size={13} /> 复制正负
                     </button>
                     <button type="button" className={buttonClass} onClick={saveSelectedToResource} disabled={busy === 'resource'}>

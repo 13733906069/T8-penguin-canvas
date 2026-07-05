@@ -1,6 +1,6 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
-import { AlertCircle, Image as ImageIcon, Loader2, Plus, Sparkles, X } from 'lucide-react';
+import { AlertCircle, Image as ImageIcon, Plus, Sparkles, Square, X } from 'lucide-react';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
@@ -165,6 +165,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // MJ 上传时区分 sref 还是 oref(共用 fileInputRef)
   const mjUploadKindRef = useRef<'sref' | 'oref'>('sref');
+  const generationRunRef = useRef(0);
 
   const [error, setError] = useState<string | null>(null);
   const d = data as any;
@@ -266,6 +267,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
     0,
     Number((MODELSCOPE_LORA_TOTAL_WEIGHT - selectedModelscopeLoraTotal).toFixed(4)),
   );
+  const nextGenerationRun = () => {
+    generationRunRef.current += 1;
+    return generationRunRef.current;
+  };
+  const isCurrentGenerationRun = (runId: number) => generationRunRef.current === runId;
   const patchProviderParams = (patch: Record<string, any>) => {
     update({ providerParams: { ...providerParams, ...patch } });
   };
@@ -573,6 +579,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       logBus.error('生成中止: 缺少 prompt', src);
       return;
     }
+    const runId = nextGenerationRun();
     taskCompletionSound.primeAudio();
     update({ status: 'generating', progress: '0%', error: null });
     try {
@@ -632,6 +639,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           n: Math.max(1, Math.min(4, Number(d?.providerParams?.n || 1))),
           providerParams: externalProviderParams,
         });
+        if (!isCurrentGenerationRun(runId)) return;
         const urls = res.imageUrls || [];
         if (!urls.length) throw new Error('扩展平台完成但未返回图片');
         update({
@@ -660,13 +668,16 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         for (const u of allRefs) {
           try {
             const resp = await fetch(u);
+            if (!isCurrentGenerationRun(runId)) return;
             const blob = await resp.blob();
+            if (!isCurrentGenerationRun(runId)) return;
             const dataUrl: string = await new Promise((resolve, reject) => {
               const fr = new FileReader();
               fr.onload = () => resolve(String(fr.result || ''));
               fr.onerror = () => reject(new Error('读取失败'));
               fr.readAsDataURL(blob);
             });
+            if (!isCurrentGenerationRun(runId)) return;
             base64Array.push(dataUrl);
           } catch (err: any) {
             logBus.warn(`MJ 主参考图转 base64 失败,跳过: ${u}`, src);
@@ -700,6 +711,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           base64Array,
           remix: true,
         });
+        if (!isCurrentGenerationRun(runId)) return;
         const taskId = submit.taskId;
         logBus.info(`MJ 任务已提交 taskId=${taskId} fullPrompt="${fullPrompt.slice(0, 120)}${fullPrompt.length > 120 ? '…' : ''}"`, src);
         update({ progress: '15%', taskId });
@@ -711,7 +723,9 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         );
         for (let i = 0; i < maxPoll; i++) {
           await new Promise((r) => setTimeout(r, interval));
+          if (!isCurrentGenerationRun(runId)) return;
           const q = await queryMjTask(taskId, mjSpeed);
+          if (!isCurrentGenerationRun(runId)) return;
           if (q.status === 'FAILURE') {
             throw new Error(`MJ 失败: ${q.failReason || '未知错误'}`);
           }
@@ -782,6 +796,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           image_mode: falKind === 'nbpro-fal' ? nbImgMode : undefined,
           providerParams,
         });
+        if (!isCurrentGenerationRun(runId)) return;
 
         // 同步完成
         if (submit.sync && submit.urls && submit.urls.length) {
@@ -811,7 +826,9 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         const maxPoll = minPollCountForTimeout(interval);
         for (let i = 0; i < maxPoll; i++) {
           await new Promise((r) => setTimeout(r, interval));
+          if (!isCurrentGenerationRun(runId)) return;
           const q = await queryImageFal({ responseUrl, endpoint, requestId });
+          if (!isCurrentGenerationRun(runId)) return;
           const st = String(q.status || '').toLowerCase();
           if (st === 'completed') {
             const url = q.urls?.[0];
@@ -856,6 +873,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         n: 1,
         providerParams,
       });
+      if (!isCurrentGenerationRun(runId)) return;
 
       // 分支一:同步完成
       if (submit.sync && submit.urls && submit.urls.length) {
@@ -884,7 +902,9 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       let lastProg = '5%';
       for (let i = 0; i < maxPoll; i++) {
         await new Promise((r) => setTimeout(r, interval));
+        if (!isCurrentGenerationRun(runId)) return;
         const q = await queryImageStatus(taskId, apiModel);
+        if (!isCurrentGenerationRun(runId)) return;
         if (q.progress && q.progress !== lastProg) {
           lastProg = q.progress;
           update({ progress: q.progress });
@@ -912,11 +932,19 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       }
       throw new Error(`超时:${maxPoll * interval / 1000}s 未完成`);
     } catch (e: any) {
+      if (!isCurrentGenerationRun(runId)) return;
       const msg = e?.message || '生成失败';
       setError(msg);
       logBus.error(`生成失败: ${msg}`, src);
       update({ status: 'error', error: msg });
     }
+  };
+
+  const handleStop = () => {
+    generationRunRef.current += 1;
+    setError(null);
+    update({ status: 'idle', progress: '已停止', error: null, taskId: null });
+    logBus.warn('用户主动停止：已停止本地轮询，远端任务可能仍会完成', `image:${id.slice(0, 6)}`);
   };
 
   // 接入运行总线,供批量运行调起
@@ -1973,21 +2001,21 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         </div>}
 
         {/* 生成按钮(包含异步进度) */}
-        <button
-          onClick={handleGenerate}
-          disabled={status === 'generating'}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-medium disabled:opacity-50 transition-colors"
-        >
-          {status === 'generating' ? (
-            <>
-              <Loader2 size={12} className="animate-spin" /> 生成中 {d?.progress || ''}
-            </>
-          ) : (
-            <>
-              <Sparkles size={12} /> 生成
-            </>
-          )}
-        </button>
+        {status === 'generating' ? (
+          <button
+            onClick={handleStop}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-red-500/20 hover:bg-red-500/30 text-red-200 text-xs font-medium transition-colors"
+          >
+            <Square size={11} /> 停止({d?.progress || '生成中'})
+          </button>
+        ) : (
+          <button
+            onClick={handleGenerate}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-medium transition-colors"
+          >
+            <Sparkles size={12} /> 生成
+          </button>
+        )}
 
         {error && (
           <div className="flex items-start gap-1 text-[10px] text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">

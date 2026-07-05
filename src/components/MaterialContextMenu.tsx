@@ -65,6 +65,10 @@ interface AnimeTagDraft {
   tags: string;
 }
 
+interface MissingPromptDraft {
+  value: string;
+}
+
 function isResourceKind(value: string | null): value is ResourceMediaKind {
   return value === 'image' || value === 'video' || value === 'audio';
 }
@@ -107,6 +111,9 @@ export default function MaterialContextMenu() {
   const [cloudResult, setCloudResult] = useState<api.CloudUploadAssetResult | null>(null);
   const [artistStyleDraft, setArtistStyleDraft] = useState<ArtistStyleDraft | null>(null);
   const [animeTagDraft, setAnimeTagDraft] = useState<AnimeTagDraft | null>(null);
+  const [promptCategoryDraft, setPromptCategoryDraft] = useState<string | null>(null);
+  const [resourceCategoryDraft, setResourceCategoryDraft] = useState<string | null>(null);
+  const [missingPromptDraft, setMissingPromptDraft] = useState<MissingPromptDraft | null>(null);
   const [copyingImage, setCopyingImage] = useState(false);
 
   const close = useCallback(() => {
@@ -117,6 +124,9 @@ export default function MaterialContextMenu() {
     setPromptCategoryId('');
     setArtistStyleDraft(null);
     setAnimeTagDraft(null);
+    setPromptCategoryDraft(null);
+    setResourceCategoryDraft(null);
+    setMissingPromptDraft(null);
     setCopyingImage(false);
   }, []);
 
@@ -167,6 +177,9 @@ export default function MaterialContextMenu() {
       setCloudResult(null);
       setArtistStyleDraft(null);
       setAnimeTagDraft(null);
+      setPromptCategoryDraft(null);
+      setResourceCategoryDraft(null);
+      setMissingPromptDraft(null);
       setCopyingImage(false);
       loadCategories(kind);
       loadCloudTargets();
@@ -190,6 +203,9 @@ export default function MaterialContextMenu() {
       setCloudResult(null);
       setArtistStyleDraft(null);
       setAnimeTagDraft(null);
+      setPromptCategoryDraft(null);
+      setResourceCategoryDraft(null);
+      setMissingPromptDraft(null);
       setCopyingImage(false);
       loadCategories('set');
     };
@@ -268,12 +284,9 @@ export default function MaterialContextMenu() {
     promptTemplateCategories[0]?.id ||
     '';
 
-  const saveToPromptTemplate = () => {
+  const savePromptTemplateWithPrompt = (promptValue: string) => {
     if (!menu || menu.kind === 'set' || !menu.url) return;
-    let prompt = (menu.promptTemplatePrompt || '').trim();
-    if (!prompt) {
-      prompt = window.prompt('没有检测到这个素材的提示词，请补充后保存到模板库：', '')?.trim() || '';
-    }
+    const prompt = promptValue.trim();
     if (!prompt) {
       setMessage('未保存：缺少提示词');
       return;
@@ -296,7 +309,19 @@ export default function MaterialContextMenu() {
       customItems: [item, ...current.customItems],
     });
     window.dispatchEvent(new CustomEvent('penguin:prompt-templates-changed', { detail: { id: item.id } }));
+    setMissingPromptDraft(null);
     setMessage(`已保存到提示词模板库：${item.titleZh}`);
+  };
+
+  const saveToPromptTemplate = () => {
+    if (!menu || menu.kind === 'set' || !menu.url) return;
+    const prompt = (menu.promptTemplatePrompt || '').trim();
+    if (!prompt) {
+      setMissingPromptDraft({ value: missingPromptDraft?.value || '' });
+      setMessage('请先补充提示词，再保存到模板库。');
+      return;
+    }
+    savePromptTemplateWithPrompt(prompt);
   };
 
   const openArtistStyleSaveDialog = () => {
@@ -420,15 +445,24 @@ export default function MaterialContextMenu() {
 
   const createPromptTemplateCategory = () => {
     if (!menu || menu.kind === 'set') return;
-    const name = window.prompt(promptTemplateKind === 'image' ? '新建图像模板分类' : '新建视频模板分类');
-    if (!name?.trim()) return;
+    setPromptCategoryDraft('');
+    setMessage(promptTemplateKind === 'image' ? '请输入图像模板分类名称' : '请输入视频模板分类名称');
+  };
+
+  const submitPromptTemplateCategory = () => {
+    if (!menu || menu.kind === 'set') return;
+    const name = (promptCategoryDraft || '').trim();
+    if (!name) {
+      setMessage('请填写模板分类名称');
+      return;
+    }
     const current = loadPromptTemplateUserState();
     const id = `custom-${promptTemplateKind}-${Date.now().toString(36)}`;
     const category: PromptTemplateCategory = {
       id,
       kind: promptTemplateKind,
-      labelZh: name.trim(),
-      labelEn: name.trim(),
+      labelZh: name,
+      labelEn: name,
       descriptionZh: '从素材右键保存时创建的分类',
       descriptionEn: 'Created while saving material to prompt templates',
       order: 1000 + current.customCategories.length,
@@ -439,17 +473,28 @@ export default function MaterialContextMenu() {
       customCategories: [...current.customCategories, category],
     });
     setPromptCategoryId(id);
+    setPromptCategoryDraft(null);
     window.dispatchEvent(new CustomEvent('penguin:prompt-templates-changed', { detail: { categoryId: id } }));
     setMessage(`已创建模板分类：${category.labelZh}`);
   };
 
-  const createCategory = async () => {
+  const createCategory = () => {
     if (!menu) return;
-    const name = window.prompt('新建分类');
-    if (!name?.trim()) return;
-    const r = await api.addResourceCategory(menu.kind, name.trim());
+    setResourceCategoryDraft('');
+    setMessage('请输入资源分类名称');
+  };
+
+  const submitResourceCategory = async () => {
+    if (!menu) return;
+    const name = (resourceCategoryDraft || '').trim();
+    if (!name) {
+      setMessage('请填写资源分类名称');
+      return;
+    }
+    const r = await api.addResourceCategory(menu.kind, name);
     if (r.success) {
       setCategories((prev) => [...prev, r.data]);
+      setResourceCategoryDraft(null);
       await addToCategory(r.data.id);
     } else {
       setMessage(r.error || '分类创建失败');
@@ -590,10 +635,85 @@ export default function MaterialContextMenu() {
               <FolderPlus size={12} />
             </button>
           </div>
+          {promptCategoryDraft !== null && (
+            <form
+              data-material-prompt-category-form
+              className="space-y-1 rounded border px-2 py-2"
+              style={{
+                borderColor: isPixel ? '#1A1410' : isDark ? 'rgba(125,211,252,.32)' : 'rgba(14,165,233,.22)',
+                background: isPixel ? '#fffbea' : isDark ? 'rgba(14,165,233,.08)' : 'rgba(14,165,233,.06)',
+              }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitPromptTemplateCategory();
+              }}
+            >
+              <div className={`text-[10px] font-bold ${isPixel ? '' : isDark ? 'text-white/70' : 'text-zinc-600'}`}>
+                {promptTemplateKind === 'image' ? '新建图像模板分类' : '新建视频模板分类'}
+              </div>
+              <input
+                value={promptCategoryDraft}
+                onChange={(event) => setPromptCategoryDraft(event.target.value)}
+                className="w-full rounded border px-2 py-1.5 text-[11px] outline-none"
+                style={{
+                  borderColor: isPixel ? '#1A1410' : isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.14)',
+                  background: isPixel ? '#fff' : isDark ? 'rgba(255,255,255,.08)' : '#fff',
+                  color: isPixel ? '#1A1410' : isDark ? '#fff' : '#18181b',
+                }}
+                placeholder="分类名称"
+                autoFocus
+              />
+              <div className="flex justify-end gap-1">
+                <button type="button" className={isPixel ? 'px-btn px-btn--sm px-btn--ghost !px-2 !py-1' : 'rounded border px-2 py-1 text-[10px]'} onClick={() => setPromptCategoryDraft(null)}>
+                  取消
+                </button>
+                <button type="submit" className={isPixel ? 'px-btn px-btn--sm !px-2 !py-1' : 'rounded border px-2 py-1 text-[10px] font-bold'}>
+                  保存
+                </button>
+              </div>
+            </form>
+          )}
           <button className={`${itemCls} !px-1`} onClick={saveToPromptTemplate}>
             <BookmarkPlus size={12} />
             <span className="truncate">保存到提示词模板库</span>
           </button>
+          {missingPromptDraft && (
+            <form
+              data-material-missing-prompt-form
+              className="space-y-1 rounded border px-2 py-2"
+              style={{
+                borderColor: isPixel ? '#1A1410' : isDark ? 'rgba(250,204,21,.36)' : 'rgba(202,138,4,.24)',
+                background: isPixel ? '#fffbea' : isDark ? 'rgba(250,204,21,.08)' : 'rgba(250,204,21,.10)',
+              }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                savePromptTemplateWithPrompt(missingPromptDraft.value);
+              }}
+            >
+              <div className={`text-[10px] font-bold ${isPixel ? '' : isDark ? 'text-white/70' : 'text-zinc-600'}`}>
+                补充提示词后保存
+              </div>
+              <textarea
+                value={missingPromptDraft.value}
+                onChange={(event) => setMissingPromptDraft({ value: event.target.value })}
+                className="min-h-[72px] w-full resize-y rounded border px-2 py-1.5 text-[11px] leading-relaxed outline-none"
+                style={{
+                  borderColor: isPixel ? '#1A1410' : isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.14)',
+                  background: isPixel ? '#fff' : isDark ? 'rgba(255,255,255,.08)' : '#fff',
+                  color: isPixel ? '#1A1410' : isDark ? '#fff' : '#18181b',
+                }}
+                placeholder="输入这个素材对应的提示词"
+              />
+              <div className="flex justify-end gap-1">
+                <button type="button" className={isPixel ? 'px-btn px-btn--sm px-btn--ghost !px-2 !py-1' : 'rounded border px-2 py-1 text-[10px]'} onClick={() => setMissingPromptDraft(null)}>
+                  取消
+                </button>
+                <button type="submit" className={isPixel ? 'px-btn px-btn--sm !px-2 !py-1' : 'rounded border px-2 py-1 text-[10px] font-bold'}>
+                  保存
+                </button>
+              </div>
+            </form>
+          )}
           {menu.kind === 'image' && (
             <>
               <button className={`${itemCls} !px-1`} onClick={openArtistStyleSaveDialog}>
@@ -624,6 +744,44 @@ export default function MaterialContextMenu() {
           <FolderPlus size={12} />
           <span>新建分类...</span>
         </button>
+        {resourceCategoryDraft !== null && (
+          <form
+            data-material-resource-category-form
+            className="mx-2 my-1 space-y-1 rounded border px-2 py-2"
+            style={{
+              borderColor: isPixel ? '#1A1410' : isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)',
+              background: isPixel ? '#fffbea' : isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.025)',
+            }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitResourceCategory();
+            }}
+          >
+            <div className={`text-[10px] font-bold ${isPixel ? '' : isDark ? 'text-white/70' : 'text-zinc-600'}`}>
+              新建资源分类
+            </div>
+            <input
+              value={resourceCategoryDraft}
+              onChange={(event) => setResourceCategoryDraft(event.target.value)}
+              className="w-full rounded border px-2 py-1.5 text-[11px] outline-none"
+              style={{
+                borderColor: isPixel ? '#1A1410' : isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.14)',
+                background: isPixel ? '#fff' : isDark ? 'rgba(255,255,255,.08)' : '#fff',
+                color: isPixel ? '#1A1410' : isDark ? '#fff' : '#18181b',
+              }}
+              placeholder="分类名称"
+              autoFocus
+            />
+            <div className="flex justify-end gap-1">
+              <button type="button" className={isPixel ? 'px-btn px-btn--sm px-btn--ghost !px-2 !py-1' : 'rounded border px-2 py-1 text-[10px]'} onClick={() => setResourceCategoryDraft(null)}>
+                取消
+              </button>
+              <button type="submit" className={isPixel ? 'px-btn px-btn--sm !px-2 !py-1' : 'rounded border px-2 py-1 text-[10px] font-bold'}>
+                创建
+              </button>
+            </div>
+          </form>
+        )}
       </div>
       {menu.kind !== 'set' && (
         <div

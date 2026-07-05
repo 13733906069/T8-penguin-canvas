@@ -54,7 +54,7 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   // 视频节点默认模型仍只使用 text/image；选择即梦 CLI Seedance 时会消费 video/audio 参考。
   // 端口表是静态的，需提前允许四类输入，避免用户切到即梦 CLI 后无法连线。
   video: { inputs: ['text', 'image', 'video', 'audio'], outputs: ['video'] },
-  'video-edit': { inputs: ['video'], outputs: ['video'] },
+  'video-edit': { inputs: ['video'], outputs: ['video', 'audio'] },
   // SD2.0 (Seedance 2.0) 同时支持:
   //   text  → prompt
   //   image → reference_image / first_frame / last_frame

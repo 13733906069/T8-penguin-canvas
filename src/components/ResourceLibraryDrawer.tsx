@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Eye,
   FolderPlus,
@@ -16,6 +16,7 @@ import {
   Star,
   Trash2,
   UserRoundCog,
+  Upload,
   Video,
   Workflow,
   X,
@@ -23,7 +24,7 @@ import {
 import type { CSSProperties } from 'react';
 import { useThemeStore } from '../stores/theme';
 import * as api from '../services/api';
-import type { ResourceCategory, ResourceItem, ResourceKind } from '../services/api';
+import type { ResourceAddKind, ResourceCategory, ResourceItem, ResourceKind } from '../services/api';
 import { isPortraitResourceItem } from '../utils/portraitResource';
 import { resourceItemToSendMaterials } from '../utils/sendMaterials';
 import { summarizeWorkflowResource } from '../utils/workflowResource';
@@ -39,6 +40,23 @@ const KIND_META: Record<ResourceKind, { label: string; icon: typeof ImageIcon; a
   pose: { label: '姿势', icon: PersonStanding, accent: '#fb923c' },
   workflow: { label: '工作流', icon: Workflow, accent: '#60a5fa' },
 };
+
+const LOCAL_UPLOAD_ACCEPT: Record<ResourceAddKind, string> = {
+  image: 'image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif',
+  video: 'video/mp4,video/webm,video/quicktime,video/x-m4v,video/x-matroska,video/x-msvideo',
+  audio: 'audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/flac,audio/aac',
+  panorama: 'image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif',
+};
+
+function isLocalUploadKind(kind: ResourceKind): kind is ResourceAddKind {
+  return kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'panorama';
+}
+
+function localUploadTitle(file: File) {
+  const raw = file.name || '本地资产';
+  const withoutExt = raw.replace(/\.[^/.]+$/, '').trim();
+  return (withoutExt || raw).slice(0, 120);
+}
 
 function resourceItemDragKind(item: ResourceItem) {
   return item.kind === 'panorama' ? 'image' : item.kind;
@@ -190,6 +208,8 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
   const [hoverPreview, setHoverPreview] = useState<{ src: string; title: string; left: number; top: number } | null>(null);
   const [categoryDialog, setCategoryDialog] = useState<CategoryDialogState | null>(null);
   const [itemRenameDialog, setItemRenameDialog] = useState<ItemRenameDialogState | null>(null);
+  const [uploadingLocal, setUploadingLocal] = useState(false);
+  const localUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     if (!open) return;
@@ -233,6 +253,11 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
   const activeMeta = KIND_META[kind];
   const ActiveIcon = activeMeta.icon;
   const totalText = useMemo(() => `${items.length} 个资源`, [items.length]);
+  const localUploadSupported = isLocalUploadKind(kind);
+  const localUploadCategory = categoryId !== 'all' ? categories.find((cat) => cat.id === categoryId) : undefined;
+  const localUploadCategoryId = localUploadSupported && categoryId !== 'all' ? categoryId : '';
+  const localUploadAccept = localUploadSupported ? LOCAL_UPLOAD_ACCEPT[kind] : '';
+  const localUploadTargetLabel = localUploadCategory?.name || '当前分类';
 
   const openAddCategoryDialog = () => {
     setMsg('');
@@ -317,6 +342,64 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
     }
     const ok = await updateItem(itemRenameDialog.item, { title });
     if (ok) setItemRenameDialog(null);
+  };
+
+  const handleLocalUploadButtonClick = () => {
+    if (!localUploadSupported) {
+      setMsg(`${activeMeta.label}暂不支持本地文件直传`);
+      return;
+    }
+    if (!localUploadCategoryId) {
+      setMsg('请先选择一个分类再上传本地资产');
+      return;
+    }
+    localUploadInputRef.current?.click();
+  };
+
+  const handleLocalUploadFiles = async (fileList: FileList | null) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    if (!localUploadSupported || !localUploadCategoryId) {
+      setMsg('请先选择一个分类再上传本地资产');
+      return;
+    }
+    const uploadKind = kind;
+    const uploadTargetName = localUploadTargetLabel;
+    setUploadingLocal(true);
+    setMsg(`正在上传 ${files.length} 个本地资产到「${uploadTargetName}」...`);
+    let saved = 0;
+    let duplicates = 0;
+    const failures: string[] = [];
+    for (const file of files) {
+      try {
+        const uploaded = await api.uploadResourceLocalFile(file);
+        const added = await api.addResourceItem({
+          url: uploaded.url,
+          kind: uploadKind,
+          categoryId: localUploadCategoryId,
+          title: localUploadTitle(file),
+        });
+        if (added.success) {
+          saved += 1;
+          if (added.data.duplicate) duplicates += 1;
+        } else {
+          failures.push(`${file.name}: ${added.error || '入库失败'}`);
+        }
+      } catch (e: any) {
+        failures.push(`${file.name}: ${e?.message || '上传失败'}`);
+      }
+    }
+    if (saved > 0) {
+      await load();
+      window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
+    }
+    const duplicateText = duplicates > 0 ? `，其中 ${duplicates} 个已存在` : '';
+    if (failures.length > 0) {
+      setMsg(`已上传 ${saved} 个${duplicateText}，失败 ${failures.length} 个：${failures.slice(0, 2).join('；')}`);
+    } else {
+      setMsg(`已上传 ${saved} 个本地资产到「${uploadTargetName}」${duplicateText}`);
+    }
+    setUploadingLocal(false);
   };
 
   const deleteItem = async (item: ResourceItem) => {
@@ -479,6 +562,44 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
           >
             <Star size={15} fill={favoriteOnly ? 'currentColor' : 'none'} />
           </button>
+          {localUploadSupported && (
+            <>
+              <input
+                ref={localUploadInputRef}
+                data-resource-local-upload-input
+                type="file"
+                className="hidden"
+                accept={localUploadAccept}
+                multiple
+                onChange={(event) => {
+                  const input = event.currentTarget;
+                  void handleLocalUploadFiles(input.files).finally(() => {
+                    input.value = '';
+                  });
+                }}
+              />
+              <button
+                type="button"
+                data-resource-local-upload-button
+                onPointerDown={stopResourceControlEvent}
+                onMouseDown={stopResourceControlEvent}
+                onClick={(event) => {
+                  stopResourceControlEvent(event);
+                  handleLocalUploadButtonClick();
+                }}
+                disabled={uploadingLocal}
+                className={isPixel
+                  ? `nodrag nopan px-btn px-btn--sm flex items-center gap-1 ${localUploadCategoryId ? 'px-btn--yellow' : 'px-btn--ghost opacity-70'}`
+                  : `nodrag nopan h-9 shrink-0 rounded-md border px-2 text-xs font-semibold flex items-center gap-1.5 ${localUploadCategoryId ? 'text-zinc-950' : subtle} ${uploadingLocal ? 'opacity-70 cursor-progress' : isDark ? 'border-white/10 hover:bg-white/10' : 'border-black/10 hover:bg-black/5'}`}
+                style={!isPixel && localUploadCategoryId ? { background: activeMeta.accent, borderColor: activeMeta.accent } : undefined}
+                title={localUploadCategoryId ? `上传到「${localUploadTargetLabel}」` : '先选择一个分类'}
+                aria-disabled={!localUploadCategoryId || uploadingLocal}
+              >
+                <Upload size={14} />
+                <span>{uploadingLocal ? '上传中' : '上传'}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

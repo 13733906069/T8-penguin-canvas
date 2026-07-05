@@ -205,7 +205,7 @@ function pickApiKey(settings, hint = '') {
   const m = String(hint || '').toLowerCase();
   if (!m) return fb;
   if (m.includes('gpt-image') || m.includes('gpt2') || m.includes('gpt_image') || m.includes('gptimage')) return settings.gptImageApiKey || fb;
-  if (m.includes('nano-banana') || m.includes('nano_banana') || m.includes('nanobanana') || m.includes('flash-image') || m.includes('gemini-3-pro-image')) return settings.nanoBananaApiKey || fb;
+  if (m.includes('nano-banana') || m.includes('nano_banana') || m.includes('nanobanana') || m.includes('flash-image') || m.includes('flash-lite-image') || m.includes('gemini-3-pro-image')) return settings.nanoBananaApiKey || fb;
   if (m.includes('midjourney') || /\bmj[-_/]/.test(m) || m.startsWith('mj') || m === 'mj') return settings.mjApiKey || fb;
   if (m.includes('veo')) return settings.veoApiKey || fb;
   if (m.includes('sora')) return settings.soraApiKey || fb;
@@ -240,7 +240,14 @@ function isBananaImageModel(model) {
     || m.includes('nano_banana')
     || m.includes('nanobanana')
     || m.includes('flash-image')
+    || m.includes('flash-lite-image')
     || m.includes('gemini-3-pro-image');
+}
+
+function isOfficialGeminiImageModel(model) {
+  const raw = String(model || '').trim();
+  return raw === 'gemini-3.1-flash-lite-image'
+    || raw === 'gemini-3-pro-image';
 }
 
 // ========== 工具: 以提示词为准，将 settings.zhenzhenApiKey 临时覆盖为分类 key ==========
@@ -853,12 +860,25 @@ function imageStatus(result) {
 
 function imageItems(result) {
   if (!result) return [];
-  if (Array.isArray(result)) return result;
+  if (Array.isArray(result)) {
+    const nested = result.flatMap((item) => imageItems(item));
+    return nested.length ? nested : result;
+  }
   if (typeof result === 'string') {
     const s = result.trim();
     return s && !isImageTaskString(s) ? [s] : [];
   }
   if (typeof result !== 'object') return [];
+  const inlineData = result.inlineData || result.inline_data;
+  if (inlineData?.data) {
+    return [{
+      b64_json: inlineData.data,
+      mime_type: inlineData.mimeType || inlineData.mime_type || inlineData.mime || 'image/png',
+    }];
+  }
+  if (Array.isArray(result.parts)) return imageItems(result.parts);
+  if (Array.isArray(result.content?.parts)) return imageItems(result.content.parts);
+  if (Array.isArray(result.candidates)) return imageItems(result.candidates);
   if (result.url || result.image_url || result.b64_json || result.base64 || result.image_base64) return [result];
   for (const k of ['data', 'images', 'result', 'results', 'output', 'outputs', 'image', 'url']) {
     const v = result[k];
@@ -939,6 +959,32 @@ async function normalizeLlmMessageImages(messages) {
   return messages;
 }
 
+function geminiOfficialImageSize(model, value) {
+  if (String(model || '').trim() === 'gemini-3.1-flash-lite-image') return '1K';
+  const raw = String(value || '').trim();
+  const upper = raw.toUpperCase();
+  if (upper === '1K' || upper === '2K' || upper === '4K') return upper;
+  if (raw === '512' || raw.toLowerCase() === '512px') return '512';
+  return '';
+}
+
+async function buildGeminiOfficialContents(prompt, refs) {
+  const parts = [];
+  if (Array.isArray(refs) && refs.length) {
+    const convertedRefs = await collectConvertedImageRefs(refs, 'Gemini 官方参考图');
+    for (const conv of convertedRefs) {
+      parts.push({
+        inlineData: {
+          mimeType: conv.mime || 'image/png',
+          data: conv.buf.toString('base64'),
+        },
+      });
+    }
+  }
+  parts.push({ text: prompt });
+  return [{ parts }];
+}
+
 // ========================================================================
 // 核心 helper:完全对齐主项目 gpt-image-2-web 的上游调用
 //   - GPT2 始终走 multipart /v1/images/edits?async=true(line 2869)
@@ -946,6 +992,7 @@ async function normalizeLlmMessageImages(messages) {
 //   - GPT2 字段: prompt/model/n/quality/moderation/size(像素串)/aspectRatio(camelCase)/resolution(1k|2k|4k)
 //   - nano-banana 文生图: JSON /generations?async=true { prompt, model, aspect_ratio, image_size }
 //   - nano-banana 图生图: multipart /edits?async=true 添加 image 多个
+//   - Gemini 3 官方图像模型: JSON /v1/models/{model}:generateContent + generationConfig.responseFormat.image
 //   - Grok Image: JSON /generations?async=true { model, prompt, aspect_ratio, image:[base64...]? }
 // ========================================================================
 async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt, n, aspect_ratio, image_size, refs, size, quality }) {
@@ -956,6 +1003,33 @@ async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt
   const lvlLower = String(image_size || '1K').toLowerCase();
   const lvlUpper = String(image_size || '2K').toUpperCase();
   const hasRefs = Array.isArray(refs) && refs.length > 0;
+
+  // ===== Gemini 3 官方图像格式(对齐 Nano Banana 2 Lite / Gemini 3 Pro Image generateContent) =====
+  if (isOfficialGeminiImageModel(finalApiModel)) {
+    const imageConfig = { aspectRatio: isAuto ? '1:1' : ar };
+    const officialImageSize = geminiOfficialImageSize(finalApiModel, image_size || '2K');
+    if (officialImageSize) imageConfig.imageSize = officialImageSize;
+    const body = {
+      contents: await buildGeminiOfficialContents(prompt, refs),
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        responseFormat: {
+          image: imageConfig,
+        },
+      },
+    };
+    const url = `${config.ZHENZHEN_BASE_URL}/v1/models/${encodeURIComponent(finalApiModel)}:generateContent`;
+    console.log('[upstream] Gemini official JSON → generateContent model:', finalApiModel, 'aspectRatio:', imageConfig.aspectRatio, 'imageSize:', imageConfig.imageSize || '', { refs: refs?.length || 0 });
+    return await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: auth,
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+  }
 
   // ===== Grok Image 路径(对齐 gpt-image-2-web Tab 12,默认参考图 Base64) =====
   if (paramKind === 'grok-image') {

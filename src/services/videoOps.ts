@@ -1,4 +1,14 @@
-import type { VideoEditClip, VideoEditSettings } from '../utils/videoEdit';
+import type { VideoEditClip, VideoEditSettings, VideoEditTimelineRenderPlan, VideoEditTimelineV2 } from '../utils/videoEdit';
+
+function looksLikeHtmlRouteMiss(text: string): boolean {
+  return /<\s*!DOCTYPE html|<\s*html/i.test(text) && /Cannot POST\s+\/api\/video-ops\//i.test(text);
+}
+
+function videoOpRouteMissMessage(path: string, text: string): string {
+  const match = text.match(/Cannot POST\s+([^<\s]+)/i);
+  const route = match?.[1] || `/api/video-ops/${path}`;
+  return `视频剪辑后端接口未更新或未启动：${route} 不可用。请重启后端服务或重新打开 Electron 后再试。`;
+}
 
 async function postVideoOp<T>(path: string, payload: Record<string, any>): Promise<T> {
   const res = await fetch(`/api/video-ops/${path}`, {
@@ -11,6 +21,9 @@ async function postVideoOp<T>(path: string, payload: Record<string, any>): Promi
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
+    if (looksLikeHtmlRouteMiss(text)) {
+      throw new Error(videoOpRouteMissMessage(path, text));
+    }
     throw new Error(`视频剪辑接口返回异常: ${text.slice(0, 160)}`);
   }
   if (!res.ok || !json?.success) {
@@ -23,6 +36,17 @@ export interface VideoProbeResult {
   duration?: number;
   width?: number;
   height?: number;
+  fps?: number;
+  rotation?: number;
+  hasVideo?: boolean;
+  hasAudio?: boolean;
+  videoCodec?: string;
+  audioCodec?: string;
+  audioSampleRate?: number;
+  audioChannels?: number;
+  formatName?: string;
+  bitRate?: number;
+  probeSource?: 'ffprobe-json' | 'ffmpeg-stderr';
   thumbnailUrl?: string;
   size?: number;
   mime?: string;
@@ -30,6 +54,7 @@ export interface VideoProbeResult {
 
 export interface VideoComposeResult {
   jobId: string;
+  mode?: 'audio-only' | 'mute-video' | 'both';
   videoUrl: string;
   directVideoUrl?: string;
   fileName: string;
@@ -38,6 +63,55 @@ export interface VideoComposeResult {
   width?: number;
   height?: number;
   mime?: string;
+  audioUrl?: string;
+  directAudioUrl?: string;
+  audioFileName?: string;
+  audioSize?: number;
+  audioMime?: string;
+  transitionEngine?: 'concat' | 'ffmpeg-xfade' | 'timeline-layer' | 'timeline-layer-xfade';
+  transitionName?: string;
+  transitionQuality?: string;
+  transitionDuration?: number;
+  timelineVideoComposited?: boolean;
+  timelineVideoClipCount?: number;
+  timelineVideoLayerCount?: number;
+  timelineVideoPipCount?: number;
+  timelineVideoDuration?: number;
+  timelineVideoTransitionApplied?: boolean;
+  timelineVideoTransitionClipCount?: number;
+  timelineVideoTransitionSkippedReason?: string;
+  subtitleBurnedIn?: boolean;
+  subtitleCount?: number;
+}
+
+export interface VideoSnapshotResult {
+  jobId?: string;
+  imageUrl: string;
+  directImageUrl?: string;
+  fileName: string;
+  size?: number;
+  mime?: string;
+  time: number;
+  sourceLabel?: string;
+  sourceName?: string;
+  sourceUrl?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface VideoTimelinePreviewResult {
+  jobId?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  rotation?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  hasAudio?: boolean;
+  filmstripUrls: string[];
+  filmstripTimes: number[];
+  waveformPeaks: number[];
 }
 
 export interface VideoJobStatus {
@@ -45,20 +119,58 @@ export interface VideoJobStatus {
   status: 'idle' | 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
   progress: number;
   message?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  finishedAt?: number | null;
   result?: VideoComposeResult;
   error?: string;
+  errorCode?: 'cancelled' | 'download-failed' | 'probe-failed' | 'ffmpeg-failed' | 'invalid-input' | 'video-ops-failed';
+}
+
+export interface VideoComposeOptions {
+  timelineV2?: VideoEditTimelineV2;
+  renderPlan?: VideoEditTimelineRenderPlan;
 }
 
 export function probeVideo(videoUrl: string): Promise<VideoProbeResult> {
   return postVideoOp<VideoProbeResult>('probe', { videoUrl });
 }
 
-export function composeVideoEdit(clips: VideoEditClip[], settings: VideoEditSettings): Promise<VideoComposeResult> {
-  return postVideoOp<VideoComposeResult>('compose', { clips, settings });
+export function composeVideoEdit(clips: VideoEditClip[], settings: VideoEditSettings, options: VideoComposeOptions = {}): Promise<VideoComposeResult> {
+  return postVideoOp<VideoComposeResult>('compose', { clips, settings, ...options });
 }
 
-export function composeVideoEditAsync(clips: VideoEditClip[], settings: VideoEditSettings): Promise<VideoJobStatus> {
-  return postVideoOp<VideoJobStatus>('compose', { clips, settings, async: true });
+export function composeVideoEditAsync(clips: VideoEditClip[], settings: VideoEditSettings, options: VideoComposeOptions = {}): Promise<VideoJobStatus> {
+  return postVideoOp<VideoJobStatus>('compose', { clips, settings, async: true, ...options });
+}
+
+export function separateVideoAudioAsync(
+  clips: VideoEditClip[],
+  settings: VideoEditSettings,
+  mode: 'audio-only' | 'mute-video' | 'both',
+  options: VideoComposeOptions = {},
+): Promise<VideoJobStatus> {
+  return postVideoOp<VideoJobStatus>('separate-audio', { clips, settings, mode, async: true, ...options });
+}
+
+export function snapshotVideoFrameAsync(
+  clip: VideoEditClip,
+  time: number,
+  options: { format?: 'png' | 'jpg'; sourceLabel?: string } = {},
+): Promise<VideoSnapshotResult> {
+  return postVideoOp<VideoSnapshotResult>('snapshot', {
+    clip,
+    time,
+    format: options.format || 'png',
+    sourceLabel: options.sourceLabel || clip.name || clip.sourceLabel,
+  });
+}
+
+export function loadVideoTimelinePreviewAsync(
+  clip: VideoEditClip,
+  options: { frameCount?: number; peakCount?: number } = {},
+): Promise<VideoTimelinePreviewResult> {
+  return postVideoOp<VideoTimelinePreviewResult>('timeline-preview', { clip, options });
 }
 
 export async function getVideoEditJob(jobId: string): Promise<VideoJobStatus> {

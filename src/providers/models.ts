@@ -38,9 +38,9 @@ export interface ImageModelDef {
 
 // 主项目 gpt-image-2-web 的 aspectRatio 全集(14 种 + Auto)
 const GPT_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9', '1:4', '4:1', '1:8', '8:1'];
-// nano-banana-2(Flash)支持全部 14 个比例,Pro 支持精简集
-const BANANA_FLASH_RATIOS = GPT_RATIOS;
-const BANANA_PRO_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9'];
+// nano-banana-2(Flash)支持全部 14 个比例并补充 9:21 竖长图,Pro 支持精简集
+const BANANA_FLASH_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9', '9:21', '1:4', '4:1', '1:8', '8:1'];
+const BANANA_PRO_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9', '9:21'];
 // gpt-image-2-web Grok Image Tab 的比例集合,默认参考图传入方式为 Base64
 const GROK_IMAGE_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'];
 
@@ -87,6 +87,7 @@ export const IMAGE_MODELS: ImageModelDef[] = [
     capabilities: ['t2i', 'i2i'],
     apiModelOptions: [
       { value: 'gemini-3.1-flash-image', label: 'nano-banana-2 (Flash)' },
+      { value: 'gemini-3.1-flash-lite-image', label: 'gemini-3.1-flash-lite-image' },
       { value: 'nano-banana-2-fal', label: 'nano-banana-2-fal' },
     ],
     aspectRatios: BANANA_FLASH_RATIOS,
@@ -109,6 +110,7 @@ export const IMAGE_MODELS: ImageModelDef[] = [
       { value: 'nano-banana-pro', label: 'nano-banana-pro' },
       { value: 'nano-banana-pro-2k', label: 'nano-banana-pro-2k' },
       { value: 'nano-banana-pro-4k', label: 'nano-banana-pro-4k' },
+      { value: 'gemini-3-pro-image', label: 'gemini-3-pro-image' },
       { value: 'nano-banana-pro-fal', label: 'nano-banana-pro-fal' },
     ],
     aspectRatios: BANANA_PRO_RATIOS,

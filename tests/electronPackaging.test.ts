@@ -65,9 +65,26 @@ test('Electron release keeps one packaged ffmpeg runtime and excludes installer 
   assert.equal(packageJson.build.compression, 'normal');
   assert.ok(files.includes('!node_modules/@ffmpeg-installer/**/*'));
   assert.ok(resources.includes('tools/ffmpeg-runtime->tools/ffmpeg'));
-  assert.deepEqual(ffmpegResource.filter, ['ffmpeg.exe', 'ffmpeg', 'README.md']);
+  const sharedResource = packageJson.build.extraResources.find((item: any) => item.to === 'shared');
+  assert.deepEqual(ffmpegResource.filter, ['ffmpeg.exe', 'ffmpeg', 'ffprobe.exe', 'ffprobe', 'README.md']);
+  assert.ok(sharedResource.filter.includes('videoTransitions.json'));
   assert.match(llmMedia, /resRoot && path\.join\(resRoot, 'tools', 'ffmpeg', binary\)/);
+  assert.match(llmMedia, /function resolveBundledFfprobe\(\)/);
+  assert.match(llmMedia, /resRoot && path\.join\(resRoot, 'tools', 'ffmpeg', binary\)/);
+  assert.match(llmMedia, /ffprobeBinaryName/);
   assert.match(llmMedia, /optional dev fallback only/);
+
+  const postBuild = read('../electron/_post_build.cjs');
+  assert.match(postBuild, /function loadPackagedVideoTransitions\(\)/);
+  assert.match(postBuild, /videoTransitions\.json/);
+  assert.match(postBuild, /for \(const transition of loadPackagedVideoTransitions\(\)\)/);
+  assert.match(postBuild, /transition\.quality !== 'native-xfade'/);
+  assert.match(postBuild, /transition\.xfade/);
+  assert.match(postBuild, /missingTransitions/);
+  assert.match(postBuild, /function checkFfprobeRuntime\(\)/);
+  assert.match(postBuild, /ffprobe/);
+  assert.match(postBuild, /show_format/);
+  assert.match(postBuild, /packaged ffprobe JSON probe verified/);
 });
 
 test('Electron packaging verifies encrypted local extension hook points', () => {

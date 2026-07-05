@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
+import multer from 'multer';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -22,6 +23,7 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
 
   const upstreamApp = express();
   upstreamApp.use(express.json({ limit: '4mb' }));
+  const upload = multer();
   const upstreamCalls: any[] = [];
   upstreamApp.post('/v1/chat/completions', (req, res) => {
     upstreamCalls.push({ path: req.path, body: req.body, auth: req.header('authorization') });
@@ -30,6 +32,16 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
   upstreamApp.post('/v1/images/generations', (req, res) => {
     upstreamCalls.push({ path: req.path, body: req.body, auth: req.header('authorization') });
     res.json({ data: [{ b64_json: Buffer.from('PNGDATA').toString('base64'), mime_type: 'image/png' }] });
+  });
+  upstreamApp.post('/v1/images/edits', upload.any(), (req, res) => {
+    upstreamCalls.push({
+      path: req.path,
+      body: req.body,
+      files: req.files,
+      auth: req.header('authorization'),
+      contentType: req.header('content-type'),
+    });
+    res.json({ data: [{ b64_json: Buffer.from('EDITPNG').toString('base64'), mime_type: 'image/png' }] });
   });
   upstreamApp.post('/v1/videos/generations', (req, res) => {
     upstreamCalls.push({ path: req.path, body: req.body, auth: req.header('authorization') });
@@ -107,6 +119,22 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
   assert.match(image.data.imageUrls[0], /^\/files\/output\/external_/);
   assert.equal(fs.existsSync(path.join(config.OUTPUT_DIR, path.basename(image.data.imageUrls[0]))), true);
 
+  const imageEdit = await fetch(`${base}/api/proxy/external/image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      providerId: 'openai-compatible',
+      prompt: 'edit route',
+      size: '512x512',
+      referenceImages: ['data:image/png;base64,QUJD'],
+    }),
+  }).then((res) => res.json());
+
+  assert.equal(imageEdit.success, true);
+  assert.equal(imageEdit.data.imageUrls.length, 1);
+  assert.match(imageEdit.data.imageUrls[0], /^\/files\/output\/external_/);
+  assert.equal(fs.existsSync(path.join(config.OUTPUT_DIR, path.basename(imageEdit.data.imageUrls[0]))), true);
+
   const video = await fetch(`${base}/api/proxy/external/video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -126,5 +154,107 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
   assert.equal(fs.existsSync(path.join(config.OUTPUT_DIR, path.basename(video.data.videoUrls[0]))), true);
   assert.equal(upstreamCalls[0].auth, 'Bearer sk-route-secret');
   assert.equal(upstreamCalls[1].auth, 'Bearer sk-route-secret');
+  assert.equal(upstreamCalls[2].path, '/v1/images/edits');
+  assert.match(upstreamCalls[2].contentType, /^multipart\/form-data; boundary=/);
   assert.equal(upstreamCalls[2].auth, 'Bearer sk-route-secret');
+  assert.equal(upstreamCalls[2].body.model, 'gpt-image-test');
+  assert.equal(upstreamCalls[2].body.prompt, 'edit route');
+  assert.equal(upstreamCalls[2].body.size, '512x512');
+  assert.equal(upstreamCalls[2].files.length, 1);
+  assert.equal(upstreamCalls[3].auth, 'Bearer sk-route-secret');
+});
+
+test('external Agnes image route sends image edit aliases through generations JSON', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-external-agnes-image-'));
+  t.after(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const upstreamApp = express();
+  upstreamApp.use(express.json({ limit: '8mb' }));
+  const upstreamCalls: any[] = [];
+  upstreamApp.post('/v1/images/generations', (req, res) => {
+    upstreamCalls.push({ path: req.path, body: req.body, auth: req.header('authorization') });
+    res.json({ data: [{ b64_json: Buffer.from('AGNES_EDIT').toString('base64'), mime_type: 'image/png' }] });
+  });
+  const upstreamServer = await listen(upstreamApp);
+  t.after(() => upstreamServer.close());
+
+  const config = require('../backend/src/config.js');
+  const oldConfig = {
+    SETTINGS_FILE: config.SETTINGS_FILE,
+    OUTPUT_DIR: config.OUTPUT_DIR,
+    DEFAULT_LOCAL_SAVE_DIR: config.DEFAULT_LOCAL_SAVE_DIR,
+    DEFAULT_CANVAS_AUTO_SAVE_DIR: config.DEFAULT_CANVAS_AUTO_SAVE_DIR,
+    DEFAULT_RESOURCE_LIBRARY_DIR: config.DEFAULT_RESOURCE_LIBRARY_DIR,
+    DEFAULT_THEME_TEMPLATE_DIR: config.DEFAULT_THEME_TEMPLATE_DIR,
+  };
+  t.after(() => Object.assign(config, oldConfig));
+  config.SETTINGS_FILE = path.join(tmpDir, 'settings.json');
+  config.OUTPUT_DIR = path.join(tmpDir, 'output');
+  config.DEFAULT_LOCAL_SAVE_DIR = path.join(tmpDir, 'save');
+  config.DEFAULT_CANVAS_AUTO_SAVE_DIR = path.join(tmpDir, 'canvas');
+  config.DEFAULT_RESOURCE_LIBRARY_DIR = path.join(tmpDir, 'resources');
+  config.DEFAULT_THEME_TEMPLATE_DIR = path.join(tmpDir, 'themes');
+  fs.mkdirSync(config.OUTPUT_DIR, { recursive: true });
+
+  const settingsRouter = require('../backend/src/routes/settings.js');
+  const externalProvidersRouter = require('../backend/src/routes/externalProviders.js');
+  const app = express();
+  app.use(express.json({ limit: '8mb' }));
+  app.use('/api/settings', settingsRouter);
+  app.use('/api/proxy/external', externalProvidersRouter);
+  const server = await listen(app);
+  t.after(() => server.close());
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const upstreamBase = `http://127.0.0.1:${upstreamServer.address().port}/v1`;
+  await fetch(`${base}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      advancedProviders: [
+        {
+          id: 'agnes',
+          protocol: 'agnes',
+          enabled: true,
+          baseUrl: upstreamBase,
+          apiKey: 'sk-agnes-route-secret',
+          imageModels: ['agnes-image-2.1-flash'],
+          videoModels: ['agnes-video-v2.0'],
+          chatModels: ['agnes-2.0-flash'],
+        },
+      ],
+    }),
+  }).then((res) => res.json());
+
+  const imageEdit = await fetch(`${base}/api/proxy/external/image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      providerId: 'agnes',
+      providerModel: 'agnes-image-2.1-flash',
+      model: 'agnes-image-2.1-flash',
+      prompt: 'edit route with agnes',
+      size: '1024x1024',
+      imageUrls: ['data:image/png;base64,QUJD'],
+      response_format: 'url',
+    }),
+  }).then((res) => res.json());
+
+  assert.equal(imageEdit.success, true);
+  assert.equal(imageEdit.data.imageUrls.length, 1);
+  assert.match(imageEdit.data.imageUrls[0], /^\/files\/output\/external_/);
+  assert.equal(upstreamCalls.length, 1);
+  assert.equal(upstreamCalls[0].path, '/v1/images/generations');
+  assert.equal(upstreamCalls[0].auth, 'Bearer sk-agnes-route-secret');
+  assert.deepEqual(upstreamCalls[0].body, {
+    model: 'agnes-image-2.1-flash',
+    prompt: 'edit route with agnes',
+    size: '1024x1024',
+    extra_body: {
+      image: ['data:image/png;base64,QUJD'],
+      response_format: 'url',
+    },
+  });
 });

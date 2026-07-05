@@ -1,7 +1,7 @@
 {
   "name": "t8-penguin-canvas",
   "private": false,
-  "version": "2.3.8",
+  "version": "2.4.1",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "T8-penguin-canvas — AI 节点画布工作流工具（Web + Electron 桌面端）",
@@ -156,7 +156,8 @@
         "from": "shared",
         "to": "shared",
         "filter": [
-          "achievementManifest.json"
+          "achievementManifest.json",
+          "videoTransitions.json"
         ]
       },
       {
@@ -181,6 +182,8 @@
         "filter": [
           "ffmpeg.exe",
           "ffmpeg",
+          "ffprobe.exe",
+          "ffprobe",
           "README.md"
         ]
       },

@@ -536,6 +536,13 @@ export interface AddResourcePayload {
   favorite?: boolean;
 }
 
+export interface UploadedResourceLocalFile {
+  filename: string;
+  url: string;
+  size: number;
+  mime?: string;
+}
+
 export interface AddResourcePosePayload {
   poseBackup: Record<string, any>;
   categoryId?: string;
@@ -601,6 +608,23 @@ export function addResourceItem(payload: AddResourcePayload) {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export async function uploadResourceLocalFile(file: File): Promise<UploadedResourceLocalFile> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`${BASE}/files/upload`, {
+    method: 'POST',
+    body: fd,
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.success) {
+    throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
+  }
+  if (!json?.data?.url) {
+    throw new Error('文件上传接口未返回可用地址');
+  }
+  return json.data;
 }
 
 export function addResourceSet(payload: AddResourceSetPayload) {

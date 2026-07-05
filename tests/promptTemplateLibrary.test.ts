@@ -121,6 +121,23 @@ test('prompt template library supports custom management, import/export, and res
   assert.match(modal, /preload="none"/);
 });
 
+test('prompt template library avoids native prompt dialogs in Electron category flows', () => {
+  const modal = read('../src/components/PromptTemplateLibraryModal.tsx');
+  const contextMenu = read('../src/components/MaterialContextMenu.tsx');
+
+  assert.doesNotMatch(modal, /window\.prompt/);
+  assert.match(modal, /promptCategoryDialog/);
+  assert.match(modal, /data-prompt-template-category-dialog/);
+  assert.match(modal, /submitPromptCategoryDialog/);
+
+  assert.doesNotMatch(contextMenu, /window\.prompt/);
+  assert.match(contextMenu, /promptCategoryDraft/);
+  assert.match(contextMenu, /data-material-prompt-category-form/);
+  assert.match(contextMenu, /resourceCategoryDraft/);
+  assert.match(contextMenu, /data-material-resource-category-form/);
+  assert.match(contextMenu, /missingPromptDraft/);
+});
+
 test('custom prompt templates preserve lightweight media attachment schema', () => {
   const data = read('../src/data/promptTemplateLibrary.ts');
   const service = read('../src/services/promptTemplateLibrary.ts');

@@ -129,6 +129,31 @@ function collectImageUrls(value, out = []) {
   return out;
 }
 
+function collectReferenceImageInputs(...values) {
+  const out = [];
+  const push = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      for (const item of value) push(item);
+      return;
+    }
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text) out.push(text);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    const direct = (
+      value.url || value.image_url || value.imageUrl ||
+      value.uri || value.value || value.src || value.path ||
+      value.b64_json || value.base64
+    );
+    if (direct) push(direct);
+  };
+  for (const value of values) push(value);
+  return out;
+}
+
 function collectVideoUrls(value, out = []) {
   if (!value) return out;
   if (typeof value === 'string') {
@@ -203,6 +228,19 @@ function agnesVideoFrameCount(duration, fps = 24) {
   };
 }
 
+function imageResponseFormat(provider, input = {}) {
+  const params = input.providerParams && typeof input.providerParams === 'object' ? input.providerParams : {};
+  return String(
+    input.response_format ||
+    input.responseFormat ||
+    params.response_format ||
+    params.responseFormat ||
+    provider?.defaults?.responseFormat ||
+    provider?.defaults?.response_format ||
+    'url',
+  ).trim() || 'url';
+}
+
 async function resolveImageRefs(refs, options = {}) {
   const out = [];
   for (const ref of Array.isArray(refs) ? refs : []) {
@@ -268,21 +306,35 @@ async function generateImage(provider, input = {}, options = {}) {
   }
 
   const params = input.providerParams && typeof input.providerParams === 'object' ? input.providerParams : {};
+  const responseFormat = imageResponseFormat(provider, input);
   const body = {
     model,
     prompt,
     size: String(input.size || params.size || '1024x1024'),
     extra_body: {
-      response_format: String(params.response_format || params.responseFormat || provider.defaults?.responseFormat || 'url'),
+      response_format: responseFormat,
     },
   };
 
   try {
-    const refs = await resolveImageRefs(input.images || input.referenceImages || input.reference_images, {
+    const refsInput = collectReferenceImageInputs(
+      input.images,
+      input.image,
+      input.imageUrl,
+      input.image_url,
+      input.imageUrls,
+      input.image_urls,
+      input.referenceImages,
+      input.reference_images,
+    );
+    const refs = await resolveImageRefs(refsInput, {
       baseUrl: options.baseUrl,
       target: 'data-url',
     });
     if (refs.length) body.extra_body.image = refs;
+    if (!refs.length && (input.return_base64 === true || params.return_base64 === true || responseFormat === 'b64_json')) {
+      body.return_base64 = true;
+    }
   } catch (e) {
     return { ok: false, code: 'invalid_reference', providerId: provider.id, protocol: provider.protocol, error: e?.message || '参考图解析失败。' };
   }

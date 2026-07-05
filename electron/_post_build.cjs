@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PACKAGE_JSON = require(path.join(ROOT, 'package.json'));
@@ -128,6 +129,10 @@ function failSecurity(message, p) {
   process.exit(1);
 }
 
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function walkFiles(root, out = []) {
   if (!fs.existsSync(root)) return out;
   const st = fs.statSync(root);
@@ -225,6 +230,26 @@ function checkAiWatermarkRuntime() {
   console.log('     Set T8_REQUIRE_AI_WATERMARK_RUNTIME=1 for user-release builds that must be offline/self-contained.');
 }
 
+function loadPackagedVideoTransitions() {
+  const catalogPath = path.join(RES, 'shared', 'videoTransitions.json');
+  if (!fs.existsSync(catalogPath)) {
+    missingCount += 1;
+    bad(catalogPath);
+    return [];
+  }
+  let catalog = null;
+  try {
+    catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf-8'));
+  } catch (_) {
+    failSecurity('packaged videoTransitions.json must be valid JSON:', catalogPath);
+  }
+  const transitions = Array.isArray(catalog?.transitions) ? catalog.transitions : [];
+  if (transitions.length === 0) {
+    failSecurity('packaged videoTransitions.json has no transitions:', catalogPath);
+  }
+  return transitions;
+}
+
 function checkFfmpegRuntime() {
   const runtimeRoot = path.join(RES, 'tools', 'ffmpeg');
   const binary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
@@ -235,6 +260,60 @@ function checkFfmpegRuntime() {
     return;
   }
   ok(ffmpeg);
+  const result = spawnSync(ffmpeg, ['-hide_banner', '-h', 'filter=xfade'], { encoding: 'utf8' });
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+  if (result.status !== 0 || !/wipeleft/.test(output) || !/circleopen/.test(output) || !/pixelize/.test(output)) {
+    failSecurity('packaged ffmpeg must support xfade high-quality transitions:', ffmpeg);
+  }
+  const missingTransitions = [];
+  for (const transition of loadPackagedVideoTransitions()) {
+    if (!transition || transition.quality !== 'native-xfade') continue;
+    if (!transition.xfade) {
+      missingTransitions.push(`${transition.id || 'unknown'}:missing-xfade`);
+      continue;
+    }
+    const transitionName = String(transition.xfade);
+    const supported = new RegExp(`\\b${escapeRegExp(transitionName)}\\b`).test(output);
+    if (!supported) missingTransitions.push(`${transition.id || transitionName}:${transitionName}`);
+  }
+  if (missingTransitions.length > 0) {
+    failSecurity(`packaged ffmpeg missing native xfade transitions from catalog: ${missingTransitions.join(', ')}`, ffmpeg);
+  }
+  console.log('  ✅ ffmpeg xfade high-quality transitions verified against packaged catalog');
+}
+
+function checkFfprobeRuntime() {
+  const runtimeRoot = path.join(RES, 'tools', 'ffmpeg');
+  const binary = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const ffprobe = path.join(runtimeRoot, binary);
+  if (!fs.existsSync(ffprobe)) {
+    missingCount += 1;
+    bad(ffprobe);
+    return;
+  }
+  ok(ffprobe);
+  const result = spawnSync(ffprobe, [
+    '-v', 'error',
+    '-f', 'lavfi',
+    '-i', 'testsrc=size=16x16:rate=1:duration=0.1',
+    '-show_streams',
+    '-show_format',
+    '-of', 'json',
+  ], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    failSecurity('packaged ffprobe must support JSON probing:', ffprobe);
+  }
+  let parsed = null;
+  try {
+    parsed = JSON.parse(result.stdout || '{}');
+  } catch (_) {
+    failSecurity('packaged ffprobe returned invalid JSON:', ffprobe);
+  }
+  const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
+  if (!streams.some((stream) => stream && stream.codec_type === 'video')) {
+    failSecurity('packaged ffprobe JSON probe did not expose a video stream:', ffprobe);
+  }
+  console.log('  ✅ packaged ffprobe JSON probe verified');
 }
 
 function checkParseHubRuntime() {
@@ -504,6 +583,7 @@ function main() {
   checkFile(path.join(RES, 'frontend', 'assets'));
   checkWebImageExtensionResources();
   checkFile(path.join(RES, 'shared', 'achievementManifest.json'));
+  checkFile(path.join(RES, 'shared', 'videoTransitions.json'));
   checkFrontendAsset('classic-one-summer-day-', '.mp3');
   checkFrontendAsset('pixel-theme-of-sss-', '.mp3');
   checkFrontendAsset('op-battle-scars-', '.mp3');
@@ -532,6 +612,7 @@ function main() {
 
   console.log('\n[6] ffmpeg sidecar runtime:');
   checkFfmpegRuntime();
+  checkFfprobeRuntime();
 
   console.log('\n[7] ParseHub bridge/runtime:');
   checkParseHubRuntime();

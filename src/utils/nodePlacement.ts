@@ -45,7 +45,7 @@ export const NODE_DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
   'generation-target': { w: 360, h: 260 },
   'drawing-board': { w: 1120, h: 760 },
   video: { w: 320, h: 380 },
-  'video-edit': { w: 760, h: 520 },
+  'video-edit': { w: 1120, h: 680 },
   seedance: { w: 320, h: 380 },
   audio: { w: 320, h: 380 },
   llm: { w: 320, h: 360 },

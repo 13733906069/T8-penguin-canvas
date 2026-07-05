@@ -54,6 +54,10 @@ function ffmpegBinaryName() {
   return process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
 }
 
+function ffprobeBinaryName() {
+  return process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+}
+
 function executableExists(p) {
   try {
     return !!p && fs.existsSync(p) && fs.statSync(p).isFile();
@@ -80,6 +84,22 @@ function resolveBundledFfmpeg() {
     if (executableExists(installer.path)) return installer.path;
   } catch {
     // optional dev fallback only
+  }
+  return binary;
+}
+
+function resolveBundledFfprobe() {
+  const binary = ffprobeBinaryName();
+  const resRoot = String(process.env.T8PC_RES || '').trim();
+  const candidates = [
+    process.env.T8_FFPROBE_BIN,
+    resRoot && path.join(resRoot, 'tools', 'ffmpeg', binary),
+    resRoot && path.join(resRoot, 'tools', 'ffmpeg-runtime', binary),
+    path.join(repoRoot(), 'tools', 'ffmpeg-runtime', binary),
+    path.join(repoRoot(), 'tools', 'ffmpeg', binary),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (executableExists(candidate)) return candidate;
   }
   return binary;
 }
@@ -495,4 +515,5 @@ module.exports = {
   extractVideoFramesToDataUrls,
   normalizeLlmMessageMedia,
   resolveBundledFfmpeg,
+  resolveBundledFfprobe,
 };
