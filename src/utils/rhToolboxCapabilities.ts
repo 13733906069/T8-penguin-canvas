@@ -28,6 +28,16 @@ export interface RhImageCapabilityPreset {
   paramPresets?: RhImageCapabilityParamPreset[];
 }
 
+export interface RhVideoCapabilityPreset {
+  id: string;
+  label: string;
+  shortLabel?: string;
+  capability: string;
+  title: string;
+  preferredToolId?: string;
+  icon?: 'zap' | 'sparkles';
+}
+
 export interface RhImageCapabilityParamPreset {
   id: string;
   label: string;
@@ -123,9 +133,35 @@ export type RhImageCapabilityPresetId = keyof typeof RH_IMAGE_CAPABILITY_PRESETS
 
 export const RH_IMAGE_NODE_CAPABILITY_PRESETS: RhImageCapabilityPresetId[] = ['cutout', 'upscale', 'expand', 'removeSubject'];
 
+export const RH_VIDEO_CAPABILITY_PRESETS = {
+  fastUpscale: {
+    id: 'fastUpscale',
+    label: '极速超分',
+    shortLabel: '极速',
+    title: '调用 RH工具箱 英伟达极速超分，并把高清视频输出为新素材节点',
+    capability: 'video.upscale',
+    preferredToolId: 'video-nividia-upscale',
+    icon: 'zap',
+  },
+  qualityUpscale: {
+    id: 'qualityUpscale',
+    label: '质量超分',
+    shortLabel: '质量',
+    title: '调用 RH工具箱 FlashVsr慢速超分，并把高清视频输出为新素材节点',
+    capability: 'video.upscale',
+    preferredToolId: 'video-flashvsr',
+    icon: 'sparkles',
+  },
+} as const satisfies Record<string, RhVideoCapabilityPreset>;
+
+export type RhVideoCapabilityPresetId = keyof typeof RH_VIDEO_CAPABILITY_PRESETS;
+
+export const RH_VIDEO_NODE_CAPABILITY_PRESETS: RhVideoCapabilityPresetId[] = ['fastUpscale', 'qualityUpscale'];
+
 const CAPABILITY_TITLE_MATCHERS: Record<string, RegExp> = {
   'image.expand': /扩图|扩画|外扩|补景|outpaint|uncrop|expand/i,
   'image.remove-subject': /消除主体|移除主体|去主体|主体消除|主体移除|remove\s*subject|subject\s*remov/i,
+  'video.upscale': /超分|放大|高清|upscale|super.?resolution|vsr/i,
 };
 
 const CAPABILITY_COMPATIBLE_TAGS: Record<string, string[]> = {
@@ -219,6 +255,23 @@ export function resolveRhImageCapabilityPreset(
   if (!preset) return RH_IMAGE_CAPABILITY_PRESETS.cutout;
   if (typeof preset === 'string') {
     const known = (RH_IMAGE_CAPABILITY_PRESETS as Record<string, RhImageCapabilityPreset>)[preset];
+    if (known) return known;
+    return {
+      id: preset,
+      label: preset,
+      title: `调用 RH工具箱 ${preset}`,
+      capability: preset,
+    };
+  }
+  return preset;
+}
+
+export function resolveRhVideoCapabilityPreset(
+  preset: RhVideoCapabilityPresetId | RhVideoCapabilityPreset | string | null | undefined,
+): RhVideoCapabilityPreset {
+  if (!preset) return RH_VIDEO_CAPABILITY_PRESETS.fastUpscale;
+  if (typeof preset === 'string') {
+    const known = (RH_VIDEO_CAPABILITY_PRESETS as Record<string, RhVideoCapabilityPreset>)[preset];
     if (known) return known;
     return {
       id: preset,

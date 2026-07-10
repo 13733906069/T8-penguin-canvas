@@ -28,6 +28,7 @@ import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
 import RhImageCapabilityRail from '../RhImageCapabilityRail';
+import RhVideoCapabilityRail from '../RhVideoCapabilityRail';
 import SmartImage from '../SmartImage';
 import { generateImage } from '../../services/generation';
 import { decodeDuckFiles, type DuckDecodeFileItem } from '../../services/api';
@@ -38,6 +39,7 @@ import {
   createUploadDataFromItem,
   createUploadDataFromItems,
   createUploadMediaRemovalData,
+  fileNameFromUrl,
   formatMediaSize,
   getMediaItemsFromData,
   sameMediaUrls,
@@ -58,7 +60,9 @@ import {
 // v1.2.10.5: 节点落点防重叠
 import { placeSingleNode, placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
-type UploadProduceMeta = ImageEditProduceMeta | { type: 'rh-capability'; label?: string };
+type UploadProduceMeta =
+  | ImageEditProduceMeta
+  | { type: 'rh-capability' | 'video-frame-extract' | 'rh-video-capability'; label?: string };
 
 /**
  * UploadNode - 通用上传素材节点
@@ -142,6 +146,13 @@ function autoOutputNodeTypeForMedia(kind: MediaKind): 'output' | 'model-3d-previ
   return kind === 'model3d' ? 'model-3d-preview' : 'output';
 }
 
+function uploadDownloadName(item: MediaItem, index: number): string {
+  const fallback = `upload-${index + 1}`;
+  const raw = (item.name || fileNameFromUrl(item.url) || fallback).trim();
+  const basename = raw.split(/[\\/]/).filter(Boolean).pop() || fallback;
+  return basename.slice(0, 180);
+}
+
 const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const { theme, style, templateId, customTemplates } = useThemeStore();
@@ -164,6 +175,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
 
   const [error, setError] = useState<string | null>(null);
   const [rhCapabilityBusy, setRhCapabilityBusy] = useState(false);
+  const [rhVideoCapabilityBusy, setRhVideoCapabilityBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   // 图像编辑弹窗 src URL（与 OutputNode 双击逻辑保持一致）
@@ -457,6 +469,11 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     [mediaItems],
   );
   const canEditImage = imageSourceUrls.length > 0 && uploadType === 'image';
+  const videoSourceItems = useMemo(
+    () => mediaItems.filter((item) => item.kind === 'video' && item.url),
+    [mediaItems],
+  );
+  const canRunVideoTools = videoSourceItems.length > 0 && uploadType === 'video';
   const openEdit = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (canEditImage) setEditingUrl(imageSourceUrls[0]);
@@ -524,7 +541,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
 
   const handleProduce = (urls: string[], _meta?: UploadProduceMeta): void | Promise<void> => {
     const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
-    const isRhCapabilityOutput = _meta?.type === 'rh-capability';
+    const isRhCapabilityOutput = _meta?.type === 'rh-capability' || _meta?.type === 'video-frame-extract';
     const logSource = `rh-image-output:${id}`;
     if (_meta?.type === 'annotation-edit') {
       return runAnnotationEditProduce(cleanUrls, _meta);
@@ -592,6 +609,74 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     }
   };
 
+  const handleVideoProduce = (urls: string[], _meta?: UploadProduceMeta): void => {
+    const cleanUrls = (Array.isArray(urls) ? urls : []).map((item) => String(item || '').trim()).filter(Boolean);
+    const isRhCapabilityOutput = _meta?.type === 'rh-video-capability';
+    const logSource = `rh-video-output:${id}`;
+    if (cleanUrls.length === 0) {
+      if (isRhCapabilityOutput) logBus.warn(`${_meta.label || 'RH 视频能力'}完成但没有可创建的视频 URL`, logSource);
+      return;
+    }
+    const me = rf.getNode(id);
+    const myW = (me as any)?.measured?.width || (me as any)?.width || 260;
+    const myH = (me as any)?.measured?.height || (me as any)?.height || 360;
+    const baseX = (me?.position?.x ?? 0) + myW + 80;
+    const baseY = me?.position?.y ?? 0;
+    const COLS = 3;
+    const COL_W = 350;
+    const ROW_H = Math.max(360, myH);
+    const ts = Date.now();
+    const _sz = defaultSizeOf('output');
+    if (isRhCapabilityOutput) {
+      logBus.info(`${_meta.label || 'RH 视频能力'}准备创建 ${cleanUrls.length} 个视频输出素材节点`, logSource);
+    }
+    const _desired: PlacementRect[] = cleanUrls.map((_, i) => ({
+      x: baseX + (i % COLS) * COL_W,
+      y: baseY + Math.floor(i / COLS) * ROW_H,
+      w: _sz.w,
+      h: _sz.h,
+    }));
+    const _off = placeBatchNodes(_desired, rf.getNodes(), { source: `placement:upload-video-produce:${id}` });
+    const newNodes: Node[] = cleanUrls.map((u, i) => {
+      const newId = `output-auto-video-${id}-${ts}-${i}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+      return {
+        id: newId,
+        type: 'output',
+        position: {
+          x: baseX + (i % COLS) * COL_W + _off.dx,
+          y: baseY + Math.floor(i / COLS) * ROW_H + _off.dy,
+        },
+        data: createOutputDataFromItems('video', [{
+          kind: 'video',
+          url: u,
+          name: fileNameFromUrl(u),
+        }]),
+        selected: isRhCapabilityOutput,
+      } as Node;
+    });
+    if (isRhCapabilityOutput) {
+      rf.setNodes((prev) => [...prev.map((node) => ({ ...node, selected: false })), ...newNodes]);
+      const first = newNodes[0];
+      if (first) {
+        window.setTimeout(() => {
+          try {
+            rf.setCenter(first.position.x + _sz.w / 2, first.position.y + _sz.h / 2, {
+              zoom: Math.max(0.7, Math.min(1.2, rf.getZoom())),
+              duration: 320,
+            });
+          } catch {
+            /* 视野定位失败不影响节点创建 */
+          }
+        }, 0);
+      }
+      logBus.success(`${_meta.label || 'RH 视频能力'}已创建 ${newNodes.length} 个视频输出素材节点`, logSource);
+    } else {
+      rf.addNodes(newNodes);
+    }
+  };
+
   const splitUploadCollection = () => {
     if (!uploadType || mediaItems.length <= 1) return;
     const me = rf.getNode(id);
@@ -632,6 +717,20 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const effectiveHandleColor = rhDuckMode ? '#ff345f' : yyhPortraitUploadMode ? '#ff4fd8' : handleColor;
   const headerLabel = lockedUploadType === 'model3d' ? '3D素材上传' : meta ? `上传${meta.label}` : '上传素材';
   const totalSize = mediaItems.reduce((sum, item) => sum + (item.size || 0), 0);
+  const handleDownloadUploads = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof document === 'undefined') return;
+    mediaItems.forEach((item, i) => {
+      const anchor = document.createElement('a');
+      anchor.href = item.url;
+      anchor.download = uploadDownloadName(item, i);
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    });
+  };
 
   return (
     <div
@@ -712,6 +811,18 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
           onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
           onError={setError}
           onRunningChange={setRhCapabilityBusy}
+        />
+      )}
+      {(selected || rhVideoCapabilityBusy) && canRunVideoTools && (
+        <RhVideoCapabilityRail
+          sourceItems={videoSourceItems}
+          accent={effectiveHandleColor}
+          isDark={isDark}
+          isPixel={isPixel}
+          onFramesComplete={(imageUrls) => handleProduce(imageUrls, { type: 'video-frame-extract', label: '首尾帧获取' })}
+          onVideosComplete={(result) => handleVideoProduce(result.videoUrls, { type: 'rh-video-capability', label: result.tool.title })}
+          onError={setError}
+          onRunningChange={setRhVideoCapabilityBusy}
         />
       )}
       {/* 仅有 source handle(上传节点不接收输入) */}
@@ -816,7 +927,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                 count={mediaItems.length}
                 kindLabel={meta.label}
                 onSplit={splitUploadCollection}
-                className="opacity-100 transition sm:opacity-0 sm:group-hover/upload-section:opacity-100 sm:focus-within:opacity-100"
+                className="opacity-100 transition"
               />
             </div>
 
@@ -1037,6 +1148,19 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
               <span className="truncate flex-1">
                 {mediaItems.length} 项{totalSize > 0 ? ` · ${formatMediaSize(totalSize)}` : ''}
               </span>
+              <button
+                type="button"
+                data-upload-action="download"
+                onClick={handleDownloadUploads}
+                title={mediaItems.length > 1 ? '下载全部素材' : '下载素材'}
+                aria-label={mediaItems.length > 1 ? '下载全部素材' : '下载素材'}
+                className={`nodrag nopan p-0.5 rounded ${
+                  isDark ? 'hover:bg-white/10 text-white/60' : 'hover:bg-black/10 text-zinc-600'
+                }`}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <Download size={11} />
+              </button>
               <button
                 onClick={triggerPick}
                 title="继续添加同类型文件"

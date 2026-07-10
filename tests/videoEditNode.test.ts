@@ -173,6 +173,24 @@ test('video edit timeline keeps duplicate source clips and links trim controls t
   assert.match(node, /resize overflow-hidden/);
 });
 
+test('video edit node temporarily hides the full workbench entry button', () => {
+  const node = read('src/components/nodes/VideoEditNode.tsx');
+
+  assert.match(node, /const VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED = false/);
+  assert.match(
+    node,
+    /\{VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED && \([\s\S]{0,900}data-video-edit-open-workbench="true"[\s\S]{0,900}打开剪辑台[\s\S]{0,900}\)\}/,
+  );
+  assert.match(
+    node,
+    /VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED && clips\.length > compactTimelineClips\.length[\s\S]{0,500}查看全部 \{clips\.length\} 段/,
+  );
+  assert.match(
+    node,
+    /\{VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED && \([\s\S]{0,700}data-video-edit-node-detail-gate="true"[\s\S]{0,700}剪辑台细调[\s\S]{0,700}\)\}/,
+  );
+});
+
 test('video edit preview resolves the current clip from timeline playback state', () => {
   const videoEdit = read('src/utils/videoEdit.ts');
   const node = read('src/components/nodes/VideoEditNode.tsx');
@@ -267,7 +285,8 @@ test('video edit preview keeps timeline seek requests through video metadata rel
   assert.match(node, /if \(pending && pending\.clipKey !== previewClipKey\) return/);
   assert.match(node, /useEffect\(\(\) => \{\s*const pending = pendingPreviewSeekRef\.current/);
   assert.match(node, /window\.setTimeout\(flushPendingPreviewSeek, 0\)/);
-  assert.match(node, /onLoadedMetadata=\{flushPendingPreviewSeek\}/);
+  assert.match(node, /const handlePreviewLoadedMetadata = \(event: SyntheticEvent<HTMLVideoElement>\) => \{[\s\S]*flushPendingPreviewSeek\(\);/);
+  assert.match(node, /onLoadedMetadata=\{handlePreviewLoadedMetadata\}/);
   assert.doesNotMatch(node, /onLoadedMetadata=\{\(\) => seekPreviewTo\(selectedClip\.trimStart \|\| 0\)\}/);
 });
 
@@ -800,31 +819,78 @@ test('video edit compact playlist timeline supports direct duration dragging wit
   assert.match(node, /data-video-edit-node-trim-handle="end"/);
   assert.match(node, /function buildVideoEditTrimVisual/);
   assert.match(node, /function buildVideoEditTrimmedCardVisual/);
-  assert.match(node, /const trimVisual = buildVideoEditTrimmedCardVisual\(clip\)/);
+  assert.match(node, /const clipForTimeline = buildNodeTimelinePresentationClip\(clip, timelineItem\)/);
+  assert.match(node, /const trimVisual = buildVideoEditTrimmedCardVisual\(clipForTimeline\)/);
   assert.match(node, /data-video-edit-trim-thumbnail-window="true"/);
   assert.match(node, /data-video-edit-trim-thumbnail-window-mode="trim-range-sync"/);
   assert.match(node, /data-video-edit-trim-thumbnail-active="true"/);
   assert.match(node, /data-video-edit-trim-thumbnail-mask="true"/);
   assert.match(node, /data-video-edit-trim-thumbnail-mask-mode="hidden-outside-trim"/);
+  assert.match(node, /clipForTimeline\.url \? \(/);
+  assert.match(node, /onLoadedMetadata=\{\(event\) => patchClipVideoElementMetadata\(clip\.id, event\.currentTarget\)\}/);
   assert.match(node, /const beginTimelineTrimTrackDrag =/);
   assert.match(node, /const beginTimelineTrimTrackMouseDrag =/);
   assert.match(node, /applyTimelineTrimClientX\(event\.clientX\)/);
   assert.match(node, /onPointerMove=\{handleTimelineTrimPointerMove\}/);
   assert.match(node, /onPointerUp=\{finishTimelineTrimDrag\}/);
   assert.match(node, /draggable=\{false\}/);
-  assert.match(node, /onPointerDownCapture=\{\(event\) => beginTimelineTrimTrackDrag\(event, clip, trimVisual, 'trimmed-window'\)\}/);
-  assert.match(node, /onMouseDownCapture=\{\(event\) => beginTimelineTrimTrackMouseDrag\(event, clip, trimVisual, 'trimmed-window'\)\}/);
-  assert.match(node, /onPointerMoveCapture=\{\(event\) => continueOrStartTimelineTrimTrackDrag\(event, clip, trimVisual, 'trimmed-window'\)\}/);
-  assert.match(node, /onMouseMoveCapture=\{\(event\) => continueOrStartTimelineTrimTrackMouseDrag\(event, clip, trimVisual, 'trimmed-window'\)\}/);
-  assert.match(node, /beginTimelineTrimDrag\(event, clip, 'start', trimVisual\.trackElement, 'trimmed-window'\)/);
-  assert.match(node, /beginTimelineTrimDrag\(event, clip, 'end', trimVisual\.trackElement, 'trimmed-window'\)/);
-  assert.match(node, /beginTimelineTrimMouseDrag\(event, clip, 'start', trimVisual\.trackElement, 'trimmed-window'\)/);
-  assert.match(node, /beginTimelineTrimMouseDrag\(event, clip, 'end', trimVisual\.trackElement, 'trimmed-window'\)/);
+  assert.match(node, /onPointerDownCapture=\{\(event\) => \{ selectNodeTimelineClip\(clip\); beginTimelineTrimTrackDrag\(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem\?\.id\); \}\}/);
+  assert.match(node, /onMouseDownCapture=\{\(event\) => \{ selectNodeTimelineClip\(clip\); beginTimelineTrimTrackMouseDrag\(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem\?\.id\); \}\}/);
+  assert.match(node, /onPointerMoveCapture=\{\(event\) => continueOrStartTimelineTrimTrackDrag\(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem\?\.id\)\}/);
+  assert.match(node, /onMouseMoveCapture=\{\(event\) => continueOrStartTimelineTrimTrackMouseDrag\(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem\?\.id\)\}/);
+  assert.match(node, /selectNodeTimelineClip\(clip\); beginTimelineTrimDrag\(event, clipForTimeline, 'start', trimVisual\.trackElement, 'trimmed-window', timelineItem\?\.id\)/);
+  assert.match(node, /selectNodeTimelineClip\(clip\); beginTimelineTrimDrag\(event, clipForTimeline, 'end', trimVisual\.trackElement, 'trimmed-window', timelineItem\?\.id\)/);
+  assert.match(node, /selectNodeTimelineClip\(clip\); beginTimelineTrimMouseDrag\(event, clipForTimeline, 'start', trimVisual\.trackElement, 'trimmed-window', timelineItem\?\.id\)/);
+  assert.match(node, /selectNodeTimelineClip\(clip\); beginTimelineTrimMouseDrag\(event, clipForTimeline, 'end', trimVisual\.trackElement, 'trimmed-window', timelineItem\?\.id\)/);
   assert.match(node, /const handleTrimStartChange = \(clipId: string, value: number\) => \{[\s\S]*seekPreviewTo\(value\)/);
   assert.match(node, /const handleTrimEndChange = \(clipId: string, value: number\) => \{[\s\S]*seekPreviewNearTrimEnd\(clipId, value\)/);
   assert.match(node, /handleTrimStartChange\(clipId, nextSecond\)/);
   assert.match(node, /handleTrimEndChange\(clipId, nextSecond\)/);
   assert.doesNotMatch(node, /data-video-edit-node-trim-track="compact"[\s\S]{0,220}className="absolute bottom-5/);
+});
+
+test('video edit compact playlist selection synchronizes the active timeline item', () => {
+  const node = read('src/components/nodes/VideoEditNode.tsx');
+  const compactCardBlock = node.match(/data-video-edit-node-timeline-card="true"[\s\S]*?data-video-edit-node-trim-track="compact"[\s\S]*?data-video-edit-node-trim-handle="end"[\s\S]*?title="拖动调整出点并预览"/);
+
+  assert.ok(compactCardBlock, 'compact playlist card block should exist');
+  assert.match(node, /const findTimelineVideoItemForClip = \(clip: VideoEditClip\) =>/);
+  assert.match(node, /const selectNodeTimelineClip = \(clip: VideoEditClip\) =>/);
+  assert.match(node, /const timelineItem = findTimelineVideoItemForClip\(clip\)/);
+  assert.match(node, /selectTimelineVideoItem\(timelineItem\)/);
+  assert.match(node, /update\(\{ selectedClipId: clip\.id \}\)/);
+  assert.match(compactCardBlock[0], /onClick=\{\(\) => selectNodeTimelineClip\(clip\)\}/);
+  assert.match(compactCardBlock[0], /onPointerDownCapture=\{\(event\) => \{ selectNodeTimelineClip\(clip\); beginTimelineTrimTrackDrag\(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem\?\.id\); \}\}/);
+  assert.match(compactCardBlock[0], /onMouseDownCapture=\{\(event\) => \{ selectNodeTimelineClip\(clip\); beginTimelineTrimTrackMouseDrag\(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem\?\.id\); \}\}/);
+  assert.match(compactCardBlock[0], /onPointerDownCapture=\{\(event\) => \{ selectNodeTimelineClip\(clip\); beginTimelineTrimDrag\(event, clipForTimeline, 'start'/);
+  assert.match(compactCardBlock[0], /onPointerDownCapture=\{\(event\) => \{ selectNodeTimelineClip\(clip\); beginTimelineTrimDrag\(event, clipForTimeline, 'end'/);
+  assert.doesNotMatch(compactCardBlock[0], /onClick=\{\(\) => update\(\{ selectedClipId: clip\.id \}\)\}/);
+});
+
+test('video edit upstream import preserves probed media metadata for compact timeline cards', () => {
+  const node = read('src/components/nodes/VideoEditNode.tsx');
+  const pushBlock = node.match(/const push = \(item: Partial<VideoImportCandidate>\) => \{[\s\S]*?out\.push\(\{[\s\S]*?\}\);\s*\};/);
+  const importBlock = node.match(/const importUpstream = async \(\) => \{[\s\S]*?await appendClips\(incoming\);[\s\S]*?\};/);
+
+  assert.ok(pushBlock, 'upstream push block should exist');
+  assert.ok(importBlock, 'upstream import block should exist');
+  assert.match(pushBlock[0], /duration: item\.duration/);
+  assert.match(pushBlock[0], /width: item\.width/);
+  assert.match(pushBlock[0], /height: item\.height/);
+  assert.match(pushBlock[0], /thumbnailUrl: item\.thumbnailUrl/);
+  assert.match(pushBlock[0], /hasAudio: item\.hasAudio/);
+  assert.match(importBlock[0], /duration: item\.duration/);
+  assert.match(importBlock[0], /width: item\.width/);
+  assert.match(importBlock[0], /height: item\.height/);
+  assert.match(importBlock[0], /thumbnailUrl: item\.thumbnailUrl/);
+  assert.match(importBlock[0], /hasAudio: item\.hasAudio/);
+  assert.match(node, /const duration = videoEditClipDuration\(clipForTimeline\)/);
+  assert.match(node, /const measuredDuration = duration > 0\.25 \? duration : Number\(clip\.duration \|\| clip\.trimEnd \|\| 0\)/);
+  assert.match(node, /const layoutDuration = Math\.max\(1, measuredDuration > 0\.25 \? measuredDuration : 5\)/);
+  assert.match(node, /const trimVisual = buildVideoEditTrimmedCardVisual\(clipForTimeline\)/);
+  assert.match(node, /clipForTimeline\.thumbnailUrl/);
+  assert.match(node, /const patchClipVideoElementMetadata = \(clipId: string, video: HTMLVideoElement\) =>/);
+  assert.match(node, /onLoadedMetadata=\{handlePreviewLoadedMetadata\}/);
 });
 
 test('video edit trimmed timeline cards do not leave source-duration blank space after trimming', () => {
@@ -1236,7 +1302,9 @@ test('video edit node uses a compact widescreen console with list settings', () 
   assert.match(node, /data-video-edit-timeline-placement="between-actions-and-settings"/);
   assert.match(node, /data-video-edit-timeline-adaptive="duration-flex"/);
   assert.match(node, /data-video-edit-timeline-track="full-height"/);
-  assert.match(node, /flexGrow: Math\.max\(1, videoEditClipDuration\(clip\)\)/);
+  assert.match(node, /const measuredDuration = duration > 0\.25 \? duration : Number\(clip\.duration \|\| clip\.trimEnd \|\| 0\)/);
+  assert.match(node, /const layoutDuration = Math\.max\(1, measuredDuration > 0\.25 \? measuredDuration : 5\)/);
+  assert.match(node, /flexGrow: layoutDuration/);
   assert.match(node, /h-full min-w-\[96px\]/);
   assert.match(node, /data-video-edit-compact-lists="true"/);
   assert.match(node, /data-video-edit-compact-list-mode="selects"/);
@@ -1260,6 +1328,40 @@ test('video edit node uses a compact widescreen console with list settings', () 
   assert.match(node, /<select[\s\S]*value=\{settings\.creatorTemplate \|\| 'manual'\}/);
   assert.doesNotMatch(node, /max-h-\[640px\] grid-rows-\[auto_auto_auto_minmax\(0,1fr\)\]/);
   assert.doesNotMatch(node, /data-video-edit-settings-list="true" className="grid gap-2 md:grid-cols-2 xl:grid-cols-3"/);
+});
+
+test('video edit compact control buttons keep visible button chrome in light mode', () => {
+  const node = read('src/components/nodes/VideoEditNode.tsx');
+  const styles = read('src/styles/index.css');
+
+  assert.match(node, /--t8-video-edit-action-bg/);
+  assert.match(node, /--t8-video-edit-action-border/);
+  assert.match(node, /--t8-video-edit-action-shadow/);
+
+  for (const label of ['均分', '压缩', '排序', '剪辑台细调', '导入配方', '导出配方', '套餐', '无声', '音频', '源节点', '输出']) {
+    assert.match(
+      node,
+      new RegExp(`data-video-edit-compact-action-button="true"[\\s\\S]{0,260}>${label}<\\/button>`),
+      `${label} should use the compact action button skin`,
+    );
+  }
+
+  assert.match(styles, /\[data-video-edit-compact-action-button="true"\]/);
+  assert.match(styles, /background:\s*var\(--t8-video-edit-action-bg\)/);
+  assert.match(styles, /border-color:\s*var\(--t8-video-edit-action-border\)/);
+  assert.match(styles, /box-shadow:\s*var\(--t8-video-edit-action-shadow\)/);
+  assert.match(styles, /\[data-video-edit-compact-action-button="true"\]:disabled/);
+});
+
+test('video edit RH light palette follows theme mode instead of template dark list', () => {
+  const node = read('src/components/nodes/VideoEditNode.tsx');
+
+  assert.match(node, /const shouldUseDarkSurface = theme === 'dark'/);
+  assert.match(node, /theme !== 'light'[\s\S]{0,120}VIDEO_EDIT_DARK_TEMPLATE_IDS\.has\(id\)/);
+  assert.doesNotMatch(
+    node,
+    /if \(theme === 'dark' \|\| style === 'tech' \|\| VIDEO_EDIT_DARK_TEMPLATE_IDS\.has\(id\)\)/,
+  );
 });
 
 test('video edit workbench uses a studio timeline with preview, tracks, and tool panels', () => {

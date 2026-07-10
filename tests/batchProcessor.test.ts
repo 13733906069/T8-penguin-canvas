@@ -177,7 +177,7 @@ test('batch processor node is a toolbox executable that does not auto-output to 
   assert.match(loop, /'aggregate-parser',\s*'batch-processor'/);
   assert.match(placement, /'batch-processor':\s*\{\s*w:\s*640,\s*h:\s*560\s*\}/);
   assert.match(features, /"nodeType":\s*"batch-processor"/);
-  assert.match(features, /"totalNodes":\s*53/);
+  assert.match(features, /"totalNodes":\s*54/);
   assert.match(node, /batchProcessorItems/);
   assert.match(node, /batchProcessorResults/);
   assert.match(node, /copy-to-output/);

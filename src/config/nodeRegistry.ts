@@ -87,6 +87,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'frame-pair', label: '首尾帧获取', category: 'utility', description: '从视频抽取首帧与尾帧，双输出可分别接下游', icon: 'Film', color: 'orange' },
   // 循环器 (v1.2.8): 上游多素材 → 串联/并联驱动下游执行链
   { type: 'loop', label: '循环器', category: 'utility', description: '接多个同类型素材，串联逐个驱动或并联克隆子图同时跱发下游生成节点', icon: 'Repeat', color: 'orange' },
+  { type: 'random-route', label: '随机路由', category: 'utility', description: '接收任意上游素材，按运行时随机命中的输出口继续执行指定数量下游分支', icon: 'Shuffle', color: 'orange' },
   // 从合集获取 (v1.2.8): 多素材 → 按序号取单个传给下游
   { type: 'pick-from-set', label: '从合集获取', category: 'utility', description: '从上游多素材中按序号取出单一素材，kind 可在节点内切换', icon: 'Filter', color: 'orange' },
   { type: 'text-split', label: '文本分割', category: 'utility', description: '将长提示词/分镜按段落、行、智能分镜、正则、自定义分隔符或字数切成多段文本，支持收藏与循环器链路', icon: 'SplitSquareVertical', color: 'orange' },
@@ -114,6 +115,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'pose-master', label: '姿势大师', category: 'toolbox', description: '人体线稿姿态编辑器：支持多人姿势、抓取移动、OpenPose/COCO 预览输出、keypoints JSON 与中英文 prompt', icon: 'PersonStanding', color: 'pink' },
   { type: 'aggregate-parser', label: '聚合解析', category: 'toolbox', description: '基于 ParseHub 的轻量自媒体聚合解析：输入短链/分享码/分享文案，合规确认后默认保存到输出目录；远端地址解析作为高级模式保留', icon: 'Link2', color: 'pink' },
   { type: 'batch-processor', label: '批量素材处理', category: 'toolbox', description: '批量导入文件或文件夹，在节点内完成命名、去黑边、抠图、扩图、高清放大和进度反馈，不自动铺满画布输出节点', icon: 'Files', color: 'pink' },
+  { type: 'batch-tagger', label: '批量打标', category: 'toolbox', description: '批量导入图像/视频素材，调用 LLM/Vision API 生成 TAG、短句、自然语言或 JSON sidecar 文件', icon: 'Tags', color: 'pink' },
   { type: 'topaz-image-upscale', label: 'Topaz图像高清化', category: 'toolbox', description: '调用本机 Topaz Gigapixel AI / Gigapixel 8，对上游图像做本地高清放大；需要用户已安装并登录软件', icon: 'Image', color: 'pink' },
   { type: 'topaz-video-upscale', label: 'Topaz视频高清化', category: 'toolbox', description: '调用本机 Topaz Video AI 自带 ffmpeg，对上游视频做放大与补帧；需要用户已安装并登录软件', icon: 'Video', color: 'pink' },
 

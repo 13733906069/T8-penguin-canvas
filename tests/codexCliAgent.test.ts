@@ -788,6 +788,30 @@ test('Codex template and project skill workshops expose category, rename, and de
   assert.match(node, /删除/);
 });
 
+test('Codex project skill saves are not overwritten by stale skill refresh responses', () => {
+  const node = read('../src/components/nodes/CodexCliAgentNode.tsx');
+
+  assert.match(node, /const skillRefreshRequestRef = useRef\(0\)/);
+  assert.match(node, /const invalidateSkillRefreshes = useCallback\(\(\) => \{/);
+  assert.match(node, /skillRefreshRequestRef\.current \+= 1/);
+  assert.match(node, /const refreshRequestId = \+\+skillRefreshRequestRef\.current/);
+  assert.match(node, /if \(refreshRequestId !== skillRefreshRequestRef\.current\) return/);
+  assert.match(node, /const patch: Record<string, any> = \{\}/);
+  assert.match(node, /const nextWorkspaceDir = skillData\.workspaceDir \|\| d\.codexWorkspaceDir \|\| ''/);
+  assert.match(node, /if \(nextWorkspaceDir !== String\(d\.codexWorkspaceDir \|\| ''\)\.trim\(\)\) patch\.codexWorkspaceDir = nextWorkspaceDir/);
+  assert.match(node, /if \(Object\.keys\(patch\)\.length > 0\) update\(patch\)/);
+
+  const saveBlock = /const saveProjectSkill = useCallback\(async \(\) => \{[\s\S]*?\n\s*\}, \[/.exec(node)?.[0] || '';
+  assert.match(saveBlock, /invalidateSkillRefreshes\(\)/);
+  assert.match(saveBlock, /setSkills\(\(prev\) =>/);
+
+  const deleteBlock = /const deleteProjectSkill = useCallback\(async \(skill: CodexSkill\) => \{[\s\S]*?\n\s*\}, \[/.exec(node)?.[0] || '';
+  assert.match(deleteBlock, /invalidateSkillRefreshes\(\)/);
+
+  const importBlock = /const importProjectSkills = useCallback\(async \(file\?: File \| null\) => \{[\s\S]*?\n\s*\}, \[/.exec(node)?.[0] || '';
+  assert.match(importBlock, /invalidateSkillRefreshes\(\)/);
+});
+
 test('Codex selected creator template survives IMG mode and is sent as explicit instructions', () => {
   const node = read('../src/components/nodes/CodexCliAgentNode.tsx');
 

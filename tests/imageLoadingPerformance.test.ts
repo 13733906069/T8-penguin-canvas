@@ -30,17 +30,17 @@ test('local canvas image previews use cached backend thumbnails', () => {
   assert.match(filesRoute, /THUMBNAILS_DIR/);
 });
 
-test('local file uploads allow generated PNGs up to 20MB and report oversize as JSON', () => {
+test('local file uploads do not set an app-level size limit', () => {
   const config = read('../backend/src/config.js');
   const filesRoute = read('../backend/src/routes/files.js');
 
-  assert.match(config, /MAX_FILE_SIZE:\s*20\s*\*\s*1024\s*\*\s*1024/);
+  assert.match(config, /MAX_FILE_SIZE:\s*0/);
   assert.match(filesRoute, /const uploadSingleFile = upload\.single\('file'\)/);
   assert.match(filesRoute, /err instanceof multer\.MulterError/);
-  assert.match(filesRoute, /err\.code === 'LIMIT_FILE_SIZE'/);
-  assert.match(filesRoute, /res\.status\(413\)\.json/);
-  assert.match(filesRoute, /code:\s*'file_too_large'/);
-  assert.match(filesRoute, /formatUploadLimit\(config\.MAX_FILE_SIZE\)/);
+  assert.doesNotMatch(filesRoute, /limits:\s*\{\s*fileSize/);
+  assert.doesNotMatch(filesRoute, /LIMIT_FILE_SIZE/);
+  assert.doesNotMatch(filesRoute, /file_too_large/);
+  assert.doesNotMatch(filesRoute, /文件超过上传上限/);
 });
 
 test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {

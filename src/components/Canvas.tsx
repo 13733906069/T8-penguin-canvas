@@ -34,6 +34,7 @@ import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
 import { useRadialMenuStore } from '../stores/radialMenu';
 import { topologicalSort } from '../utils/topologicalSort';
+import { excludeRandomRouteBranchDescendants } from '../utils/randomRoute';
 import { installGlobalWheelBlockObserver } from '../utils/wheelBlock';
 // v1.2.10.5: 节点落点防重叠解析器 (单节点/整组双模式 + 兜底+toast+飞镜)
 import {
@@ -141,6 +142,11 @@ import {
   buildVibeXSendNodeSpecs,
   normalizeVibeXResultPayload,
 } from '../utils/vibexBridge';
+import {
+  PHOTOSHOP_MESSAGE_CONTRACT,
+  buildPhotoshopSendNodeSpecs,
+  normalizePhotoshopResultPayload,
+} from '../utils/photoshopBridge';
 import * as api from '../services/api';
 import { logBus } from '../stores/logs';
 import CanvasToolbar from './CanvasToolbar';
@@ -1067,6 +1073,7 @@ const PoseMasterNode = lazyCanvasNode(() => import('./nodes/PoseMasterNode'), 'P
 const Panorama3DNode = lazyCanvasNode(() => import('./nodes/Panorama3DNode'), 'Panorama3DNode');
 const AggregateParserNode = lazyCanvasNode(() => import('./nodes/AggregateParserNode'), 'AggregateParserNode');
 const BatchProcessorNode = lazyCanvasNode(() => import('./nodes/BatchProcessorNode'), 'BatchProcessorNode');
+const BatchTaggerNode = lazyCanvasNode(() => import('./nodes/BatchTaggerNode'), 'BatchTaggerNode');
 const TopazImageUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazImageUpscaleNode'), 'TopazImageUpscaleNode');
 const TopazVideoUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazVideoUpscaleNode'), 'TopazVideoUpscaleNode');
 const IdeaNode = lazyCanvasNode(() => import('./nodes/IdeaNode'), 'IdeaNode');
@@ -1088,6 +1095,7 @@ const BrowserNode = lazyCanvasNode(() => import('./nodes/BrowserNode'), 'Browser
 const FrameExtractorNode = lazyCanvasNode(() => import('./nodes/FrameExtractorNode'), 'FrameExtractorNode');
 const FramePairNode = lazyCanvasNode(() => import('./nodes/FramePairNode'), 'FramePairNode');
 const LoopNode = lazyCanvasNode(() => import('./nodes/LoopNode'), 'LoopNode');
+const RandomRouteNode = lazyCanvasNode(() => import('./nodes/RandomRouteNode'), 'RandomRouteNode');
 const PickFromSetNode = lazyCanvasNode(() => import('./nodes/PickFromSetNode'), 'PickFromSetNode');
 const TextSplitNode = lazyCanvasNode(() => import('./nodes/TextSplitNode'), 'TextSplitNode');
 const MaterialSetNode = lazyCanvasNode(() => import('./nodes/MaterialSetNode'), 'MaterialSetNode');
@@ -1156,6 +1164,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'frame-extractor': FrameExtractorNode,
   'frame-pair': FramePairNode,
   loop: LoopNode,
+  'random-route': RandomRouteNode,
   'pick-from-set': PickFromSetNode,
   'text-split': TextSplitNode,
   'material-set': MaterialSetNode,
@@ -1181,6 +1190,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'pose-master': PoseMasterNode,
   'aggregate-parser': AggregateParserNode,
   'batch-processor': BatchProcessorNode,
+  'batch-tagger': BatchTaggerNode,
   'topaz-image-upscale': TopazImageUpscaleNode,
   'topaz-video-upscale': TopazVideoUpscaleNode,
   'panorama-3d': Panorama3DNode,
@@ -1419,6 +1429,28 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     batchProcessorRetryCount: 1,
     batchProcessorContinueOnError: true,
     batchProcessorQuality: 90,
+    status: 'idle',
+    error: '',
+  },
+  'batch-tagger': {
+    batchTagItems: [],
+    batchTagResults: [],
+    batchTagProgress: { total: 0, done: 0, ok: 0, fail: 0, running: 0, pending: 0, percent: 0, status: 'idle' },
+    batchTagMode: 'tags',
+    batchTagProviderSource: 'zhenzhen',
+    batchTagProviderId: '',
+    batchTagProviderModel: 'gpt-4o-mini',
+    batchTagVideoMode: 'frames',
+    batchTagFrameCount: 8,
+    batchTagMaxTags: 30,
+    batchTagFormats: ['txt'],
+    batchTagConcurrency: 2,
+    batchTagRetryCount: 1,
+    batchTagContinueOnError: true,
+    batchTagOverwrite: false,
+    batchTagPrompt: '',
+    outputText: '',
+    metadata: null,
     status: 'idle',
     error: '',
   },
@@ -1770,6 +1802,17 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   } : {}),
   // 循环器: 默认串联 + image kind
   loop: { mode: 'serial', kind: 'image', outputs: [], progress: { done: 0, total: 0, ok: 0, fail: 0 } },
+  // 随机路由: 默认 10 个输出口，每次随机放行 1 个分支。
+  'random-route': {
+    randomRouteTotalOutputs: 10,
+    randomRoutePassCount: 1,
+    randomRouteActiveHandles: [],
+    randomRouteLastOrder: [],
+    randomRouteLastOkCount: 0,
+    randomRouteLastFailCount: 0,
+    status: 'idle',
+    error: '',
+  },
   // 从合集获取: 默认 image + 第 1 个
   'pick-from-set': { pickKind: 'image', pickIndex: 1 },
   'image-compare': { mode: 'slider', align: 'contain', split: 50, opacity: 50, threshold: 24 },
@@ -1905,9 +1948,9 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'frame-extractor', 'frame-pair',
   'upload',
   // v1.2.8 工具节点 (循环器 / 从合集获取)
-  'loop', 'pick-from-set',
+  'loop', 'random-route', 'pick-from-set',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
-  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor',
+  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor', 'batch-tagger',
   'topaz-image-upscale', 'topaz-video-upscale',
   'remove-ai-watermark',
 ]);
@@ -3082,6 +3125,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const farmContinuousFeedbackBatchRef = useRef<FarmContinuousFeedbackBatch | null>(null);
   const webImageImportMessageIdsRef = useRef<Set<string>>(new Set());
   const vibeXImportMessageIdsRef = useRef<Set<string>>(new Set());
+  const photoshopImportMessageIdsRef = useRef<Set<string>>(new Set());
   const edgeCutFeedbackTimersRef = useRef<Map<string, number>>(new Map());
   const edgeConnectFeedbackTimersRef = useRef<Map<string, number>>(new Map());
   const farmAchievementEventIdsRef = useRef<Set<string>>(new Set());
@@ -4811,6 +4855,73 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     return () => window.removeEventListener('message', handleVibeXMessage);
   }, [importVibeXPayload]);
 
+  const importPhotoshopPayload = useCallback((input: unknown, sourceLabel = 'Photoshop') => {
+      const data = input && typeof input === 'object' ? input as Record<string, any> : {};
+      const payload = normalizePhotoshopResultPayload(data.payload || data);
+      if (!payload) {
+        logBus.warn(`${sourceLabel} 没有发送可识别的图像或提示词`, 'Photoshop');
+        return false;
+      }
+      const messageId = String(payload.messageId || data.messageId || '').trim().slice(0, 180);
+      if (messageId) {
+        if (photoshopImportMessageIdsRef.current.has(messageId)) return false;
+      }
+
+      const specs = buildPhotoshopSendNodeSpecs(payload);
+      if (specs.length === 0) {
+        logBus.warn(`${sourceLabel} 回传没有可创建的素材节点`, 'Photoshop');
+        return false;
+      }
+
+      const flowEl = document.querySelector('.react-flow') as HTMLElement | null;
+      const rect = flowEl?.getBoundingClientRect();
+      const base = screenToFlowPosition(
+        rect
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      );
+      const newNodes = materialNodesFromSpecs(specs, nodesRef.current, base, {
+        signature: `photoshop:${messageId || Date.now()}`,
+        mode: 'output',
+        sourceCanvasId: activeId,
+        sourceNodeIds: [],
+      });
+      const assignedNewNodes = assignActiveNodeSerials(newNodes, nodesRef.current);
+      const focusCenter = centerOfMaterialNodes(assignedNewNodes);
+      if (activeId && focusCenter) {
+        const { zoom } = getViewport();
+        pendingSendFocusRef.current = {
+          canvasId: activeId,
+          center: focusCenter,
+          zoom: Math.min(Math.max(zoom || 0.9, 0.72), 1.05),
+        };
+      }
+      setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assignedNewNodes]);
+      registerPlacementShelfNodes(assignedNewNodes, '发送');
+      if (messageId) {
+        photoshopImportMessageIdsRef.current.add(messageId);
+        if (photoshopImportMessageIdsRef.current.size > 80) {
+          photoshopImportMessageIdsRef.current = new Set([...photoshopImportMessageIdsRef.current].slice(-40));
+        }
+      }
+      logBus.success(`已从 ${sourceLabel} 发送 ${assignedNewNodes.length} 个节点到当前画布`, 'Photoshop');
+      return true;
+  }, [activeId, assignActiveNodeSerials, getViewport, registerPlacementShelfNodes, screenToFlowPosition]);
+
+  useEffect(() => {
+    const handlePhotoshopMessage = (event: MessageEvent) => {
+      const data = event.data || {};
+      if (
+        data.type !== PHOTOSHOP_MESSAGE_CONTRACT.type ||
+        data.source !== PHOTOSHOP_MESSAGE_CONTRACT.source
+      ) return;
+      importPhotoshopPayload(data, 'Photoshop');
+    };
+
+    window.addEventListener('message', handlePhotoshopMessage);
+    return () => window.removeEventListener('message', handlePhotoshopMessage);
+  }, [importPhotoshopPayload]);
+
   useEffect(() => {
     let disposed = false;
     let timerId: number | null = null;
@@ -4849,6 +4960,54 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       if (timerId != null) window.clearTimeout(timerId);
     };
   }, [importVibeXPayload, importWebImagePayload]);
+
+  useEffect(() => {
+    let disposed = false;
+    let timerId: number | null = null;
+
+    const settleMessage = async (message: any, imported: boolean, error?: unknown) => {
+      const messageId = String(message?.payload?.messageId || message?.messageId || '').trim();
+      if (!messageId) return;
+      const endpoint = error ? 'fail' : 'complete';
+      await fetch(`/api/photoshop-bridge/messages/${encodeURIComponent(messageId)}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(error ? { error: error instanceof Error ? error.message : String(error) } : { imported }),
+      }).catch(() => undefined);
+    };
+
+    const drain = async () => {
+      try {
+        const res = await fetch('/api/photoshop-bridge/pending?limit=12', { cache: 'no-store' });
+        if (res.ok) {
+          const json = await res.json().catch(() => null);
+          const messages = Array.isArray(json?.data?.messages) ? json.data.messages : [];
+          for (const message of messages) {
+            if (
+              message?.type === PHOTOSHOP_MESSAGE_CONTRACT.type &&
+              message?.source === PHOTOSHOP_MESSAGE_CONTRACT.source
+            ) {
+              try {
+                const imported = importPhotoshopPayload(message, 'Photoshop');
+                await settleMessage(message, imported);
+              } catch (err) {
+                await settleMessage(message, false, err);
+              }
+            }
+          }
+        }
+      } catch {
+        // Photoshop UXP bridge is optional; retry quietly when it is unavailable.
+      }
+      if (!disposed) timerId = window.setTimeout(drain, 2200);
+    };
+
+    drain();
+    return () => {
+      disposed = true;
+      if (timerId != null) window.clearTimeout(timerId);
+    };
+  }, [importPhotoshopPayload]);
 
   useEffect(() => {
     const stopRadialPointerEvent = (event: PointerEvent | MouseEvent) => {
@@ -5893,6 +6052,32 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     return message;
   }, [sendModal]);
 
+  const handleSendMaterialsToPhotoshop = useCallback(async () => {
+    if (!sendModal || sendModal.materials.length === 0) throw new Error('没有可发送到 Photoshop 的素材');
+    const imageMaterials = sendModal.materials.filter((item) => item.kind === 'image' && item.url);
+    if (imageMaterials.length === 0) throw new Error('Photoshop 只接收图像素材，请先选择图像输出或上传素材');
+    const result = await api.sendToPhotoshop({
+      materials: imageMaterials.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        url: item.url,
+        text: item.text,
+        name: item.name,
+      })),
+      tags: ['T8', '贞贞画布', 'Photoshop'],
+      sourceCanvasId: activeId || undefined,
+      sourceLabel: sendModal.sourceLabel || 'T8 画布',
+    });
+    if (!result.success) {
+      const message = result.error || '发送到 Photoshop 失败，请确认 T8 Photoshop Link 面板已连接';
+      logBus.warn(message, 'Photoshop');
+      throw new Error(message);
+    }
+    const message = `已发送 ${result.data.sent || imageMaterials.length} 张图像到 Photoshop 队列，请保持 T8 Photoshop Link 面板连接${result.data.commandId ? `（任务 ${result.data.commandId}）` : ''}`;
+    logBus.success(message, 'Photoshop');
+    return message;
+  }, [activeId, sendModal]);
+
   const handleCanvasPointerMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     lastCanvasPointerRef.current = { x: e.clientX, y: e.clientY };
   }, []);
@@ -6193,7 +6378,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   // 通用: 在指定节点子集上拓扑排序 + 串行调 runBus
   const runNodesByOrder = useCallback(
     async (subNodes: Node[], subEdges: Edge[]) => {
-      const order = topologicalSort(subNodes, subEdges, EXECUTABLE_NODE_TYPES);
+      const plannedSubgraph = excludeRandomRouteBranchDescendants(subNodes, subEdges);
+      const order = topologicalSort(plannedSubgraph.nodes, plannedSubgraph.edges, EXECUTABLE_NODE_TYPES);
       if (order.length === 0) return 0;
       cancelRunRef.current = false;
       setIsRunning(true);
@@ -6234,7 +6420,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
   const handleRunAll = useCallback(async () => {
     if (isRunning) return;
-    const order = topologicalSort(nodes, edges, EXECUTABLE_NODE_TYPES);
+    const plannedSubgraph = excludeRandomRouteBranchDescendants(nodes, edges);
+    const order = topologicalSort(plannedSubgraph.nodes, plannedSubgraph.edges, EXECUTABLE_NODE_TYPES);
     if (order.length === 0) {
       alert('画布上没有可执行节点');
       return;
@@ -8192,7 +8379,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     // v1.2.9.9: 'loop' 也加入 — 循环器自身不产出最终结果 (累积已由下游 EXEC→OutputNode 链路接管),
     //          autoOutput 若给 LoopNode 自动建 OutputNode 会让用户看到 “循环器自己生了 N 个素材” 的错误体验。
     // PoseMaster 自己负责写入单张/合集 OutputNode；通用 autoOutput 再处理会把批量合集拆出重复单体。
-    const SKIP_TYPES = new Set(['output', 'groupBox', 'bulkPhantom', 'upload', 'material-set', 'pick-from-set', 'loop', 'pose-master']);
+    // random-route 写入 imageUrl/prompt 等字段只是为了透传给命中的下游分支，不代表它自己生成了输出素材。
+    const SKIP_TYPES = new Set(['output', 'groupBox', 'bulkPhantom', 'upload', 'material-set', 'pick-from-set', 'loop', 'random-route', 'pose-master']);
 
     const toAddNodes: Node[] = [];
     const toAddEdges: Edge[] = [];
@@ -8214,6 +8402,27 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         source?.type === 'model-3d-preview' &&
         target?.type === 'model-3d-preview' &&
         target.id.startsWith('model-3d-preview-auto-')
+      ) {
+        toRemoveNodeIds.add(target.id);
+      }
+    }
+
+    // Clean up v2.4.4 random-route auto outputs: the router only passes input
+    // materials into selected branches, so older output-auto nodes are stale.
+    for (const edge of edges) {
+      if (!edge.id.startsWith('e-auto-')) continue;
+      const source = nodeById.get(edge.source);
+      const target = nodeById.get(edge.target);
+      const td: any = target?.data || {};
+      const totalIncoming = edges.filter((item) => item.target === edge.target).length;
+      const hasOutgoing = edges.some((item) => item.source === edge.target);
+      if (
+        source?.type === 'random-route' &&
+        target?.type === 'output' &&
+        target.id.startsWith('output-auto-') &&
+        totalIncoming === 1 &&
+        !hasOutgoing &&
+        td.userMoved !== true
       ) {
         toRemoveNodeIds.add(target.id);
       }
@@ -10243,6 +10452,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
         onSaveToResource={handleSaveSendMaterialsToResource}
         onSendToEagle={handleSendMaterialsToEagle}
         onSendToFigma={handleSendMaterialsToFigma}
+        onSendToPhotoshop={handleSendMaterialsToPhotoshop}
       />
 
       {/* 右键菜单(框选 右键 或 节点右键) */}

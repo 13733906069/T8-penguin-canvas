@@ -1190,6 +1190,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
   const studioThreadScrollRef = useRef<HTMLDivElement | null>(null);
   const templateImportInputRef = useRef<HTMLInputElement | null>(null);
   const projectSkillImportInputRef = useRef<HTMLInputElement | null>(null);
+  const skillRefreshRequestRef = useRef(0);
 
   const sessionId = settingsValue(d.codexSessionId, `${id}-${Date.now().toString(36)}`);
   const customPresets = useMemo(() => sanitizeCreatorPresets(d.codexUserPresets), [d.codexUserPresets]);
@@ -1703,7 +1704,12 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     logBus.info(`Codex ${artifactKindLabel(prepared.kind)} 已发布`, `codex:${id}`);
   }, [id, update]);
 
+  const invalidateSkillRefreshes = useCallback(() => {
+    skillRefreshRequestRef.current += 1;
+  }, []);
+
   const refreshStatusAndSkills = useCallback(async () => {
+    const refreshRequestId = ++skillRefreshRequestRef.current;
     try {
       const [nextStatus, skillData] = await Promise.all([
         getCodexCliStatus(String(d.codexExecutablePath || '').trim() || undefined).catch((error) => ({
@@ -1712,14 +1718,18 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
         })),
         getCodexCliSkills({ nodeId: id, sessionId, workspaceDir: String(d.codexWorkspaceDir || '').trim() }).catch(() => ({ workspaceDir: '', skills: [] as CodexSkill[] })),
       ]);
+      if (refreshRequestId !== skillRefreshRequestRef.current) return;
       setStatus(nextStatus as CodexCliStatus);
       setSkills(skillData.skills || []);
-      const patch: Record<string, any> = { codexWorkspaceDir: skillData.workspaceDir || d.codexWorkspaceDir || '' };
+      const nextWorkspaceDir = skillData.workspaceDir || d.codexWorkspaceDir || '';
+      const patch: Record<string, any> = {};
+      if (nextWorkspaceDir !== String(d.codexWorkspaceDir || '').trim()) patch.codexWorkspaceDir = nextWorkspaceDir;
       if ((nextStatus as CodexCliStatus).available && clearRecoverableCodexError(d.error)) {
         patch.error = '';
       }
-      update(patch);
+      if (Object.keys(patch).length > 0) update(patch);
     } catch (error: any) {
+      if (refreshRequestId !== skillRefreshRequestRef.current) return;
       setStatus({ available: false, message: error?.message || 'Codex CLI 状态检查失败' });
     }
   }, [d.codexExecutablePath, d.codexWorkspaceDir, d.error, id, sessionId, update]);
@@ -1863,6 +1873,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
       logBus.warn('请先填写 Skill 名称', `codex:${id}`);
       return;
     }
+    invalidateSkillRefreshes();
     try {
       const payload = {
         nodeId: id,
@@ -1877,6 +1888,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
       const result = editingSkillName
         ? await updateCodexProjectSkill({ ...payload, oldName: editingSkillName })
         : await createCodexProjectSkill(payload);
+      invalidateSkillRefreshes();
       setSkills((prev) => {
         const next = prev.filter((item) => item.name !== result.skill.name && item.name !== editingSkillName);
         return [...next, result.skill];
@@ -1893,10 +1905,11 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     } catch (error: any) {
       logBus.error(error?.message || '保存项目 Skill 失败', `codex:${id}`);
     }
-  }, [d.codexWorkspaceDir, editingSkillName, id, selectedRunnableSkillNames, sessionId, skillDraftBody, skillDraftCategory, skillDraftName, update]);
+  }, [d.codexWorkspaceDir, editingSkillName, id, invalidateSkillRefreshes, selectedRunnableSkillNames, sessionId, skillDraftBody, skillDraftCategory, skillDraftName, update]);
 
   const deleteProjectSkill = useCallback(async (skill: CodexSkill) => {
     if (typeof window !== 'undefined' && !window.confirm(`删除项目 Skill「${skill.name}」？`)) return;
+    invalidateSkillRefreshes();
     try {
       const result = await deleteCodexProjectSkill({
         nodeId: id,
@@ -1904,6 +1917,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
         workspaceDir: String(d.codexWorkspaceDir || '').trim(),
         name: skill.name,
       });
+      invalidateSkillRefreshes();
       setSkills((prev) => prev.filter((item) => item.name !== skill.name));
       update({
         codexSelectedSkillNames: selectedRunnableSkillNames.filter((item) => item !== skill.name),
@@ -1914,7 +1928,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     } catch (error: any) {
       logBus.error(error?.message || '删除项目 Skill 失败', `codex:${id}`);
     }
-  }, [clearProjectSkillDraft, d.codexWorkspaceDir, editingSkillName, id, selectedRunnableSkillNames, sessionId, update]);
+  }, [clearProjectSkillDraft, d.codexWorkspaceDir, editingSkillName, id, invalidateSkillRefreshes, selectedRunnableSkillNames, sessionId, update]);
 
   const exportProjectSkills = useCallback(() => {
     downloadJsonFile(`codex-project-skills-${new Date().toISOString().slice(0, 10)}.json`, {
@@ -1939,6 +1953,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
         logBus.warn('没有识别到可导入的项目 Skill', `codex:${id}`);
         return;
       }
+      invalidateSkillRefreshes();
       let workspaceDir = String(d.codexWorkspaceDir || '').trim();
       const knownNames = new Set(projectSkills.map((skill) => skill.name));
       const savedSkills: CodexSkill[] = [];
@@ -1959,6 +1974,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
         workspaceDir = result.workspaceDir || workspaceDir;
         savedSkills.push(result.skill);
       }
+      invalidateSkillRefreshes();
       setSkills((prev) => {
         const byName = new Map(prev.map((skill) => [skill.name, skill]));
         savedSkills.forEach((skill) => byName.set(skill.name, skill));
@@ -1970,7 +1986,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
     } catch (error: any) {
       logBus.error(error?.message || '导入项目 Skill 失败', `codex:${id}`);
     }
-  }, [d.codexWorkspaceDir, id, projectSkills, sessionId, update]);
+  }, [d.codexWorkspaceDir, id, invalidateSkillRefreshes, projectSkills, sessionId, update]);
 
   const snapshotActiveStudioSession = useCallback((): CodexStudioSession => {
     const current: CodexStudioSession = {
@@ -2029,6 +2045,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
 
   const createNewCodexWorkspace = useCallback(() => {
     const nextSessionId = makeId('codex-workspace');
+    invalidateSkillRefreshes();
     setSkills([]);
     update({
       codexSessionId: nextSessionId,
@@ -2036,7 +2053,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
       codexLastRunSummary: '已准备新工作区，下次运行会自动创建并复用。',
       error: '',
     });
-  }, [update]);
+  }, [invalidateSkillRefreshes, update]);
 
   const archiveCodexStudioSessions = useCallback(() => {
     const current = snapshotActiveStudioSession();

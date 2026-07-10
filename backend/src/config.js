@@ -26,7 +26,7 @@ const config = {
   // 服务器
   HOST: process.env.HOST || '127.0.0.1',
   PORT: process.env.PORT || 18766, // 注意:与主项目 18765 错开
-  APP_VERSION: '2.4.1',
+  APP_VERSION: '2.4.8',
   NODE_ENV: process.env.NODE_ENV || (IS_PACKAGED ? 'production' : 'development'),
   IS_PACKAGED,
 
@@ -55,7 +55,8 @@ const config = {
   THUMBNAIL_QUALITY: 80,
 
   // 业务配置
-  MAX_FILE_SIZE: 20 * 1024 * 1024,
+  // 上传素材节点不设置应用层大小上限；0 表示交给磁盘和系统自身约束。
+  MAX_FILE_SIZE: 0,
 
   // 三套 API Key 默认值(均可在 settings 中覆盖)
   // 贞贞工坊 / LLM 独立 Key 强制走 https://ai.t8star.org

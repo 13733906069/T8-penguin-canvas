@@ -247,3 +247,36 @@ export async function openOutputFolder(
   }
   return data;
 }
+
+export async function openLocalPath(
+  targetPath: string,
+): Promise<{ path: string; opened: boolean }> {
+  const cleanPath = String(targetPath || '').trim();
+  if (!cleanPath) throw new Error('缺少要打开的本地目录');
+  const nativeOpenPath = typeof window !== 'undefined' ? window.t8pc?.openPath : undefined;
+  if (nativeOpenPath) {
+    const opened = await nativeOpenPath(cleanPath);
+    if (opened?.success) {
+      return { path: opened.path || cleanPath, opened: true };
+    }
+    // Electron 的安全白名单可能不包含刚恢复的旧画布原始目录，继续交给本地后端打开。
+  }
+  const r = await fetch('/api/files/open-local-path', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: cleanPath }),
+  });
+  const text = await r.text();
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    const isHtml = /^\s*</.test(text || '');
+    if (isHtml) {
+      throw new Error('打开本地目录接口未就绪，请重启后端服务后重试');
+    }
+    throw new Error(`打开本地目录接口返回异常: ${text.slice(0, 120)}`);
+  }
+  if (!r.ok || !json?.success) throw new Error(json?.error || `HTTP ${r.status}`);
+  return json.data as { path: string; opened: boolean };
+}

@@ -143,6 +143,8 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   // 循环器 (v1.2.8): 接受 4 类素材集合 → 按 kind 输出下游驱动 (串联/并联)
   // 输出默认按 kind 递多类型 (any 允许接任意下游执行节点)
   loop: { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
+  // 随机路由: 任意上游素材透传到 N 个动态输出口，运行时只触发命中的分支。
+  'random-route': { inputs: ['any'], outputs: ['any'] },
   // 从合集获取 (v1.2.8): 从上游集合中选中单一素材 → 输出按 kind 变化
   'pick-from-set': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
   // 文本分割: 长文本/上游文本 → 多段 textSegments, 下游按多文本集合消费
@@ -175,6 +177,8 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   'aggregate-parser': { inputs: ['text'], outputs: ['text', 'image', 'video', 'audio'] },
   // 批量素材处理: 只在节点内处理/归档/反馈，不对外输出素材，避免批量完成后自动铺满画布。
   'batch-processor': { inputs: ['image', 'video', 'audio', 'model3d'], outputs: [] },
+  // 批量打标: 收集图像/视频素材，输出文本/元数据结果供下游或 sidecar 保存。
+  'batch-tagger': { inputs: ['image', 'video', 'text'], outputs: ['text', 'metadata'] },
   // Topaz 本地高清化: 仅调用用户本机已安装的 Topaz 软件，不内置第三方商业程序。
   'topaz-image-upscale': { inputs: ['image'], outputs: ['image'] },
   'topaz-video-upscale': { inputs: ['video'], outputs: ['video'] },

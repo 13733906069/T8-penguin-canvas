@@ -87,6 +87,23 @@ interface T8ParseAuthResult {
     | { profileId: string; label: string; removed: number; savedRemoved?: number };
 }
 
+interface T8PickedMediaFile {
+  path: string;
+  name: string;
+  kind: 'image' | 'video';
+  size: number;
+  mime: string;
+  relativePath?: string;
+}
+
+interface T8PickMediaFilesResult {
+  success: boolean;
+  cancelled?: boolean;
+  message?: string;
+  files?: T8PickedMediaFile[];
+  truncated?: boolean;
+}
+
 interface Window {
   t8pc?: {
     getInfo: () => Promise<{
@@ -98,6 +115,8 @@ interface Window {
     }>;
     openExternal: (url: string) => Promise<{ success: boolean; message?: string }>;
     openPath: (targetPath: string) => Promise<{ success: boolean; message?: string; path?: string }>;
+    pickMediaFiles?: (options?: { directory?: boolean; multiple?: boolean; kinds?: Array<'image' | 'video'> }) => Promise<T8PickMediaFilesResult>;
+    getPathForFile?: (file: File) => string;
     dragFileOut?: (payload: { url?: string; path?: string; filename?: string; kind?: string; requestId?: string }) => void;
     onDragFileOutStatus?: (callback: (status: T8DragFileOutStatus) => void) => () => void;
     parseAuth?: {

@@ -43,6 +43,7 @@ interface SendMaterialsModalProps {
   onSaveToResource: (mode: SendTargetMode) => Promise<void> | void;
   onSendToEagle: () => Promise<void> | void;
   onSendToFigma: () => Promise<string | void> | string | void;
+  onSendToPhotoshop: () => Promise<string | void> | string | void;
 }
 
 const MODE_OPTIONS: Array<{ value: SendTargetMode; label: string; desc: string; icon: typeof PackagePlus }> = [
@@ -68,7 +69,9 @@ function chunkModeLabel(label: string) {
 const SEND_HISTORY_KEY = 't8.sendMaterials.history.v1';
 const MAX_SEND_HISTORY = 12;
 const FIGMA_PLUGIN_IMPORT_HINT =
-  '首次发送到 Figma：打开 Figma 桌面软件，菜单 Plugins / 插件 -> Development -> Import plugin from manifest...，选择 tools\\figma-bridge\\plugin\\manifest.json；打包版位置是应用目录 resources\\tools\\figma-bridge\\plugin\\manifest.json。导入后运行 T8 Penguin Canvas Bridge 并保持插件窗口打开。';
+  'Figma 首次使用：在 Figma 桌面软件中 Development -> Import plugin from manifest...，选择 tools\\figma-bridge\\plugin\\manifest.json；打包版在 resources\\tools\\figma-bridge\\plugin\\manifest.json。';
+const PHOTOSHOP_PLUGIN_IMPORT_HINT =
+  'Photoshop 首次使用：用 Adobe UXP Developer Tool 加载 tools\\photoshop-bridge\\plugin\\manifest.json；打包版在 resources\\tools\\photoshop-bridge\\plugin\\manifest.json。';
 
 interface SendHistoryEntry {
   id: string;
@@ -145,6 +148,7 @@ export default function SendMaterialsModal({
   onSaveToResource,
   onSendToEagle,
   onSendToFigma,
+  onSendToPhotoshop,
 }: SendMaterialsModalProps) {
   const { theme, style } = useThemeStore();
   const isDark = theme === 'dark';
@@ -306,6 +310,8 @@ export default function SendMaterialsModal({
       const defaultMessage =
         label === 'figma'
           ? '已发送到 Figma'
+          : label === 'photoshop'
+            ? '已发送到 Photoshop'
           : label === 'eagle'
             ? '已发送到 Eagle'
             : label === 'resource'
@@ -621,7 +627,10 @@ export default function SendMaterialsModal({
               }`}
             >
               <ExternalLink size={14} className="mt-0.5 shrink-0" />
-              <span>{FIGMA_PLUGIN_IMPORT_HINT}</span>
+              <span className="grid gap-1">
+                <span>{FIGMA_PLUGIN_IMPORT_HINT}</span>
+                <span>{PHOTOSHOP_PLUGIN_IMPORT_HINT} 保持 T8 Photoshop Link 面板连接后，画布发送的图片会自动置入当前 PS 文档。</span>
+              </span>
             </div>
           )}
           <div className="flex flex-wrap gap-2">
@@ -660,6 +669,16 @@ export default function SendMaterialsModal({
             >
               <ExternalLink size={14} className="inline-block mr-1" />
               {busy === 'figma' ? '发送中...' : '发送到 Figma'}
+            </button>
+            <button
+              type="button"
+              className={ghostBtn}
+              disabled={!!busy || buckets.image.length === 0}
+              onClick={() => runAction('photoshop', onSendToPhotoshop)}
+              title={buckets.image.length > 0 ? `发送到 Photoshop：请保持 T8 Photoshop Link 面板已连接。${PHOTOSHOP_PLUGIN_IMPORT_HINT}` : 'Photoshop 只接收图像素材'}
+            >
+              <ExternalLink size={14} className="inline-block mr-1" />
+              {busy === 'photoshop' ? '发送中...' : '发送到 Photoshop'}
             </button>
           </div>
           <button

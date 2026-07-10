@@ -355,6 +355,18 @@ function checkFigmaBridgeRuntime() {
   checkFile(path.join(root, 'plugin', 'ui.html'));
 }
 
+function checkPhotoshopBridgeResources() {
+  const root = path.join(RES, 'tools', 'photoshop-bridge', 'plugin');
+  checkFile(path.join(root, 'manifest.json'));
+  checkFile(path.join(root, 'index.html'));
+  checkFile(path.join(root, 'style.css'));
+  checkFile(path.join(root, 'js', 'boot.js'));
+  checkFile(path.join(root, 'js', 'state.js'));
+  checkFile(path.join(root, 'js', 'net.js'));
+  checkFile(path.join(root, 'js', 'ps.js'));
+  checkFile(path.join(root, 'js', 'app.js'));
+}
+
 function checkUpdateArtifacts() {
   const distDir = path.join(ROOT, 'dist_electron');
   const installerName = `${PRODUCT_NAME}-Setup-${APP_VERSION}.exe`;
@@ -554,6 +566,8 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'routes', 'topaz.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'vibexBridge.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'videoOps.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'batchTags.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'photoshopBridge.t8c'));
   checkNoLocalVibexRoute();
   checkFile(path.join(RES, 'backend-enc', 'achievements', 'media.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'achievements', 'store.t8c'));
@@ -620,19 +634,22 @@ function main() {
   console.log('\n[8] Figma bridge/plugin:');
   checkFigmaBridgeRuntime();
 
-  console.log('\n[9] RH工具箱制作器分发检查:');
+  console.log('\n[9] Photoshop bridge/plugin:');
+  checkPhotoshopBridgeResources();
+
+  console.log('\n[10] RH工具箱制作器分发检查:');
   checkNoRhToolboxMaker();
 
-  console.log('\n[10] RH工具箱发布清单分发检查:');
+  console.log('\n[11] RH工具箱发布清单分发检查:');
   checkRhToolboxReleaseManifest();
 
-  console.log('\n[11] FAL应用制作工具分发检查:');
+  console.log('\n[12] FAL应用制作工具分发检查:');
   checkNoFalToolboxMaker();
 
-  console.log('\n[12] GitHub 自动更新资产:');
+  console.log('\n[13] GitHub 自动更新资产:');
   checkUpdateArtifacts();
 
-  console.log('\n[13] resources/ 完整结构:');
+  console.log('\n[14] resources/ 完整结构:');
   listDir(RES);
 
   if (missingCount > 0) {

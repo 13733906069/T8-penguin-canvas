@@ -1,6 +1,7 @@
 import {
   buildRhToolboxCapabilityInputValues,
   RH_IMAGE_CAPABILITY_PRESETS,
+  RH_VIDEO_CAPABILITY_PRESETS,
   resolveRhToolboxCapability,
 } from '../utils/rhToolboxCapabilities';
 import type { RhToolboxTool } from '../utils/rhToolbox';
@@ -23,10 +24,29 @@ export interface RunRhImageCapabilityOptions {
   onProgress?: (progress: RunRhToolboxProgress) => void;
 }
 
+export interface RunRhVideoCapabilityOptions {
+  capability: string;
+  videoUrl: string;
+  preferredToolId?: string;
+  userParams?: Record<string, string | number | boolean>;
+  signal?: AbortSignal;
+  onProgress?: (progress: RunRhToolboxProgress) => void;
+}
+
 export interface RunRhImageBatchItemProgress {
   index: number;
   total: number;
   imageUrl: string;
+  attempt: number;
+  maxAttempts: number;
+  status: 'start' | 'retry' | 'success' | 'error' | 'cancelled';
+  error?: string;
+}
+
+export interface RunRhVideoBatchItemProgress {
+  index: number;
+  total: number;
+  videoUrl: string;
   attempt: number;
   maxAttempts: number;
   status: 'start' | 'retry' | 'success' | 'error' | 'cancelled';
@@ -42,10 +62,28 @@ export interface RunRhImageCapabilityBatchOptions
   onItemProgress?: (progress: RunRhImageBatchItemProgress) => void;
 }
 
+export interface RunRhVideoCapabilityBatchOptions
+  extends Omit<RunRhVideoCapabilityOptions, 'videoUrl'> {
+  videoUrls: string[];
+  retryCount?: number;
+  retryDelayMs?: number;
+  continueOnError?: boolean;
+  onItemProgress?: (progress: RunRhVideoBatchItemProgress) => void;
+}
+
 export interface RunRhImageCapabilityResult {
   tool: RhToolboxTool;
   taskId: string;
   imageUrls: string[];
+  outputUrl: string;
+  result: RunRhToolboxToolResult;
+  raw?: any;
+}
+
+export interface RunRhVideoCapabilityResult {
+  tool: RhToolboxTool;
+  taskId: string;
+  videoUrls: string[];
   outputUrl: string;
   result: RunRhToolboxToolResult;
   raw?: any;
@@ -60,6 +98,21 @@ export interface RunRhImageCapabilityBatchResult {
   failedItems: Array<{
     index: number;
     imageUrl: string;
+    error: string;
+    attempts: number;
+  }>;
+  cancelled: boolean;
+}
+
+export interface RunRhVideoCapabilityBatchResult {
+  tool: RhToolboxTool;
+  taskIds: string[];
+  videoUrls: string[];
+  outputUrl: string;
+  results: RunRhVideoCapabilityResult[];
+  failedItems: Array<{
+    index: number;
+    videoUrl: string;
     error: string;
     attempts: number;
   }>;
@@ -88,6 +141,11 @@ function imageOutputsFromResult(result: RunRhToolboxToolResult): string[] {
   return result.tool.outputSchema.some((output) => output.kind === 'image') ? result.urls : [];
 }
 
+function videoOutputsFromResult(result: RunRhToolboxToolResult): string[] {
+  if (result.videoUrls.length > 0) return result.videoUrls;
+  return result.tool.outputSchema.some((output) => output.kind === 'video') ? result.urls : [];
+}
+
 function cleanImageUrls(imageUrls: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -100,9 +158,21 @@ function cleanImageUrls(imageUrls: string[]): string[] {
   return out;
 }
 
+function cleanVideoUrls(videoUrls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of videoUrls) {
+    const url = String(raw || '').trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
 function formatError(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return String(error || 'RH 图像能力调用失败');
+  return String(error || 'RH 工具箱能力调用失败');
 }
 
 function isAbortError(error: unknown, signal?: AbortSignal): boolean {
@@ -160,6 +230,40 @@ export async function runRhImageCapability(
     taskId: result.taskId,
     imageUrls,
     outputUrl: imageUrls[0],
+    result,
+    raw: result.raw,
+  };
+}
+
+export async function runRhVideoCapability(
+  options: RunRhVideoCapabilityOptions,
+): Promise<RunRhVideoCapabilityResult> {
+  const manifest = await getRhToolboxCapabilityManifest();
+  const tool = resolveRhToolboxCapability(manifest, {
+    surface: 'video',
+    capability: options.capability,
+    preferredToolId: options.preferredToolId,
+  });
+  if (!tool) throw new Error(`未找到可用 RH 视频能力：${options.capability}`);
+
+  const inputValues = buildRhToolboxCapabilityInputValues(tool, 'video', options.videoUrl);
+  const result = await runRhToolboxTool({
+    toolId: tool.id,
+    manifest,
+    inputValues,
+    userParams: options.userParams,
+    signal: options.signal,
+    onProgress: options.onProgress,
+  });
+  const videoUrls = videoOutputsFromResult(result);
+  if (videoUrls.length === 0) {
+    throw new Error(`${tool.title} 未返回视频结果`);
+  }
+  return {
+    tool,
+    taskId: result.taskId,
+    videoUrls,
+    outputUrl: videoUrls[0],
     result,
     raw: result.raw,
   };
@@ -274,6 +378,115 @@ export async function runRhImageCapabilityBatch(
   };
 }
 
+export async function runRhVideoCapabilityBatch(
+  options: RunRhVideoCapabilityBatchOptions,
+): Promise<RunRhVideoCapabilityBatchResult> {
+  const cleanUrls = cleanVideoUrls(options.videoUrls);
+  if (cleanUrls.length === 0) throw new Error('缺少要处理的视频素材');
+
+  const retryCount = Math.max(0, Math.floor(options.retryCount ?? 2));
+  const retryDelayMs = options.retryDelayMs ?? 1200;
+  const maxAttempts = retryCount + 1;
+  const continueOnError = options.continueOnError ?? true;
+  const results: RunRhVideoCapabilityResult[] = [];
+  const failedItems: RunRhVideoCapabilityBatchResult['failedItems'] = [];
+  const videoUrls: string[] = [];
+  let cancelled = false;
+
+  for (let index = 0; index < cleanUrls.length && !cancelled; index += 1) {
+    const videoUrl = cleanUrls[index];
+    let itemDone = false;
+
+    for (let attempt = 1; attempt <= maxAttempts && !itemDone; attempt += 1) {
+      if (options.signal?.aborted) {
+        cancelled = true;
+        options.onItemProgress?.({ index, total: cleanUrls.length, videoUrl, attempt, maxAttempts, status: 'cancelled' });
+        break;
+      }
+
+      options.onItemProgress?.({ index, total: cleanUrls.length, videoUrl, attempt, maxAttempts, status: 'start' });
+      try {
+        const result = await runRhVideoCapability({
+          capability: options.capability,
+          videoUrl,
+          preferredToolId: options.preferredToolId,
+          userParams: options.userParams,
+          signal: options.signal,
+          onProgress: (progress) => {
+            const attemptText = maxAttempts > 1 ? ` · 尝试 ${attempt}/${maxAttempts}` : '';
+            options.onProgress?.({
+              ...progress,
+              message: `第 ${index + 1}/${cleanUrls.length} 个视频${attemptText} · ${progress.message}`,
+            });
+          },
+        });
+        results.push(result);
+        videoUrls.push(...result.videoUrls);
+        options.onItemProgress?.({ index, total: cleanUrls.length, videoUrl, attempt, maxAttempts, status: 'success' });
+        itemDone = true;
+      } catch (error) {
+        const message = formatError(error);
+        if (isAbortError(error, options.signal)) {
+          cancelled = true;
+          options.onItemProgress?.({ index, total: cleanUrls.length, videoUrl, attempt, maxAttempts, status: 'cancelled', error: message });
+          break;
+        }
+
+        const hasRetryLeft = attempt < maxAttempts;
+        if (hasRetryLeft) {
+          options.onItemProgress?.({ index, total: cleanUrls.length, videoUrl, attempt, maxAttempts, status: 'retry', error: message });
+          options.onProgress?.({
+            stage: 'error',
+            message: `第 ${index + 1}/${cleanUrls.length} 个视频失败，${Math.max(0, maxAttempts - attempt)} 次重试剩余：${message}`,
+          });
+          try {
+            await delayBeforeRetry(retryDelayMs, options.signal);
+          } catch (retryError) {
+            if (isAbortError(retryError, options.signal)) {
+              cancelled = true;
+              options.onItemProgress?.({
+                index,
+                total: cleanUrls.length,
+                videoUrl,
+                attempt,
+                maxAttempts,
+                status: 'cancelled',
+                error: formatError(retryError),
+              });
+              break;
+            }
+            throw retryError;
+          }
+          continue;
+        }
+
+        failedItems.push({ index, videoUrl, error: message, attempts: attempt });
+        options.onItemProgress?.({ index, total: cleanUrls.length, videoUrl, attempt, maxAttempts, status: 'error', error: message });
+        if (!continueOnError) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  if (results.length === 0 || videoUrls.length === 0) {
+    if (cancelled) throw new Error('已取消');
+    if (failedItems.length > 0) {
+      throw new Error(`RH 视频批处理全部失败：${failedItems[0].error}`);
+    }
+    throw new Error('RH 视频批处理未返回视频结果');
+  }
+  return {
+    tool: results[0].tool,
+    taskIds: results.map((result) => result.taskId),
+    videoUrls,
+    outputUrl: videoUrls[0],
+    results,
+    failedItems,
+    cancelled,
+  };
+}
+
 export function runRhImageCutout(
   imageUrl: string,
   options: Omit<RunRhImageCapabilityOptions, 'capability' | 'imageUrl' | 'preferredToolId'> = {},
@@ -326,5 +539,29 @@ export function runRhImageCutoutBatch(
     capability: 'image.cutout',
     imageUrls,
     preferredToolId: 'image-cutout-v1',
+  });
+}
+
+export function runRhVideoFastUpscale(
+  videoUrl: string,
+  options: Omit<RunRhVideoCapabilityOptions, 'capability' | 'videoUrl' | 'preferredToolId'> = {},
+): Promise<RunRhVideoCapabilityResult> {
+  return runRhVideoCapability({
+    ...options,
+    capability: RH_VIDEO_CAPABILITY_PRESETS.fastUpscale.capability,
+    videoUrl,
+    preferredToolId: RH_VIDEO_CAPABILITY_PRESETS.fastUpscale.preferredToolId,
+  });
+}
+
+export function runRhVideoQualityUpscale(
+  videoUrl: string,
+  options: Omit<RunRhVideoCapabilityOptions, 'capability' | 'videoUrl' | 'preferredToolId'> = {},
+): Promise<RunRhVideoCapabilityResult> {
+  return runRhVideoCapability({
+    ...options,
+    capability: RH_VIDEO_CAPABILITY_PRESETS.qualityUpscale.capability,
+    videoUrl,
+    preferredToolId: RH_VIDEO_CAPABILITY_PRESETS.qualityUpscale.preferredToolId,
   });
 }

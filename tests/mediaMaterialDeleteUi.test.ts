@@ -39,6 +39,24 @@ test('upload and output material nodes expose per-material delete actions', () =
   assert.match(css, /\.t8-output-image-action-stack--compact\s+\.t8-material-action-button\s*\{[\s\S]*min-height:\s*22px\s*!important/);
 });
 
+test('upload material node exposes a download action in the node controls', () => {
+  const upload = read('../src/components/nodes/UploadNode.tsx');
+
+  assert.match(upload, /function uploadDownloadName/);
+  assert.match(upload, /const handleDownloadUploads/);
+  assert.match(upload, /data-upload-action="download"/);
+  assert.match(upload, /title=\{mediaItems\.length > 1 \? '下载全部素材' : '下载素材'\}/);
+  assert.match(upload, /aria-label=\{mediaItems\.length > 1 \? '下载全部素材' : '下载素材'\}/);
+  assert.match(upload, /uploadDownloadName\(item, i\)/);
+  assert.match(upload, /document\.createElement\('a'\)/);
+  assert.match(upload, /<Download size=\{11\} \/>/);
+
+  assert.ok(
+    upload.indexOf('data-upload-action="download"') < upload.indexOf('title="继续添加同类型文件"'),
+    'download action should appear before the existing add-more upload button',
+  );
+});
+
 test('image material context menu can copy the actual image to clipboard', () => {
   const contextMenu = read('../src/components/MaterialContextMenu.tsx');
   const clipboardUtil = read('../src/utils/imageClipboard.ts');
@@ -53,4 +71,20 @@ test('image material context menu can copy the actual image to clipboard', () =>
   assert.match(clipboardUtil, /ClipboardItem/);
   assert.match(clipboardUtil, /image\/png/);
   assert.match(clipboardUtil, /canvas\.toBlob/);
+});
+
+test('image material context menu can send the current image to Photoshop', () => {
+  const contextMenu = read('../src/components/MaterialContextMenu.tsx');
+
+  assert.match(contextMenu, /sendToPhotoshop/);
+  assert.match(contextMenu, /发送到 Photoshop/);
+  assert.match(contextMenu, /正在发送到 Photoshop/);
+  assert.match(contextMenu, /已发送到 Photoshop/);
+  assert.match(contextMenu, /menu\.kind !== 'image' \|\| !menu\.url/);
+  assert.match(contextMenu, /kind:\s*'image'/);
+  assert.match(contextMenu, /url:\s*menu\.url/);
+  assert.match(contextMenu, /name:\s*menu\.title \|\| baseName\(menu\.url\)/);
+  assert.match(contextMenu, /sourceCanvasId:\s*activeCanvasId \|\| undefined/);
+  assert.match(contextMenu, /sourceLabel:\s*'画布右键图片'/);
+  assert.match(contextMenu, /disabled=\{sendingToPhotoshop\}/);
 });

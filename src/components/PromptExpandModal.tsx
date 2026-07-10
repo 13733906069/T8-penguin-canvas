@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CompositionEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, CheckCircle2, Copy, ListFilter, Wand2, X } from 'lucide-react';
+import {
+  createCompositionLeakSnapshot,
+  createPlainInputRunSnapshot,
+  isImeCompositionInput,
+  stripCompositionLeak,
+  type CompositionLeakSnapshot,
+  type PlainInputRunSnapshot,
+} from '../utils/imeComposition';
 
 export type PromptExpandEditorKind = 'text' | 'json' | 'lines';
 
@@ -75,9 +83,18 @@ export default function PromptExpandModal({
 }: PromptExpandModalProps) {
   const stats = useMemo(() => promptStats(value), [value]);
   const [toolMessage, setToolMessage] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composingRef = useRef(false);
+  const lastPlainInputRef = useRef<PlainInputRunSnapshot | null>(null);
+  const compositionLeakRef = useRef<CompositionLeakSnapshot | null>(null);
 
   useEffect(() => {
-    if (open) setToolMessage('');
+    if (open) {
+      setToolMessage('');
+      composingRef.current = false;
+      lastPlainInputRef.current = null;
+      compositionLeakRef.current = null;
+    }
   }, [open]);
 
   useEffect(() => {
@@ -151,6 +168,56 @@ export default function PromptExpandModal({
     setToolMessage('已整理为空行去重列表');
   };
 
+  const rememberPlainInput = (text: string, caret: number, data: string) => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const snapshot = createPlainInputRunSnapshot({ text, caret, data, now });
+    lastPlainInputRef.current = snapshot;
+    if (composingRef.current && snapshot) {
+      compositionLeakRef.current = createCompositionLeakSnapshot(lastPlainInputRef.current, now) || compositionLeakRef.current;
+    }
+  };
+
+  const handleTextareaCompositionStart = (_event: CompositionEvent<HTMLTextAreaElement>) => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    compositionLeakRef.current = createCompositionLeakSnapshot(lastPlainInputRef.current, now);
+    composingRef.current = true;
+  };
+
+  const handleTextareaCompositionEnd = (event: CompositionEvent<HTMLTextAreaElement>) => {
+    const fallbackValue = event.currentTarget.value;
+    window.setTimeout(() => {
+      let nextValue = textareaRef.current?.value ?? fallbackValue;
+      const caret = textareaRef.current?.selectionEnd ?? nextValue.length;
+      const fixed = stripCompositionLeak(nextValue, [], compositionLeakRef.current);
+      if (fixed.changed) {
+        nextValue = fixed.text;
+        const nextCaret = Math.max(0, caret + fixed.caretDelta);
+        if (textareaRef.current) {
+          textareaRef.current.value = nextValue;
+          window.requestAnimationFrame(() => textareaRef.current?.setSelectionRange(nextCaret, nextCaret));
+        }
+      }
+      compositionLeakRef.current = null;
+      lastPlainInputRef.current = null;
+      composingRef.current = false;
+      onValueChange(nextValue);
+    }, 0);
+  };
+
+  const handleTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.target.value;
+    const inputEvent = event.nativeEvent as InputEvent & { data?: string; inputType?: string };
+    if (
+      inputEvent?.inputType === 'insertText' &&
+      /^[A-Za-z]$/.test(String(inputEvent.data || ''))
+    ) {
+      rememberPlainInput(nextValue, event.target.selectionEnd ?? nextValue.length, String(inputEvent.data));
+    } else if (!composingRef.current && !isImeCompositionInput(event.nativeEvent)) {
+      lastPlainInputRef.current = null;
+    }
+    onValueChange(nextValue);
+  };
+
   return createPortal(
     <div
       data-canvas-floating-ui="prompt-expand-editor"
@@ -207,12 +274,19 @@ export default function PromptExpandModal({
           )}
           {children || (
             <textarea
+              ref={textareaRef}
               autoFocus
               readOnly={readOnly}
               value={value}
-              onChange={(event) => onValueChange(event.target.value)}
+              onBeforeInput={(event) => {
+                if (isImeCompositionInput(event.nativeEvent)) composingRef.current = true;
+              }}
+              onCompositionStart={handleTextareaCompositionStart}
+              onCompositionEnd={handleTextareaCompositionEnd}
+              onChange={handleTextareaChange}
               placeholder={placeholder}
               className={textareaCls}
+              style={{ paddingLeft: 10 }}
               spellCheck={false}
             />
           )}

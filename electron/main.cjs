@@ -8,14 +8,14 @@
 //   5. 打包模式数据目录指向 app.getPath('userData') 而非项目目录
 // ============================================================================
 
-const { app, BrowserWindow, shell, ipcMain, session, safeStorage, nativeImage } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, session, safeStorage, nativeImage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const { spawn } = require('child_process');
 const { fileURLToPath } = require('url');
 
-const APP_VERSION = '2.4.1';
+const APP_VERSION = '2.4.8';
 const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新';
 
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
@@ -1087,6 +1087,25 @@ function isPathInside(parentDir, candidatePath) {
   return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+const pickedMediaRoots = new Set();
+const PICK_MEDIA_META = new Map([
+  ['.png', { kind: 'image', mime: 'image/png' }],
+  ['.jpg', { kind: 'image', mime: 'image/jpeg' }],
+  ['.jpeg', { kind: 'image', mime: 'image/jpeg' }],
+  ['.webp', { kind: 'image', mime: 'image/webp' }],
+  ['.gif', { kind: 'image', mime: 'image/gif' }],
+  ['.bmp', { kind: 'image', mime: 'image/bmp' }],
+  ['.avif', { kind: 'image', mime: 'image/avif' }],
+  ['.tif', { kind: 'image', mime: 'image/tiff' }],
+  ['.tiff', { kind: 'image', mime: 'image/tiff' }],
+  ['.mp4', { kind: 'video', mime: 'video/mp4' }],
+  ['.mov', { kind: 'video', mime: 'video/quicktime' }],
+  ['.webm', { kind: 'video', mime: 'video/webm' }],
+  ['.mkv', { kind: 'video', mime: 'video/x-matroska' }],
+  ['.avi', { kind: 'video', mime: 'video/x-msvideo' }],
+  ['.m4v', { kind: 'video', mime: 'video/x-m4v' }],
+]);
+
 function dragOutRoots() {
   const base = getUserDataDir();
   return [
@@ -1100,7 +1119,89 @@ function dragOutRoots() {
 }
 
 function localOpenRoots() {
-  return dragOutRoots();
+  return [...dragOutRoots(), ...pickedMediaRoots];
+}
+
+function pickMediaMeta(filePath, allowedKinds) {
+  const meta = PICK_MEDIA_META.get(path.extname(filePath).toLowerCase()) || null;
+  if (!meta || !allowedKinds.has(meta.kind)) return null;
+  return meta;
+}
+
+function collectPickedDirectoryFiles(rootDir, allowedKinds) {
+  const root = path.resolve(rootDir);
+  const out = [];
+  const stack = [root];
+  while (stack.length && out.length < 5000) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (pickMediaMeta(full, allowedKinds)) out.push(full);
+      if (out.length >= 5000) break;
+    }
+  }
+  return out;
+}
+
+async function pickMediaFiles(options = {}) {
+  const requestedKinds = Array.isArray(options.kinds) && options.kinds.length
+    ? options.kinds
+    : ['image', 'video'];
+  const allowedKinds = new Set(requestedKinds.filter((kind) => kind === 'image' || kind === 'video'));
+  if (allowedKinds.size === 0) {
+    return { success: false, message: '没有可选择的素材类型' };
+  }
+  const directory = Boolean(options.directory);
+  const properties = directory
+    ? ['openDirectory']
+    : ['openFile', ...(options.multiple === false ? [] : ['multiSelections'])];
+  const filters = [
+    {
+      name: allowedKinds.has('image') && allowedKinds.has('video') ? '图像 / 视频' : allowedKinds.has('image') ? '图像' : '视频',
+      extensions: Array.from(PICK_MEDIA_META.entries())
+        .filter(([, meta]) => allowedKinds.has(meta.kind))
+        .map(([ext]) => ext.replace(/^\./, '')),
+    },
+  ];
+  const result = await dialog.showOpenDialog(mainWindow, { properties, filters });
+  if (result.canceled || !result.filePaths?.length) {
+    return { success: true, cancelled: true, files: [] };
+  }
+  const pickedPaths = directory
+    ? result.filePaths.flatMap((dir) => collectPickedDirectoryFiles(dir, allowedKinds))
+    : result.filePaths.filter((filePath) => pickMediaMeta(filePath, allowedKinds));
+  const files = [];
+  for (const filePath of pickedPaths) {
+    const meta = pickMediaMeta(filePath, allowedKinds);
+    if (!meta) continue;
+    try {
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile()) continue;
+      pickedMediaRoots.add(path.dirname(filePath));
+      files.push({
+        path: filePath,
+        name: path.basename(filePath),
+        kind: meta.kind,
+        mime: meta.mime,
+        size: stat.size,
+        relativePath: path.basename(filePath),
+      });
+    } catch (_) {
+      // 跳过读取失败的文件，保持批量选择不中断。
+    }
+  }
+  return { success: true, files, truncated: pickedPaths.length >= 5000 };
 }
 
 function resolveMountedDragOutFile(pathname) {
@@ -1601,6 +1702,7 @@ ipcMain.handle('t8pc:get-info', () => ({
 
 ipcMain.handle('t8pc:open-external', async (_event, url) => openExternalUrl(url));
 ipcMain.handle('t8pc:open-path', async (_event, targetPath) => openLocalPath(targetPath));
+ipcMain.handle('t8pc:pick-media-files', async (_event, options) => pickMediaFiles(options));
 ipcMain.handle('t8pc:parse-auth:login', async (_event, profileId) => openParseAuthWindow(profileId));
 ipcMain.handle('t8pc:parse-auth:get-cookie', async (_event, profileId) => getParseAuthCookie(profileId));
 ipcMain.handle('t8pc:parse-auth:list-saved', async (_event, profileId) => listSavedParseAuth(profileId));

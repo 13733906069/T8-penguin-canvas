@@ -12,7 +12,7 @@ import type { RhToolboxManifest } from '../utils/rhToolbox';
 export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
   "schema": "t8-rh-toolbox-manifest",
   "version": 1,
-  "updatedAt": "2026-06-17T06:02:40.201Z",
+  "updatedAt": "2026-07-08T12:26:08.692Z",
   "categories": [
     {
       "id": "custom-rh-tools",
@@ -75,6 +75,14 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
       "name": "扩图",
       "parentId": "image",
       "description": "扩图 RunningHub 工具",
+      "order": 80,
+      "icon": "Wrench"
+    },
+    {
+      "id": "video-category-9d33p",
+      "name": "视频超分",
+      "parentId": "video",
+      "description": "视频超分 RunningHub 工具",
       "order": 80,
       "icon": "Wrench"
     },
@@ -757,6 +765,108 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
         "showInNode": true,
         "showInImageEditor": false,
         "showInVideoEditor": false,
+        "showInTextEditor": false,
+        "showInAudioEditor": false
+      },
+      "version": 1
+    },
+    {
+      "id": "video-nividia-upscale",
+      "title": "英伟达极速超分",
+      "description": "英伟达极速超分",
+      "categoryId": "video-category-9d33p",
+      "webappId": "2032095665941123073",
+      "enabled": true,
+      "order": 100,
+      "capabilities": [
+        "video.upscale",
+        "video.edit"
+      ],
+      "inputSchema": [
+        {
+          "key": "source-video",
+          "label": "video",
+          "kind": "video",
+          "rhNodeId": "3",
+          "fieldName": "video",
+          "required": true,
+          "multiple": false,
+          "uploadAsset": true,
+          "order": 0
+        }
+      ],
+      "outputSchema": [
+        {
+          "key": "output-video",
+          "label": "输出视频",
+          "kind": "video",
+          "role": "append-output"
+        }
+      ],
+      "fixedParams": [],
+      "userParams": [],
+      "runtime": {
+        "instanceType": "plus",
+        "pollIntervalMs": 5000,
+        "maxPolls": 720,
+        "fetchAppInfo": true
+      },
+      "ui": {
+        "icon": "Wrench",
+        "showInNode": true,
+        "showInImageEditor": false,
+        "showInVideoEditor": true,
+        "showInTextEditor": false,
+        "showInAudioEditor": false
+      },
+      "version": 1
+    },
+    {
+      "id": "video-flashvsr",
+      "title": "FlashVsr慢速超分",
+      "description": "FlashVsr慢速超分",
+      "categoryId": "video-category-9d33p",
+      "webappId": "2043165928090767362",
+      "enabled": true,
+      "order": 100,
+      "capabilities": [
+        "video.upscale",
+        "video.edit"
+      ],
+      "inputSchema": [
+        {
+          "key": "source-video",
+          "label": "file",
+          "kind": "video",
+          "rhNodeId": "9",
+          "fieldName": "file",
+          "required": true,
+          "multiple": false,
+          "uploadAsset": true,
+          "order": 0
+        }
+      ],
+      "outputSchema": [
+        {
+          "key": "output-video",
+          "label": "输出视频",
+          "kind": "video",
+          "role": "append-output"
+        }
+      ],
+      "fixedParams": [],
+      "userParams": [],
+      "runtime": {
+        "instanceType": "plus",
+        "pollIntervalMs": 5000,
+        "maxPolls": 720,
+        "fetchAppInfo": true
+      },
+      "ui": {
+        "icon": "Wrench",
+        "showInNode": true,
+        "showInImageEditor": false,
+        "showInVideoEditor": true,
         "showInTextEditor": false,
         "showInAudioEditor": false
       },

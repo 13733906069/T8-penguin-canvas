@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BookmarkPlus, CloudUpload, Copy, FolderPlus, Library, Palette, Plus, Save, Tags, WandSparkles, X } from 'lucide-react';
+import { BookmarkPlus, CloudUpload, Copy, FolderPlus, Library, Palette, Plus, Save, Send, Tags, WandSparkles, X } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useCanvasStore } from '../stores/canvas';
 import { trackAchievementEvent } from '../stores/achievements';
@@ -115,6 +115,7 @@ export default function MaterialContextMenu() {
   const [resourceCategoryDraft, setResourceCategoryDraft] = useState<string | null>(null);
   const [missingPromptDraft, setMissingPromptDraft] = useState<MissingPromptDraft | null>(null);
   const [copyingImage, setCopyingImage] = useState(false);
+  const [sendingToPhotoshop, setSendingToPhotoshop] = useState(false);
 
   const close = useCallback(() => {
     setMenu(null);
@@ -128,6 +129,7 @@ export default function MaterialContextMenu() {
     setResourceCategoryDraft(null);
     setMissingPromptDraft(null);
     setCopyingImage(false);
+    setSendingToPhotoshop(false);
   }, []);
 
   const loadCategories = useCallback(async (kind: ResourceKind) => {
@@ -181,6 +183,7 @@ export default function MaterialContextMenu() {
       setResourceCategoryDraft(null);
       setMissingPromptDraft(null);
       setCopyingImage(false);
+      setSendingToPhotoshop(false);
       loadCategories(kind);
       loadCloudTargets();
     };
@@ -207,6 +210,7 @@ export default function MaterialContextMenu() {
       setResourceCategoryDraft(null);
       setMissingPromptDraft(null);
       setCopyingImage(false);
+      setSendingToPhotoshop(false);
       loadCategories('set');
     };
     document.addEventListener('contextmenu', onContext, true);
@@ -534,6 +538,32 @@ export default function MaterialContextMenu() {
     }
   };
 
+  const sendCurrentImageToPhotoshop = async () => {
+    if (!menu || menu.kind !== 'image' || !menu.url) return;
+    setSendingToPhotoshop(true);
+    setMessage('正在发送到 Photoshop...');
+    const r = await api.sendToPhotoshop({
+      materials: [{
+        kind: 'image',
+        url: menu.url,
+        name: menu.title || baseName(menu.url),
+        id: menu.sourceNodeId || undefined,
+        tags: ['canvas-context-menu'],
+      }],
+      tags: ['T8 画布右键'],
+      sourceCanvasId: activeCanvasId || undefined,
+      sourceLabel: '画布右键图片',
+    });
+    setSendingToPhotoshop(false);
+    if (r.success) {
+      const sent = r.data.sent || 1;
+      const skipped = r.data.skipped ? `，跳过 ${r.data.skipped} 项` : '';
+      setMessage(`已发送到 Photoshop：${sent} 张${skipped}`);
+    } else {
+      setMessage(r.error || '发送到 Photoshop 失败，请确认 T8 Photoshop Link 面板已连接。');
+    }
+  };
+
   const copyImageToClipboard = async () => {
     if (!menu || menu.kind !== 'image' || !menu.url) return;
     setCopyingImage(true);
@@ -603,10 +633,16 @@ export default function MaterialContextMenu() {
           }}
         >
           {menu.kind === 'image' && (
-            <button className={`${itemCls} !px-1`} onClick={copyImageToClipboard} disabled={copyingImage}>
-              <Copy size={12} />
-              <span className="truncate">{copyingImage ? '正在复制图片...' : '复制图片到剪切板'}</span>
-            </button>
+            <>
+              <button className={`${itemCls} !px-1`} onClick={copyImageToClipboard} disabled={copyingImage}>
+                <Copy size={12} />
+                <span className="truncate">{copyingImage ? '正在复制图片...' : '复制图片到剪切板'}</span>
+              </button>
+              <button className={`${itemCls} !px-1`} onClick={sendCurrentImageToPhotoshop} disabled={sendingToPhotoshop}>
+                <Send size={12} />
+                <span className="truncate">{sendingToPhotoshop ? '正在发送到 Photoshop...' : '发送到 Photoshop'}</span>
+              </button>
+            </>
           )}
           <div className="flex items-center gap-1.5">
             <select

@@ -9,13 +9,14 @@ const app = express();
 
 // ========== 中间件 ==========
 const LOCAL_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/;
+const UXP_ORIGIN_RE = /^uxp:\/\//i;
 app.use(cors({
   origin(origin, cb) {
-    cb(null, !origin || LOCAL_ORIGIN_RE.test(origin));
+    cb(null, !origin || LOCAL_ORIGIN_RE.test(origin) || UXP_ORIGIN_RE.test(origin));
   },
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '120mb' }));
+app.use(express.urlencoded({ extended: true, limit: '120mb' }));
 
 // 简易访问日志
 app.use((req, _res, next) => {
@@ -74,6 +75,8 @@ const guomanModelsRouter = require('./routes/guomanModels');
 const animeTagsRouter = require('./routes/animeTags');
 const vibexBridgeRouter = require('./routes/vibexBridge');
 const videoOpsRouter = require('./routes/videoOps');
+const batchTagsRouter = require('./routes/batchTags');
+const photoshopBridgeRouter = require('./routes/photoshopBridge');
 const { registerLocalExtensions } = require('./extensions/localExtensions');
 const localHooks = require('./extensions/runtimeHooks');
 
@@ -98,6 +101,8 @@ app.use('/api/guoman-models', guomanModelsRouter);
 app.use('/api/anime-tags', animeTagsRouter);
 app.use('/api/vibex-bridge', vibexBridgeRouter);
 app.use('/api/video-ops', videoOpsRouter);
+app.use('/api/batch-tags', batchTagsRouter);
+app.use('/api/photoshop-bridge', photoshopBridgeRouter);
 registerLocalExtensions(app, { config, express, logger: console, hooks: localHooks });
 
 // ========== 前端静态资源(仅打包模式) ==========

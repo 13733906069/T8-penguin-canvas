@@ -32,6 +32,10 @@ test('shared prompt editor components expose modal and textarea affordances', ()
   assert.match(modal, /格式化 JSON/);
   assert.match(modal, /校验 JSON/);
   assert.match(modal, /整理列表/);
+  assert.match(modal, /stripCompositionLeak/);
+  assert.match(modal, /createPlainInputRunSnapshot/);
+  assert.match(modal, /compositionLeakRef/);
+  assert.match(modal, /paddingLeft:\s*10/);
 
   assert.match(textarea, /PromptExpandModal/);
   assert.match(textarea, /data-prompt-expand-trigger/);
@@ -40,8 +44,12 @@ test('shared prompt editor components expose modal and textarea affordances', ()
   assert.match(textarea, /editorKind=\{editorKind\}/);
   assert.match(textarea, /composingRef/);
   assert.match(textarea, /isImeCompositionInput/);
+  assert.match(textarea, /stripCompositionLeak/);
+  assert.match(textarea, /createPlainInputRunSnapshot/);
+  assert.match(textarea, /compositionLeakRef/);
   assert.match(textarea, /onBeforeInput=\{handleBeforeInput\}/);
   assert.match(textarea, /onCompositionEnd=\{handleCompositionEnd\}/);
+  assert.match(textarea, /paddingLeft:\s*textareaStyle\?\.paddingLeft \?\? 10/);
 });
 
 test('mention prompt input keeps media mentions in expanded editor', () => {
@@ -53,6 +61,9 @@ test('mention prompt input keeps media mentions in expanded editor', () => {
   assert.match(mention, /data-prompt-expand-trigger/);
   assert.match(mention, /matchesAnyShortcut\(expandShortcuts,\s*e\.nativeEvent\)/);
   assert.match(mention, /isImeCompositionInput/);
+  assert.match(mention, /stripCompositionLeak/);
+  assert.match(mention, /createPlainInputRunSnapshot/);
+  assert.match(mention, /compositionLeakRef\.current = createCompositionLeakSnapshot\(lastPlainInputRef\.current, now\)/);
   assert.match(mention, /onBeforeInput=\{\(event\) =>/);
   assert.match(mention, /if \(isImeCompositionInput\(event\.nativeEvent\)\) composingRef\.current = true/);
   assert.match(mention, /const nativeEvent = event\?\.nativeEvent/);
@@ -64,6 +75,7 @@ test('mention prompt input keeps media mentions in expanded editor', () => {
   assert.match(mention, /const fillLayout = fillHeight \|\| !expandable/);
   assert.match(mention, /height:\s*fillLayout \? '100%' : style\?\.height/);
   assert.match(mention, /minHeight:\s*fillLayout \? 0 : \(style\?\.minHeight \?\? 56\)/);
+  assert.match(mention, /paddingLeft:\s*style\?\.paddingLeft \?\? 10/);
   assert.match(mention, /'display:inline-block'/);
   assert.match(mention, /'width:24px'/);
   assert.match(mention, /'height:24px'/);

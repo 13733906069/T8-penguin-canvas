@@ -45,6 +45,7 @@ export type NodeType =
   | 'frame-extractor'
   | 'frame-pair'
   | 'loop'
+  | 'random-route'
   | 'pick-from-set'
   | 'text-split'
   | 'resize'
@@ -68,6 +69,7 @@ export type NodeType =
   | 'pose-master'
   | 'aggregate-parser'
   | 'batch-processor'
+  | 'batch-tagger'
   | 'topaz-image-upscale'
   | 'topaz-video-upscale'
   // 3D (1)

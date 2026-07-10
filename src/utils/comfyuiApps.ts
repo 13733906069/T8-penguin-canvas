@@ -397,6 +397,24 @@ function ensureUniqueComfyParamKeys(params: ComfyAppUserParam[]): ComfyAppUserPa
   });
 }
 
+function dedupeComfyAppUserParams(params: ComfyAppUserParam[]): ComfyAppUserParam[] {
+  const out: ComfyAppUserParam[] = [];
+  const seenSharedSources = new Set<string>();
+  const seenExactParams = new Set<string>();
+  for (const param of params) {
+    const source = String(param.source || '').trim();
+    const exactKey = `${source}::${param.nodeId || ''}::${param.fieldName || ''}`;
+    if (seenExactParams.has(exactKey)) continue;
+    seenExactParams.add(exactKey);
+    if (SHARED_DUPLICATE_SOURCES.has(source)) {
+      if (seenSharedSources.has(source)) continue;
+      seenSharedSources.add(source);
+    }
+    out.push(param);
+  }
+  return ensureUniqueComfyParamKeys(out);
+}
+
 function stabilizeComfyAppRuntimeParams(
   fields: ComfyFieldMapping[],
   userParams: ComfyAppUserParam[],
@@ -408,7 +426,7 @@ function stabilizeComfyAppRuntimeParams(
     counts.set(source, (counts.get(source) || 0) + 1);
   }
   if (![...counts.values()].some((count) => count > 1)) {
-    return { fields, userParams: ensureUniqueComfyParamKeys(userParams) };
+    return { fields, userParams: dedupeComfyAppUserParams(userParams) };
   }
 
   const usedSources = new Set(fields.map((field) => String(field.source || '').trim()).filter(Boolean));
@@ -451,7 +469,7 @@ function stabilizeComfyAppRuntimeParams(
     };
   });
 
-  return { fields: nextFields, userParams: ensureUniqueComfyParamKeys(nextParams) };
+  return { fields: nextFields, userParams: dedupeComfyAppUserParams(nextParams) };
 }
 
 export function buildComfyAppFromWorkflow(options: {
@@ -467,7 +485,7 @@ export function buildComfyAppFromWorkflow(options: {
   const baseFields = compactComfyFields(filterComfyFieldsByExcludeRules(options.workflowJson, analysis.fields, options.excludeRules));
   const scoped = scopeDuplicateComfyFieldSources(baseFields);
   const fields = scoped.fields;
-  const userParams = fields
+  const userParams = dedupeComfyAppUserParams(fields
     .filter(shouldExposeParam)
     .map((field) => {
       const source = String(field.source || field.fieldName || '').trim();
@@ -492,7 +510,7 @@ export function buildComfyAppFromWorkflow(options: {
         options: fieldOptions.length ? fieldOptions : undefined,
         rows: TEXT_SOURCES.has(behaviorSource) ? (behaviorSource === 'negative' ? 4 : 5) : undefined,
       } as ComfyAppUserParam;
-    });
+    }));
 
   return {
     id: cleanId(options.id || title, `comfy-${Date.now().toString(36)}`),

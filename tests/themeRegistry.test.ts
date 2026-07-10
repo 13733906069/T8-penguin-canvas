@@ -173,6 +173,28 @@ test('Collapsed sidebar reserves the top-left toggle lane for theme overlays', (
   assert.match(saintCss, /\.t8-main-layout\[data-sidebar-collapsed="true"\] \.t8-saint-sanctuary \{[\s\S]*left:\s*var\(--t8-sidebar-collapsed-content-left, 54px\) !important/);
 });
 
+test('RH light theme normalizes legacy dark node internals', () => {
+  const css = read('../src/styles/theme-rh.css');
+
+  assert.match(css, /RH light legacy node adapter v1/);
+  assert.match(
+    css,
+    /html\[data-theme-visual="rh"\]\[data-theme-mode="light"\] \.react-flow__node:not\(\.react-flow__node-groupBox\) > div:first-child \{[\s\S]*background:\s*var\(--t8-bg-node\) !important;[\s\S]*color:\s*var\(--t8-text-main\) !important;/,
+  );
+  assert.match(
+    css,
+    /html\[data-theme-visual="rh"\]\[data-theme-mode="light"\] \.react-flow__node:not\(\.react-flow__node-groupBox\) \[class~="text-white"\]/,
+  );
+  assert.match(
+    css,
+    /html\[data-theme-visual="rh"\]\[data-theme-mode="light"\] \.react-flow__node:not\(\.react-flow__node-groupBox\) \[class\*="bg-white\/5"\]:not\(input\):not\(textarea\):not\(select\)/,
+  );
+  assert.match(
+    css,
+    /html\[data-theme-visual="rh"\]\[data-theme-mode="light"\] \.react-flow__node-llm \.llm-chat-panel \{[\s\S]*background:\s*color-mix\(in srgb, var\(--t8-bg-panel\) 94%, var\(--t8-accent\) 4%\) !important;/,
+  );
+});
+
 test('Farm Story handle hover keeps ReactFlow anchor transform untouched', () => {
   const css = read('../src/styles/theme-farm-story.css');
   const farmHandleHoverRule = css.match(/html\[data-theme-visual="farm-story"\] \.react-flow__handle:hover\s*\{[^}]*\}/)?.[0] ?? '';

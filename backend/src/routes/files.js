@@ -18,6 +18,23 @@ const MAX_THUMBNAIL_JOBS = Math.max(1, Math.min(4, Number.parseInt(process.env.T
 const thumbnailInflight = new Map();
 const thumbnailQueue = [];
 let activeThumbnailJobs = 0;
+const LOCAL_IMPORT_EXTENSIONS = new Map([
+  ['.png', { kind: 'image', mime: 'image/png' }],
+  ['.jpg', { kind: 'image', mime: 'image/jpeg' }],
+  ['.jpeg', { kind: 'image', mime: 'image/jpeg' }],
+  ['.webp', { kind: 'image', mime: 'image/webp' }],
+  ['.gif', { kind: 'image', mime: 'image/gif' }],
+  ['.bmp', { kind: 'image', mime: 'image/bmp' }],
+  ['.avif', { kind: 'image', mime: 'image/avif' }],
+  ['.tif', { kind: 'image', mime: 'image/tiff' }],
+  ['.tiff', { kind: 'image', mime: 'image/tiff' }],
+  ['.mp4', { kind: 'video', mime: 'video/mp4' }],
+  ['.mov', { kind: 'video', mime: 'video/quicktime' }],
+  ['.webm', { kind: 'video', mime: 'video/webm' }],
+  ['.mkv', { kind: 'video', mime: 'video/x-matroska' }],
+  ['.avi', { kind: 'video', mime: 'video/x-msvideo' }],
+  ['.m4v', { kind: 'video', mime: 'video/x-m4v' }],
+]);
 
 // 配置 multer
 const storage = multer.diskStorage({
@@ -30,24 +47,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: config.MAX_FILE_SIZE },
 });
-
-function formatUploadLimit(bytes) {
-  const mb = bytes / (1024 * 1024);
-  return `${Number.isInteger(mb) ? mb : mb.toFixed(1)}MB`;
-}
 
 function sendUploadError(res, err) {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({
-        success: false,
-        code: 'file_too_large',
-        error: `文件超过上传上限 ${formatUploadLimit(config.MAX_FILE_SIZE)}，请压缩后重试`,
-        limit: config.MAX_FILE_SIZE,
-      });
-    }
     return res.status(400).json({
       success: false,
       code: err.code || 'upload_error',
@@ -81,6 +84,57 @@ router.post('/upload', (req, res) => {
       },
     });
   });
+});
+
+function localImportMeta(sourcePath) {
+  const ext = path.extname(sourcePath).toLowerCase();
+  return LOCAL_IMPORT_EXTENSIONS.get(ext) || null;
+}
+
+function resolveExistingLocalFile(sourcePath) {
+  const raw = String(sourcePath || '').trim();
+  if (!raw || !path.isAbsolute(raw)) {
+    throw new Error('本地素材路径必须是绝对路径');
+  }
+  const resolved = path.resolve(raw);
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) {
+    throw new Error('本地素材路径不是文件');
+  }
+  return { resolved, stat };
+}
+
+function importLocalFile(sourcePath) {
+  const { resolved, stat } = resolveExistingLocalFile(sourcePath);
+  const meta = localImportMeta(resolved);
+  if (!meta) {
+    throw new Error('仅支持导入图像或视频文件');
+  }
+  const ext = path.extname(resolved).toLowerCase() || '.bin';
+  const filename = `up_${Date.now()}_${Math.random().toString(36).slice(2, 6)}${ext}`;
+  fs.mkdirSync(config.INPUT_DIR, { recursive: true });
+  const target = path.join(config.INPUT_DIR, filename);
+  fs.copyFileSync(resolved, target);
+  return {
+    filename,
+    originalName: path.basename(resolved),
+    url: `/files/input/${filename}`,
+    path: target,
+    sourcePath: resolved,
+    size: stat.size,
+    mime: meta.mime,
+    kind: meta.kind,
+  };
+}
+
+// POST /api/files/import-local — Electron 系统选择器拿到绝对路径后，复制到 input 并保留原始路径
+router.post('/import-local', express.json({ limit: '1mb' }), (req, res) => {
+  try {
+    const data = importLocalFile(req.body?.sourcePath || req.body?.path);
+    return res.json({ success: true, data });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e?.message || String(e) });
+  }
 });
 
 // GET /api/files/list — 列出 output 目录
@@ -443,6 +497,34 @@ router.post('/open-output-folder', express.json({ limit: '64kb' }), async (req, 
   }
 });
 
+function resolveOpenLocalDirectory(targetPath) {
+  const raw = String(targetPath || '').trim();
+  if (!raw || !path.isAbsolute(raw)) {
+    throw new Error('本地目录路径必须是绝对路径');
+  }
+  const resolved = path.resolve(raw);
+  const stat = fs.statSync(resolved);
+  return stat.isDirectory() ? resolved : path.dirname(resolved);
+}
+
+// POST /api/files/open-local-path — 打开最近一次真实保存目录（用于原素材目录 sidecar）
+router.post('/open-local-path', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const targetDir = resolveOpenLocalDirectory(req.body?.path || req.body?.targetPath);
+    const dryRun = Boolean(req.body?.dryRun) || process.env.T8PC_OPEN_FOLDER_DRY_RUN === '1';
+    if (!dryRun) await spawnOpenFolder(targetDir);
+    return res.json({
+      success: true,
+      data: {
+        path: targetDir,
+        opened: !dryRun,
+      },
+    });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
 // v1.2.10.2: 全局生成素材自动保存到本地路径
 // POST /api/files/save-to-disk
 //   body: { url: string, filename?: string, kind?: 'image'|'video'|'audio' }
@@ -532,3 +614,5 @@ router.post('/save-to-disk', express.json({ limit: '2mb' }), async (req, res) =>
 });
 
 module.exports = router;
+module.exports.importLocalFile = importLocalFile;
+module.exports.resolveOpenLocalDirectory = resolveOpenLocalDirectory;

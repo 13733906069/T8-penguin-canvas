@@ -239,6 +239,7 @@ test('Grok OAuth Agent supports slash commands and continuous artifact reference
   const node = read('../src/components/nodes/GrokOAuthAgentNode.tsx');
   const mentions = read('../src/components/nodes/mediaMentions.ts');
   const input = read('../src/components/nodes/MentionPromptInput.tsx');
+  const ime = read('../src/utils/imeComposition.ts');
 
   assert.match(node, /const SLASH_COMMANDS/);
   assert.match(node, /command:\s*'image'/);
@@ -287,9 +288,11 @@ test('Grok OAuth Agent supports slash commands and continuous artifact reference
   assert.match(mentions, /customKey/);
   assert.match(mentions, /replacement = mention\.kind === 'text' \? material\.url : currentToken/);
   assert.match(input, /item\.material\.kind === 'audio' \? '♪' : 'T'/);
-  assert.match(input, /function isImeKeyboardEvent/);
-  assert.match(input, /keyCode === 229/);
-  assert.match(input, /function stripCompositionLeak/);
+  assert.match(input, /isImeKeyboardEvent/);
+  assert.match(input, /stripCompositionLeak/);
+  assert.match(ime, /function isImeKeyboardEvent/);
+  assert.match(ime, /keyCode === 229/);
+  assert.match(ime, /function stripCompositionLeak/);
   assert.match(input, /compositionLeakRef/);
   assert.match(input, /lastPlainInputRef/);
 });

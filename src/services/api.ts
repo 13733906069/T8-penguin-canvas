@@ -684,6 +684,14 @@ export interface FigmaImportResult {
   result?: any;
 }
 
+export interface PhotoshopImportResult {
+  commandId: string;
+  queued: boolean;
+  queueSize: number;
+  sent: number;
+  skipped: number;
+}
+
 export function sendToEagle(payload: {
   materials: EagleImportMaterial[];
   tags?: string[];
@@ -702,6 +710,18 @@ export function sendToFigma(payload: {
   figmaApiBase?: string;
 }) {
   return safeRequest<FigmaImportResult>(`${BASE}/figma/import`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendToPhotoshop(payload: {
+  materials: EagleImportMaterial[];
+  tags?: string[];
+  sourceCanvasId?: string;
+  sourceLabel?: string;
+}) {
+  return safeRequest<PhotoshopImportResult>(`${BASE}/photoshop-bridge/send-to-photoshop`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

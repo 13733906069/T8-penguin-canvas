@@ -3384,6 +3384,48 @@ html[data-theme-visual="op"] .t8-group-box__handle {
   pointer-events: none;
 }
 
+#root .t8-canvas-shell .react-flow__node [data-video-edit-node-theme-surface="solid"] [data-video-edit-compact-action-button="true"],
+#root [data-video-edit-workbench-theme-surface="solid"] [data-video-edit-compact-action-button="true"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 0;
+  border: 1.5px solid var(--t8-video-edit-action-border) !important;
+  border-color: var(--t8-video-edit-action-border) !important;
+  background: var(--t8-video-edit-action-bg) !important;
+  color: var(--t8-video-edit-action-text) !important;
+  box-shadow: var(--t8-video-edit-action-shadow) !important;
+  font-weight: 700;
+  text-decoration: none;
+  line-height: 1;
+  transition:
+    transform 80ms ease,
+    box-shadow 80ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+#root .t8-canvas-shell .react-flow__node [data-video-edit-node-theme-surface="solid"] [data-video-edit-compact-action-button="true"]:not(:disabled):hover,
+#root [data-video-edit-workbench-theme-surface="solid"] [data-video-edit-compact-action-button="true"]:not(:disabled):hover {
+  background: var(--t8-video-edit-action-hover-bg) !important;
+  transform: translateY(-1px);
+}
+
+#root .t8-canvas-shell .react-flow__node [data-video-edit-node-theme-surface="solid"] [data-video-edit-compact-action-button="true"]:not(:disabled):active,
+#root [data-video-edit-workbench-theme-surface="solid"] [data-video-edit-compact-action-button="true"]:not(:disabled):active {
+  transform: translateY(0);
+}
+
+#root .t8-canvas-shell .react-flow__node [data-video-edit-node-theme-surface="solid"] [data-video-edit-compact-action-button="true"]:disabled,
+#root [data-video-edit-workbench-theme-surface="solid"] [data-video-edit-compact-action-button="true"]:disabled {
+  background: var(--t8-video-edit-action-disabled-bg) !important;
+  color: var(--t8-video-edit-action-disabled-text) !important;
+  opacity: 1;
+  cursor: not-allowed;
+  box-shadow: none !important;
+}
+
 .t8-output-image-media--grid {
   width: 100% !important;
   height: auto !important;

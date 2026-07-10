@@ -22,6 +22,7 @@ import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
 import RhImageCapabilityRail from '../RhImageCapabilityRail';
+import RhVideoCapabilityRail from '../RhVideoCapabilityRail';
 import SmartImage from '../SmartImage';
 import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
@@ -51,7 +52,9 @@ import {
 // v1.2.10.5: 节点落点防重叠 —— 双击编辑产出 N 节点 3 列宫格整组避让
 import { placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
-type OutputProduceMeta = ImageEditProduceMeta | { type: 'rh-capability'; label?: string };
+type OutputProduceMeta =
+  | ImageEditProduceMeta
+  | { type: 'rh-capability' | 'video-frame-extract' | 'rh-video-capability'; label?: string };
 
 /**
  * OutputNode - 通用输出素材节点 (中继展示型)
@@ -110,6 +113,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   const d = (data as any) || {};
   const rf = useReactFlow();
   const [rhCapabilityBusy, setRhCapabilityBusy] = useState(false);
+  const [rhVideoCapabilityBusy, setRhVideoCapabilityBusy] = useState(false);
   const activeTemplate = useMemo(
     () => resolveThemeTemplate(templateId, customTemplates),
     [templateId, customTemplates],
@@ -736,7 +740,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
 
   const handleProduce = (urls: string[], _meta?: OutputProduceMeta): void | Promise<void> => {
     const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
-    const isRhCapabilityOutput = _meta?.type === 'rh-capability';
+    const isRhCapabilityOutput = _meta?.type === 'rh-capability' || _meta?.type === 'video-frame-extract';
     const logSource = `rh-image-output:${id}`;
     if (_meta?.type === 'annotation-edit') {
       return runAnnotationEditProduce(cleanUrls, _meta);
@@ -800,6 +804,74 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         }, 0);
       }
       logBus.success(`${_meta.label || 'RH 图像能力'}已创建 ${newNodes.length} 个输出素材节点`, logSource);
+    } else {
+      rf.addNodes(newNodes);
+    }
+  };
+
+  const handleVideoProduce = (urls: string[], _meta?: OutputProduceMeta): void => {
+    const cleanUrls = (Array.isArray(urls) ? urls : []).map((url) => String(url || '').trim()).filter(Boolean);
+    const isRhCapabilityOutput = _meta?.type === 'rh-video-capability';
+    const logSource = `rh-video-output:${id}`;
+    if (cleanUrls.length === 0) {
+      if (isRhCapabilityOutput) logBus.warn(`${_meta.label || 'RH 视频能力'}完成但没有可创建的视频 URL`, logSource);
+      return;
+    }
+    const me = rf.getNode(id);
+    const myW = (me as any)?.measured?.width || (me as any)?.width || 320;
+    const myH = (me as any)?.measured?.height || (me as any)?.height || 360;
+    const baseX = (me?.position?.x ?? 0) + myW + 80;
+    const baseY = me?.position?.y ?? 0;
+    const COLS = 3;
+    const COL_W = 350;
+    const ROW_H = Math.max(360, myH);
+    const ts = Date.now();
+    const _sz = defaultSizeOf('output');
+    if (isRhCapabilityOutput) {
+      logBus.info(`${_meta.label || 'RH 视频能力'}准备创建 ${cleanUrls.length} 个视频输出素材节点`, logSource);
+    }
+    const _desired: PlacementRect[] = cleanUrls.map((_, i) => ({
+      x: baseX + (i % COLS) * COL_W,
+      y: baseY + Math.floor(i / COLS) * ROW_H,
+      w: _sz.w,
+      h: _sz.h,
+    }));
+    const _off = placeBatchNodes(_desired, rf.getNodes(), { source: `placement:output-video-produce:${id}` });
+    const newNodes: Node[] = cleanUrls.map((u, i) => {
+      const newId = `output-auto-video-${id}-${ts}-${i}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+      return {
+        id: newId,
+        type: 'output',
+        position: {
+          x: baseX + (i % COLS) * COL_W + _off.dx,
+          y: baseY + Math.floor(i / COLS) * ROW_H + _off.dy,
+        },
+        data: createOutputDataFromItem({
+          kind: 'video',
+          url: u,
+          name: fileNameFromUrl(u),
+        }),
+        selected: isRhCapabilityOutput,
+      } as Node;
+    });
+    if (isRhCapabilityOutput) {
+      rf.setNodes((prev) => [...prev.map((node) => ({ ...node, selected: false })), ...newNodes]);
+      const first = newNodes[0];
+      if (first) {
+        window.setTimeout(() => {
+          try {
+            rf.setCenter(first.position.x + _sz.w / 2, first.position.y + _sz.h / 2, {
+              zoom: Math.max(0.7, Math.min(1.2, rf.getZoom())),
+              duration: 320,
+            });
+          } catch {
+            /* 视野定位失败不影响节点创建 */
+          }
+        }, 0);
+      }
+      logBus.success(`${_meta.label || 'RH 视频能力'}已创建 ${newNodes.length} 个视频输出素材节点`, logSource);
     } else {
       rf.addNodes(newNodes);
     }
@@ -938,6 +1010,15 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   const hasEditableImages = collected.images.length > 0;
   const canEditImage = selected && hasEditableImages;
   const showRhCapabilityRail = (selected || rhCapabilityBusy) && hasEditableImages;
+  const videoSourceItems = useMemo(
+    () => collected.videos.map((url) => ({
+      kind: 'video' as const,
+      url,
+      name: fileNameFromUrl(url),
+    })),
+    [collected.videos],
+  );
+  const showRhVideoCapabilityRail = (selected || rhVideoCapabilityBusy) && collected.videos.length > 0;
   const onClickEditTopBtn = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (collected.images.length > 0) setEditingUrl(collected.images[0]);
@@ -1008,6 +1089,17 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           isDark={isDark}
           onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
           onRunningChange={setRhCapabilityBusy}
+        />
+      )}
+      {showRhVideoCapabilityRail && (
+        <RhVideoCapabilityRail
+          sourceItems={videoSourceItems}
+          accent={effectiveAccent}
+          isDark={isDark}
+          style={showRhCapabilityRail ? { left: -96 } : undefined}
+          onFramesComplete={(imageUrls) => handleProduce(imageUrls, { type: 'video-frame-extract', label: '首尾帧获取' })}
+          onVideosComplete={(result) => handleVideoProduce(result.videoUrls, { type: 'rh-video-capability', label: result.tool.title })}
+          onRunningChange={setRhVideoCapabilityBusy}
         />
       )}
       {/* target handle (左侧) - 上游任意类型可连入 */}

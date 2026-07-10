@@ -1,10 +1,18 @@
 // preload.cjs — 暴露最小信息给 BrowserWindow 渲染进程
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('t8pc', {
   getInfo: () => ipcRenderer.invoke('t8pc:get-info'),
   openExternal: (url) => ipcRenderer.invoke('t8pc:open-external', url),
   openPath: (targetPath) => ipcRenderer.invoke('t8pc:open-path', targetPath),
+  pickMediaFiles: (options) => ipcRenderer.invoke('t8pc:pick-media-files', options || {}),
+  getPathForFile: (file) => {
+    try {
+      return webUtils?.getPathForFile?.(file) || '';
+    } catch {
+      return '';
+    }
+  },
   dragFileOut: (payload) => ipcRenderer.send('t8pc:drag-file-out', {
     url: typeof payload?.url === 'string' ? payload.url : '',
     path: typeof payload?.path === 'string' ? payload.path : '',

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   createOutputMediaRemovalData,
   createUploadDataFromItems,
@@ -90,4 +91,17 @@ test('createOutputMediaRemovalData removes output material fields and records hi
   assert.equal(patch.directImageUrl, '/files/output/b.png');
   assert.deepEqual(patch.directImageUrls, ['/files/output/b.png']);
   assert.deepEqual(patch.hiddenMaterialUrls.image, ['/files/output/old.png', '/files/output/a.png']);
+});
+
+test('upload collections keep the split action visible for video batches', () => {
+  const uploadNode = readFileSync(new URL('../src/components/nodes/UploadNode.tsx', import.meta.url), 'utf8');
+  const splitButton = uploadNode.match(/<CollectionSplitButton[\s\S]*?\/>/)?.[0] || '';
+
+  assert.match(splitButton, /count=\{mediaItems\.length\}/);
+  assert.match(splitButton, /onSplit=\{splitUploadCollection\}/);
+  assert.doesNotMatch(
+    splitButton,
+    /sm:opacity-0/,
+    'upload split action should be visible without hovering over the section header',
+  );
 });

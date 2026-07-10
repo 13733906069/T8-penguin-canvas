@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>T8 Photoshop Link</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div>
+        <div class="brand">T8 Photoshop Link</div>
+        <div class="sub">贞贞画布 · PS 联动</div>
+      </div>
+      <div class="status-pill"><span id="connDot" class="dot"></span><span id="connText">未连接</span></div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" type="button" data-tab="assets">资产</button>
+      <button class="tab" type="button" data-tab="generate">生成</button>
+      <button class="tab" type="button" data-tab="settings">设置</button>
+    </nav>
+
+    <section class="view active" data-view="assets">
+      <div class="bar">
+        <select id="assetSection" class="select"></select>
+        <button id="refreshAssets" class="icon-btn" type="button" title="刷新">刷新</button>
+      </div>
+      <input id="assetSearch" class="input search-input" type="text" inputmode="search" autocomplete="off" spellcheck="false" placeholder="搜索素材名称、分类">
+      <div id="assetGrid" class="grid empty">连接 T8 后会显示最近输出、上传素材和资源库图像。</div>
+      <div id="assetPager" class="pager" hidden>
+        <button id="prevAssetPage" class="secondary compact" type="button">上一页</button>
+        <span id="assetPageInfo" class="pager-info">1 / 1</span>
+        <button id="nextAssetPage" class="secondary compact" type="button">下一页</button>
+      </div>
+      <div class="footer">
+        <button id="placeAsset" class="primary" type="button" disabled>置入 PS</button>
+        <button id="uploadCurrent" class="secondary" type="button" disabled>上传当前画面</button>
+      </div>
+      <div id="assetMsg" class="msg"></div>
+    </section>
+
+    <section class="view" data-view="generate">
+      <div class="mode-row">
+        <button class="seg active" type="button" data-mode="generate">文生图</button>
+        <button class="seg" type="button" data-mode="edit">编辑当前图层</button>
+      </div>
+      <div class="bar two">
+        <select id="providerSelect" class="select"></select>
+        <select id="modelSelect" class="select"></select>
+      </div>
+      <textarea id="promptInput" class="textarea" rows="5" placeholder="描述你想生成或编辑的画面"></textarea>
+      <div class="bar two">
+        <select id="ratioSelect" class="select">
+          <option value="1:1">1:1</option>
+          <option value="3:4">3:4</option>
+          <option value="4:3">4:3</option>
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+        </select>
+        <select id="sizeSelect" class="select">
+          <option value="1024x1024">1K</option>
+          <option value="1536x1536">1.5K</option>
+          <option value="2048x2048">2K</option>
+        </select>
+      </div>
+      <div class="bar two">
+        <label class="check"><input id="autoPlaceToggle" type="checkbox" checked> 生成后置入 PS</label>
+        <label class="check"><input id="syncCanvasToggle" type="checkbox" checked> 同步到画布</label>
+      </div>
+      <button id="runGenerate" class="primary wide" type="button" disabled>生成</button>
+      <div id="generateResults" class="result-grid empty">生成结果会显示在这里。</div>
+      <div id="generateMsg" class="msg"></div>
+    </section>
+
+    <section class="view" data-view="settings">
+      <label class="label" for="serverInput">T8 后端地址</label>
+      <div class="bar">
+        <input id="serverInput" class="input" type="text" spellcheck="false" placeholder="127.0.0.1:18766">
+        <button id="connectBtn" class="primary-sm" type="button">连接</button>
+      </div>
+      <label class="check"><input id="uploadLayerToggle" type="checkbox" checked> 上传/编辑时优先使用当前图层</label>
+      <button id="openT8" class="secondary wide" type="button">打开 T8 画布</button>
+      <div class="hint">插件只连接本机 T8，不保存 API Key。图像生成和编辑会使用 T8 已配置的扩展平台。</div>
+      <div id="settingsMsg" class="msg"></div>
+    </section>
+  </main>
+
+  <script src="js/boot.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/ps.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

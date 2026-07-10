@@ -7,6 +7,7 @@ import { useThemeStore } from '../../stores/theme';
 import { useRunBusStore } from '../../stores/runBus';
 import { useUpstreamMaterials, type MaterialKind, type Material } from './useUpstreamMaterials';
 import { topologicalSort } from '../../utils/topologicalSort';
+import { excludeRandomRouteBranchDescendants } from '../../utils/randomRoute';
 import { PORT_COLOR } from '../../config/portTypes';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
@@ -43,7 +44,8 @@ const EXEC_TYPES = new Set<string>([
   'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
-  'aggregate-parser', 'batch-processor',
+  'random-route',
+  'aggregate-parser', 'batch-processor', 'batch-tagger',
   'topaz-image-upscale', 'topaz-video-upscale',
 ]);
 
@@ -248,7 +250,8 @@ const LoopNode = (p: NodeProps) => {
     const reachable = bfsForward(allEdges, directs);
     const subNodes = allNodes.filter((n) => reachable.has(n.id));
     const subEdges = allEdges.filter((e) => reachable.has(e.source) && reachable.has(e.target));
-    const order = topologicalSort(subNodes, subEdges, EXEC_TYPES);
+    const routePlanned = excludeRandomRouteBranchDescendants(subNodes, subEdges);
+    const order = topologicalSort(routePlanned.nodes, routePlanned.edges, EXEC_TYPES);
     const passiveOnly = order.length === 0 && hasPassiveLoopNode(subNodes);
     if (order.length === 0 && !passiveOnly) { setError('下游链路上没有可执行节点'); update({ status: 'error', error: '无可执行节点' }); return; }
 
@@ -592,7 +595,8 @@ const LoopNode = (p: NodeProps) => {
     const reachable = bfsForward(allEdges, directs);
     const subNodes = allNodes.filter((n) => reachable.has(n.id));
     const subEdges = allEdges.filter((e) => reachable.has(e.source) && reachable.has(e.target));
-    const originalOrder = topologicalSort(subNodes, subEdges, EXEC_TYPES);
+    const routePlanned = excludeRandomRouteBranchDescendants(subNodes, subEdges);
+    const originalOrder = topologicalSort(routePlanned.nodes, routePlanned.edges, EXEC_TYPES);
     const passiveOnly = originalOrder.length === 0 && hasPassiveLoopNode(subNodes);
     if (originalOrder.length === 0 && !passiveOnly) { setError('下游链路上没有可执行节点'); update({ status: 'error', error: '无可执行节点' }); return; }
 

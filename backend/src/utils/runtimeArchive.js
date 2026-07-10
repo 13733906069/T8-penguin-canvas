@@ -158,14 +158,49 @@ function extractWithPowerShell(archivePath, destination) {
   });
 }
 
+function extractWithBundledNode(archivePath, destination) {
+  let extractorPath = '';
+  try {
+    extractorPath = require.resolve('extract-zip');
+  } catch (error) {
+    return { error };
+  }
+  const script = [
+    "const extract = require(process.argv[1]);",
+    "const archivePath = process.argv[2];",
+    "const destination = process.argv[3];",
+    "extract(archivePath, { dir: destination })",
+    "  .then(() => {})",
+    "  .catch((error) => { console.error(error && error.stack ? error.stack : error); process.exit(1); });",
+  ].join('\n');
+  return spawnSync(process.execPath, [
+    '-e',
+    script,
+    extractorPath,
+    path.resolve(archivePath),
+    path.resolve(destination),
+  ], {
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 2 * 1024 * 1024,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+  });
+}
+
 function extractZip(archivePath, destination) {
   const tar = extractWithTar(archivePath, destination);
   if (!tar.error && tar.status === 0) return;
   const ps = extractWithPowerShell(archivePath, destination);
   if (!ps.error && ps.status === 0) return;
+  const nodeZip = extractWithBundledNode(archivePath, destination);
+  if (!nodeZip.error && nodeZip.status === 0) return;
   const details = [
     tar.error ? `tar: ${tar.error.message}` : `tar exit ${tar.status}: ${tar.stderr || tar.stdout || ''}`,
     ps.error ? `powershell: ${ps.error.message}` : `powershell exit ${ps.status}: ${ps.stderr || ps.stdout || ''}`,
+    nodeZip.error ? `node extract-zip: ${nodeZip.error.message}` : `node extract-zip exit ${nodeZip.status}: ${nodeZip.stderr || nodeZip.stdout || ''}`,
   ].join('\n');
   throw new Error(`运行时归档解压失败: ${details.slice(0, 1200)}`);
 }

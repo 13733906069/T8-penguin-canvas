@@ -39,6 +39,81 @@ test('RH image capability service exposes cutout, upscale, and expand wrappers f
   assert.match(presets, /wide-21-9/);
 });
 
+test('RH video material shortcuts ship frame extraction and RH video upscalers', async () => {
+  const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
+  const {
+    buildRhToolboxNodeInfoList,
+    buildRhToolboxQuickActions,
+    findRhToolboxToolById,
+    normalizeRhToolboxManifest,
+  } = await loadRhToolboxUtils();
+  const { resolveRhToolboxCapability } = await loadRhToolboxCapabilities();
+  const service = readFileSync(new URL('../src/services/rhToolboxCapabilities.ts', import.meta.url), 'utf8');
+  const presets = readFileSync(new URL('../src/utils/rhToolboxCapabilities.ts', import.meta.url), 'utf8');
+  const rail = readFileSync(new URL('../src/components/RhVideoCapabilityRail.tsx', import.meta.url), 'utf8');
+  const uploadNode = readFileSync(new URL('../src/components/nodes/UploadNode.tsx', import.meta.url), 'utf8');
+  const outputNode = readFileSync(new URL('../src/components/nodes/OutputNode.tsx', import.meta.url), 'utf8');
+
+  const manifest = normalizeRhToolboxManifest(RH_TOOLBOX_MANIFEST);
+  const category = manifest.categories.find((item) => item.id === 'video-category-9d33p');
+  assert.equal(category?.name, '视频超分');
+  assert.equal(category?.parentId, 'video');
+
+  const nvidia = findRhToolboxToolById(manifest, 'video-nividia-upscale');
+  assert.equal(nvidia?.title, '英伟达极速超分');
+  assert.equal(nvidia?.webappId, '2032095665941123073');
+  assert.deepEqual(nvidia?.capabilities, ['video.upscale', 'video.edit']);
+  assert.equal(nvidia?.inputSchema[0]?.kind, 'video');
+  assert.equal(nvidia?.inputSchema[0]?.rhNodeId, '3');
+  assert.equal(nvidia?.outputSchema[0]?.kind, 'video');
+  assert.equal(nvidia?.ui?.showInVideoEditor, true);
+  assert.deepEqual(
+    buildRhToolboxNodeInfoList(nvidia!, {
+      inputValues: { 'source-video': 'rh-uploaded-fast.mp4' },
+    }),
+    [{ nodeId: '3', fieldName: 'video', fieldValue: 'rh-uploaded-fast.mp4', valueType: 'video' }],
+  );
+
+  const flashVsr = findRhToolboxToolById(manifest, 'video-flashvsr');
+  assert.equal(flashVsr?.title, 'FlashVsr慢速超分');
+  assert.equal(flashVsr?.webappId, '2043165928090767362');
+  assert.deepEqual(flashVsr?.capabilities, ['video.upscale', 'video.edit']);
+  assert.equal(flashVsr?.inputSchema[0]?.kind, 'video');
+  assert.equal(flashVsr?.inputSchema[0]?.rhNodeId, '9');
+  assert.equal(flashVsr?.inputSchema[0]?.fieldName, 'file');
+  assert.equal(flashVsr?.outputSchema[0]?.kind, 'video');
+  assert.equal(flashVsr?.ui?.showInVideoEditor, true);
+
+  assert.equal(resolveRhToolboxCapability(manifest, {
+    surface: 'video',
+    capability: 'video.upscale',
+    preferredToolId: 'video-nividia-upscale',
+  })?.id, 'video-nividia-upscale');
+  assert.deepEqual(
+    new Set(buildRhToolboxQuickActions(manifest, 'video').map((action) => action.toolId)),
+    new Set(['bernini1', 'bernini2', 'video-nividia-upscale', 'video-flashvsr']),
+  );
+
+  assert.match(presets, /RH_VIDEO_CAPABILITY_PRESETS/);
+  assert.match(service, /export async function runRhVideoCapabilityBatch/);
+  assert.match(presets, /preferredToolId:\s*'video-nividia-upscale'/);
+  assert.match(presets, /preferredToolId:\s*'video-flashvsr'/);
+  assert.match(service, /RH_VIDEO_CAPABILITY_PRESETS\.fastUpscale\.preferredToolId/);
+  assert.match(service, /RH_VIDEO_CAPABILITY_PRESETS\.qualityUpscale\.preferredToolId/);
+  assert.match(rail, /首尾帧获取/);
+  assert.match(rail, /极速超分/);
+  assert.match(rail, /质量超分/);
+  assert.match(rail, /snapshotVideoFrameAsync/);
+  assert.match(rail, /probeVideo/);
+  assert.match(rail, /runRhVideoCapabilityBatch/);
+  assert.match(uploadNode, /RhVideoCapabilityRail/);
+  assert.match(uploadNode, /uploadType === 'video'/);
+  assert.match(uploadNode, /handleVideoProduce\(result\.videoUrls/);
+  assert.match(outputNode, /RhVideoCapabilityRail/);
+  assert.match(outputNode, /collected\.videos/);
+  assert.match(outputNode, /handleVideoProduce\(result\.videoUrls/);
+});
+
 test('RH toolbox manifest ships maintainer release tools for packaged users', async () => {
   const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
   const {
@@ -56,8 +131,8 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
   const manifest = normalizeRhToolboxManifest(RH_TOOLBOX_MANIFEST);
 
   assert.equal(manifest.schema, 't8-rh-toolbox-manifest');
-  assert.match(String(manifest.updatedAt || ''), /^2026-06-17/);
-  assert.equal(manifest.categories.length, 9);
+  assert.match(String(manifest.updatedAt || ''), /^2026-07-08/);
+  assert.equal(manifest.categories.length, 10);
   const categories = new Map(manifest.categories.map((category) => [category.id, category]));
   assert.deepEqual(
     [
@@ -69,6 +144,7 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       'image-category-e78o2',
       'video-category-6djrs',
       'image-category-e7but',
+      'video-category-9d33p',
       'image-category-8h6ed',
     ]
       .map((id) => [id, categories.get(id)?.name, categories.get(id)?.parentId]),
@@ -81,10 +157,11 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       ['image-category-e78o2', '电商', 'image'],
       ['video-category-6djrs', '视频去水印', 'video'],
       ['image-category-e7but', '扩图', 'image'],
+      ['video-category-9d33p', '视频超分', 'video'],
       ['image-category-8h6ed', '移除主体', 'image'],
     ],
   );
-  assert.equal(listRhToolboxTools(manifest).length, 11);
+  assert.equal(listRhToolboxTools(manifest).length, 13);
   assert.deepEqual(
     listRhToolboxTools(manifest).map((tool) => tool.id),
     [
@@ -99,6 +176,8 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       'xiaochuzhuti',
       'xiaoyunqueheng',
       'xiaoyunqueshu',
+      'video-nividia-upscale',
+      'video-flashvsr',
     ],
   );
   for (const tool of listRhToolboxTools(manifest)) {
@@ -109,13 +188,13 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       `${tool.id} should keep at least a 60 minute RH polling budget`,
     );
   }
-  assert.equal(listRhToolboxTools(manifest, { includeDisabled: true }).length, 11);
+  assert.equal(listRhToolboxTools(manifest, { includeDisabled: true }).length, 13);
   assert.equal(isRhToolboxBuiltinCategoryId('image-tools'), true);
   assert.equal(isRhToolboxBuiltinCategoryId('custom-rh-tools'), false);
   assert.equal(getRhToolboxToolMajorCategory(manifest.tools[0], manifest.categories), 'image');
   assert.deepEqual(
     filterRhToolboxTools(manifest, { majorCategoryId: 'video' }).map((tool) => tool.id),
-    ['bernini1', 'bernini2', 'jimenfenshen1', 'xiaoyunqueheng', 'xiaoyunqueshu'],
+    ['bernini1', 'bernini2', 'jimenfenshen1', 'xiaoyunqueheng', 'xiaoyunqueshu', 'video-nividia-upscale', 'video-flashvsr'],
   );
   assert.deepEqual(
     filterRhToolboxTools(manifest, { capability: 'image.cutout' }).map((tool) => tool.id),
@@ -147,7 +226,7 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
   );
   assert.deepEqual(
     new Set(buildRhToolboxQuickActions(manifest, 'video').map((action) => action.toolId)),
-    new Set(['bernini1', 'bernini2']),
+    new Set(['bernini1', 'bernini2', 'video-nividia-upscale', 'video-flashvsr']),
   );
 
   const cutout = findRhToolboxToolById(manifest, 'image-cutout-v1');
@@ -296,6 +375,17 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
   assert.equal(textToVideo?.webappId, '2064185875537420290');
   assert.equal(textToVideo?.inputSchema[0]?.rhNodeId, '210');
   assert.equal(textToVideo?.outputSchema[0]?.kind, 'video');
+
+  const fastVideoUpscale = findRhToolboxToolById(manifest, 'video-nividia-upscale');
+  assert.equal(fastVideoUpscale?.webappId, '2032095665941123073');
+  assert.equal(fastVideoUpscale?.inputSchema[0]?.rhNodeId, '3');
+  assert.equal(fastVideoUpscale?.outputSchema[0]?.kind, 'video');
+
+  const qualityVideoUpscale = findRhToolboxToolById(manifest, 'video-flashvsr');
+  assert.equal(qualityVideoUpscale?.webappId, '2043165928090767362');
+  assert.equal(qualityVideoUpscale?.inputSchema[0]?.rhNodeId, '9');
+  assert.equal(qualityVideoUpscale?.inputSchema[0]?.fieldName, 'file');
+  assert.equal(qualityVideoUpscale?.outputSchema[0]?.kind, 'video');
 });
 
 test('RH toolbox release manifest check is wired into packaging and post-build verification', () => {
@@ -322,6 +412,9 @@ test('RH toolbox release manifest check is wired into packaging and post-build v
   assert.match(checker, /bernini1/);
   assert.match(checker, /berninituxiangbianji/);
   assert.match(checker, /bernini2/);
+  assert.match(checker, /video-nividia-upscale/);
+  assert.match(checker, /video-flashvsr/);
+  assert.match(checker, /video-category-9d33p/);
 
   assert.match(postBuild, /checkRhToolboxReleaseManifest/);
   assert.match(postBuild, /loadRhToolboxReleaseManifestMarkers/);

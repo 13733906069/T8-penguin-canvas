@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Settings, Sun, Wifi, WifiOff, Sparkles, Cloud, ExternalLink, Copy, Check, Gift, Heart, Youtube, PlayCircle, Bell, Wand2, Globe, MessageCircle, CalendarDays, Rocket, Library, Palette, Skull, Sailboat, BookOpen, Shield, Crown, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Moon, Settings, Sun, Wifi, WifiOff, Sparkles, Cloud, ExternalLink, Copy, Check, Gift, Heart, Youtube, PlayCircle, Bell, Wand2, Globe, MessageCircle, CalendarDays, Rocket, Library, Palette, Skull, Sailboat, BookOpen, Shield, Crown, PanelLeftClose, PanelLeftOpen, Puzzle } from 'lucide-react';
 import { useThemeStore } from './stores/theme';
 import { seedDragonBallRadarForShenronTest, useDragonBallRadarStore } from './stores/dragonBallRadar';
 import { seedSaintSeiyaGoldClothsForHadesTest, useSaintSeiyaSanctuaryStore } from './stores/saintSeiyaSanctuary';
@@ -186,6 +186,36 @@ const CANVAS_TUTORIALS = [
   },
 ];
 
+const CANVAS_PLUGIN_INSTALL_GUIDES = [
+  {
+    name: 'T8 Photoshop Link',
+    target: 'Photoshop UXP 面板',
+    devPath: 'tools\\photoshop-bridge\\plugin\\manifest.json',
+    packagedPath: 'resources\\tools\\photoshop-bridge\\plugin\\manifest.json',
+    install: 'Adobe UXP Developer Tool -> Add Plugin 选择 manifest.json，然后 Load / Load & Watch；在 Photoshop 的插件菜单打开 T8 Photoshop Link。',
+    use: '画布图片可发送到 PS，PS 当前画面可上传回 T8，插件内可浏览资产并把生成结果置入当前文档。',
+    safety: '只连接 localhost / 127.0.0.1 的本机端口，不保存 T8 平台 API Key。',
+  },
+  {
+    name: 'T8 Penguin Canvas Bridge',
+    target: 'Figma 开发插件',
+    devPath: 'tools\\figma-bridge\\plugin\\manifest.json',
+    packagedPath: 'resources\\tools\\figma-bridge\\plugin\\manifest.json',
+    install: 'Figma Desktop -> Plugins -> Development -> Import plugin from manifest...，不要走 Widget 导入；必要时可运行 npm run figma:bridge。',
+    use: '把画布素材发送到本机 Figma Bridge 队列，保持 Figma 插件窗口打开后会自动导入当前文件。',
+    safety: 'Bridge 走本机 localhost:3845 / 127.0.0.1，不把素材上传到远端中转服务。',
+  },
+  {
+    name: '网页图片反推 Chrome 扩展',
+    target: '浏览器扩展',
+    devPath: 'extension\\manifest.json',
+    packagedPath: 'resources/extension/web-image-reverse/',
+    install: 'Chrome 扩展程序打开开发者模式，选择“加载已解压的扩展程序”，开发版选 extension，打包版选 resources/extension/web-image-reverse/。',
+    use: '网页图片右键反推提示词、生成图片，并可把 RunningHub / VibeX 网页结果发送回 T8 画布。',
+    safety: '扩展只负责网页侧采集与本机桥接，不内置用户密钥。',
+  },
+] as const;
+
 function InfiniteCanvasBootLoading() {
   return (
     <div className="t8-boot-screen" role="status" aria-label="正在打开画布工作台">
@@ -235,6 +265,9 @@ function App() {
   // 「视频教程」推广浮层开关
   const [videoOpen, setVideoOpen] = useState(false);
   const videoWrapRef = useRef<HTMLDivElement>(null);
+  // 「插件安装」说明浮层开关
+  const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
+  const pluginInstallWrapRef = useRef<HTMLDivElement>(null);
   // 「画布教程」教程合集浮层开关
   const [canvasTutorialOpen, setCanvasTutorialOpen] = useState(false);
   const canvasTutorialWrapRef = useRef<HTMLDivElement>(null);
@@ -291,6 +324,24 @@ function App() {
       document.removeEventListener('keydown', onKey);
     };
   }, [videoOpen]);
+
+  // 「插件安装」浮层: 点击容器外部 / 按 ESC 自动关闭
+  useEffect(() => {
+    if (!pluginInstallOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (!pluginInstallWrapRef.current) return;
+      if (!pluginInstallWrapRef.current.contains(e.target as Node)) setPluginInstallOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPluginInstallOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [pluginInstallOpen]);
 
   // 「画布教程」浮层: 点击容器外部 / 按 ESC 自动关闭
   useEffect(() => {
@@ -365,7 +416,7 @@ function App() {
   }, [aixOpen]);
 
   useEffect(() => {
-    const hasOpenTopSurface = cloudOpen || videoOpen || canvasTutorialOpen || zhenOpen || appOpen || aixOpen || resourceOpen || guomanOpen;
+    const hasOpenTopSurface = cloudOpen || videoOpen || pluginInstallOpen || canvasTutorialOpen || zhenOpen || appOpen || aixOpen || resourceOpen || guomanOpen;
     if (!hasOpenTopSurface) return;
 
     const onDocPointerDown = (e: PointerEvent) => {
@@ -387,6 +438,7 @@ function App() {
 
       setCloudOpen(false);
       setVideoOpen(false);
+      setPluginInstallOpen(false);
       setCanvasTutorialOpen(false);
       setZhenOpen(false);
       setAppOpen(false);
@@ -399,7 +451,7 @@ function App() {
     return () => {
       document.removeEventListener('pointerdown', onDocPointerDown, true);
     };
-  }, [cloudOpen, videoOpen, canvasTutorialOpen, zhenOpen, appOpen, aixOpen, resourceOpen, guomanOpen]);
+  }, [cloudOpen, videoOpen, pluginInstallOpen, canvasTutorialOpen, zhenOpen, appOpen, aixOpen, resourceOpen, guomanOpen]);
 
   const handleCopyWx = async () => {
     try {
@@ -842,10 +894,116 @@ function App() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          {/* 「插件安装」说明按钮: 放在画布教程左侧, 汇总需要宿主软件单独加载的联动插件 */}
+          <div ref={pluginInstallWrapRef} className="relative">
+            <button
+              onClick={() => {
+                setPluginInstallOpen((v) => !v);
+                setCanvasTutorialOpen(false);
+              }}
+              className={
+                isPixel
+                  ? `px-btn px-btn--sm px-btn--mint`
+                  : `flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all border ${
+                      isDark
+                        ? pluginInstallOpen
+                          ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.32)]'
+                          : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20'
+                        : pluginInstallOpen
+                          ? 'bg-cyan-100 border-cyan-400 text-cyan-800'
+                          : 'bg-cyan-50 border-cyan-300 text-cyan-700 hover:bg-cyan-100'
+                    }`
+              }
+              title="插件安装 · 本机联动插件说明"
+            >
+              <Puzzle size={14} />
+              <span className="text-[11px]">插件安装</span>
+            </button>
+
+            {pluginInstallOpen && (
+              <div
+                className={
+                  isPixel
+                    ? 'absolute right-0 top-full mt-2 z-[60] w-[560px] max-w-[calc(100vw-24px)] px-panel rounded-2xl p-3 animate-[fadeIn_.18s_ease-out]'
+                    : `absolute right-0 top-full mt-2 z-[60] w-[560px] max-w-[calc(100vw-24px)] rounded-xl p-3 border shadow-2xl backdrop-blur-md animate-[fadeIn_.18s_ease-out] ${
+                        isDark
+                          ? 'bg-zinc-900/95 border-cyan-400/20 shadow-cyan-500/10'
+                          : 'bg-white/95 border-cyan-200 shadow-cyan-500/10'
+                      }`
+                }
+                style={{ zoom: 1.25 }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className={`flex items-center gap-2 ${isPixel ? '' : isDark ? 'text-cyan-300' : 'text-cyan-700'}`}>
+                  <Puzzle size={16} className={isPixel ? '' : 'shrink-0'} />
+                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>插件安装</span>
+                </div>
+
+                <div
+                  className={`mt-2 text-[12px] leading-relaxed ${
+                    isPixel ? '' : isDark ? 'text-white/75' : 'text-zinc-700'
+                  }`}
+                >
+                  这些功能已经随源码或 Electron 包携带，但 Photoshop、Figma、Chrome 这类宿主软件仍需要手动导入插件或扩展。
+                </div>
+
+                <div className="mt-3 grid max-h-[70vh] gap-2 overflow-y-auto pr-1">
+                  {CANVAS_PLUGIN_INSTALL_GUIDES.map((guide) => (
+                    <div
+                      key={guide.name}
+                      className={
+                        isPixel
+                          ? 'rounded-xl border-2 border-black bg-[#FFF8D6] p-2 shadow-[3px_3px_0_#111]'
+                          : `rounded-lg border p-2 ${
+                              isDark
+                                ? 'bg-cyan-400/10 border-cyan-300/20'
+                                : 'bg-cyan-50/80 border-cyan-200'
+                            }`
+                      }
+                    >
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`text-[12px] font-bold ${isPixel ? '' : isDark ? 'text-cyan-100' : 'text-cyan-950'}`}>
+                          {guide.name}
+                        </span>
+                        <span
+                          className={
+                            isPixel
+                              ? 'rounded border border-black px-1 text-[9px]'
+                              : `rounded px-1.5 py-0.5 text-[9px] font-semibold ${
+                                  isDark
+                                    ? 'bg-cyan-400/15 text-cyan-100'
+                                    : 'bg-cyan-100 text-cyan-900'
+                                }`
+                          }
+                        >
+                          {guide.target}
+                        </span>
+                      </div>
+                      <div className={`mt-1 grid gap-1 text-[10px] leading-relaxed ${isPixel ? '' : isDark ? 'text-white/70' : 'text-zinc-700'}`}>
+                        <div>
+                          开发版：<code className={isPixel ? '' : isDark ? 'text-cyan-100' : 'text-cyan-900'}>{guide.devPath}</code>
+                        </div>
+                        <div>
+                          打包版：<code className={isPixel ? '' : isDark ? 'text-cyan-100' : 'text-cyan-900'}>{guide.packagedPath}</code>
+                        </div>
+                        <div>安装：{guide.install}</div>
+                        <div>用途：{guide.use}</div>
+                        <div>安全：{guide.safety}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* 「画布教程」教程合集按钮: 放在最新应用左侧, 方便新用户按版本学习 */}
           <div ref={canvasTutorialWrapRef} className="relative">
             <button
-              onClick={() => setCanvasTutorialOpen((v) => !v)}
+              onClick={() => {
+                setCanvasTutorialOpen((v) => !v);
+                setPluginInstallOpen(false);
+              }}
               className={
                 isPixel
                   ? `px-btn px-btn--sm px-btn--yellow`
@@ -894,98 +1052,98 @@ function App() {
 
                 <div className="mt-3 grid gap-2 max-h-[70vh] overflow-y-auto pr-1">
                   {CANVAS_TUTORIALS.map((tutorial, index) => (
-                    <div
-                      key={tutorial.bilibili}
-                      className={
-                        isPixel
-                          ? 'rounded-xl border-2 border-black bg-[#FFF8D6] p-2 shadow-[3px_3px_0_#111]'
-                          : `rounded-lg border p-2 ${
-                              isDark
-                                ? 'bg-white/5 border-white/10'
-                                : 'bg-amber-50/70 border-amber-200'
-                            }`
-                      }
-                    >
-                      <div className="flex items-start gap-2">
-                        <span
-                          className={
-                            isPixel
-                              ? 'px-chip px-chip--yellow shrink-0'
-                              : `inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1.5 text-[10px] font-bold ${
-                                  isDark
-                                    ? 'bg-amber-400/20 text-amber-200'
-                                    : 'bg-amber-200 text-amber-900'
-                                }`
-                          }
-                        >
-                          {index + 1}
-                        </span>
-                        <div className={`text-[12px] font-bold leading-snug ${isPixel ? '' : isDark ? 'text-white' : 'text-zinc-900'}`}>
-                          {tutorial.title}
-                        </div>
-                      </div>
-
-                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                        <a
-                          href={tutorial.bilibili}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => setCanvasTutorialOpen(false)}
-                          title={`B站教程：${tutorial.bilibili}`}
-                          className={
-                            isPixel
-                              ? 'px-btn px-btn--sm px-btn--pink justify-start min-w-0'
-                              : `flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors ${
-                                  isDark
-                                    ? 'border-pink-400/30 bg-pink-500/10 text-pink-200 hover:bg-pink-500/20'
-                                    : 'border-pink-300 bg-white text-pink-700 hover:bg-pink-50'
-                                }`
-                          }
-                        >
+                      <div
+                        key={tutorial.bilibili}
+                        className={
+                          isPixel
+                            ? 'rounded-xl border-2 border-black bg-[#FFF8D6] p-2 shadow-[3px_3px_0_#111]'
+                            : `rounded-lg border p-2 ${
+                                isDark
+                                  ? 'bg-white/5 border-white/10'
+                                  : 'bg-amber-50/70 border-amber-200'
+                              }`
+                        }
+                      >
+                        <div className="flex items-start gap-2">
                           <span
                             className={
                               isPixel
-                                ? 'inline-flex items-center justify-center w-4 h-4 rounded-sm bg-white text-black text-[10px] font-black border border-black shrink-0'
-                                : 'inline-flex items-center justify-center w-4 h-4 rounded-sm bg-pink-600 text-white text-[10px] font-black shrink-0'
+                                ? 'px-chip px-chip--yellow shrink-0'
+                                : `inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1.5 text-[10px] font-bold ${
+                                    isDark
+                                      ? 'bg-amber-400/20 text-amber-200'
+                                      : 'bg-amber-200 text-amber-900'
+                                  }`
                             }
                           >
-                            B
+                            {index + 1}
                           </span>
-                          <span className="min-w-0">
-                            <span className="block leading-tight">B站教程</span>
-                            <span className="block truncate text-[9px] opacity-70">{tutorial.bilibili}</span>
-                          </span>
-                          <ExternalLink size={10} className="ml-auto shrink-0 opacity-70" />
-                        </a>
+                          <div className={`text-[12px] font-bold leading-snug ${isPixel ? '' : isDark ? 'text-white' : 'text-zinc-900'}`}>
+                            {tutorial.title}
+                          </div>
+                        </div>
 
-                        <a
-                          href={tutorial.youtube}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => setCanvasTutorialOpen(false)}
-                          title={`Youtube教程：${tutorial.youtube}`}
-                          className={
-                            isPixel
-                              ? 'px-btn px-btn--sm px-btn--mint justify-start min-w-0'
-                              : `flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors ${
-                                  isDark
-                                    ? 'border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20'
-                                    : 'border-red-300 bg-white text-red-700 hover:bg-red-50'
-                                }`
-                          }
-                        >
-                          <Youtube size={14} className="shrink-0" />
-                          <span className="min-w-0">
-                            <span className="block leading-tight">Youtube教程</span>
-                            <span className="block truncate text-[9px] opacity-70">{tutorial.youtube}</span>
-                          </span>
-                          <ExternalLink size={10} className="ml-auto shrink-0 opacity-70" />
-                        </a>
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          <a
+                            href={tutorial.bilibili}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setCanvasTutorialOpen(false)}
+                            title={`B站教程：${tutorial.bilibili}`}
+                            className={
+                              isPixel
+                                ? 'px-btn px-btn--sm px-btn--pink justify-start min-w-0'
+                                : `flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors ${
+                                    isDark
+                                      ? 'border-pink-400/30 bg-pink-500/10 text-pink-200 hover:bg-pink-500/20'
+                                      : 'border-pink-300 bg-white text-pink-700 hover:bg-pink-50'
+                                  }`
+                            }
+                          >
+                            <span
+                              className={
+                                isPixel
+                                  ? 'inline-flex items-center justify-center w-4 h-4 rounded-sm bg-white text-black text-[10px] font-black border border-black shrink-0'
+                                  : 'inline-flex items-center justify-center w-4 h-4 rounded-sm bg-pink-600 text-white text-[10px] font-black shrink-0'
+                              }
+                            >
+                              B
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block leading-tight">B站教程</span>
+                              <span className="block truncate text-[9px] opacity-70">{tutorial.bilibili}</span>
+                            </span>
+                            <ExternalLink size={10} className="ml-auto shrink-0 opacity-70" />
+                          </a>
+
+                          <a
+                            href={tutorial.youtube}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setCanvasTutorialOpen(false)}
+                            title={`Youtube教程：${tutorial.youtube}`}
+                            className={
+                              isPixel
+                                ? 'px-btn px-btn--sm px-btn--mint justify-start min-w-0'
+                                : `flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors ${
+                                    isDark
+                                      ? 'border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20'
+                                      : 'border-red-300 bg-white text-red-700 hover:bg-red-50'
+                                  }`
+                            }
+                          >
+                            <Youtube size={14} className="shrink-0" />
+                            <span className="min-w-0">
+                              <span className="block leading-tight">Youtube教程</span>
+                              <span className="block truncate text-[9px] opacity-70">{tutorial.youtube}</span>
+                            </span>
+                            <ExternalLink size={10} className="ml-auto shrink-0 opacity-70" />
+                          </a>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
             )}
           </div>
 

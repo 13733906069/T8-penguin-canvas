@@ -753,6 +753,54 @@ test('ComfyUI app builder scopes duplicated runtime params so one control cannot
   assert.equal(providerParams[strengthParams[1].source], 0.3);
 });
 
+test('ComfyUI app builder collapses shared prompt and size params to one visible control', () => {
+  const app = buildComfyAppFromWorkflow({
+    title: 'Shared runtime controls',
+    workflowJson: {
+      '4': {
+        class_type: 'CLIPTextEncode',
+        inputs: { text: 'blurry, low resolution, pixelated' },
+        _meta: { title: 'Negative Prompt' },
+      },
+      '34': {
+        class_type: 'TiledDiffusion',
+        inputs: {
+          negative_prompt: 'blurry, low resolution, pixelated',
+          width: 512,
+          height: 512,
+          seed: 123,
+          mode_type: 'Linear',
+        },
+        _meta: { title: 'Tile Settings' },
+      },
+      '35': {
+        class_type: 'AnotherLatentSize',
+        inputs: { width: 1024, height: 768, seed: 456 },
+        _meta: { title: 'Second Size' },
+      },
+      '99': {
+        class_type: 'SaveImage',
+        inputs: { images: ['35', 0] },
+      },
+    },
+  });
+
+  const paramsBySource = new Map<string, number>();
+  for (const param of app.userParams) {
+    paramsBySource.set(param.source, (paramsBySource.get(param.source) || 0) + 1);
+  }
+
+  assert.equal(app.fields.filter((field) => field.source === 'negative').length, 2);
+  assert.equal(app.fields.filter((field) => field.source === 'width').length, 2);
+  assert.equal(app.fields.filter((field) => field.source === 'height').length, 2);
+  assert.equal(app.fields.filter((field) => field.source === 'seed').length, 2);
+  assert.equal(paramsBySource.get('negative'), 1);
+  assert.equal(paramsBySource.get('width'), 1);
+  assert.equal(paramsBySource.get('height'), 1);
+  assert.equal(paramsBySource.get('seed'), 1);
+  assert.equal(new Set(app.userParams.map((param) => param.key)).size, app.userParams.length);
+});
+
 test('ComfyUI app manifest normalization repairs old duplicate param sources without field ids', () => {
   const manifest = normalizeComfyAppManifest({
     schema: 't8-comfyui-app-manifest',

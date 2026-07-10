@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import {
@@ -163,6 +163,7 @@ const TRANSITION_DURATION_OPTIONS: Array<{ value: number; label: string }> = [
 ];
 
 const VIDEO_EDIT_COMPACT_TIMELINE_LIMIT = 8;
+const VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED = false;
 const VIDEO_EDIT_WORKBENCH_WINDOW_SIZE = 24;
 const VIDEO_EDIT_WORKBENCH_TIMELINE_PX_PER_SECOND = 100;
 const VIDEO_EDIT_WORKBENCH_SHORTCUTS = [
@@ -207,16 +208,31 @@ type VideoEditSolidPalette = {
   panel: string;
   muted: string;
   card: string;
+  actionBg: string;
+  actionHoverBg: string;
+  actionBorder: string;
+  actionText: string;
+  actionShadow: string;
+  actionDisabledBg: string;
+  actionDisabledText: string;
 };
 
 function resolveVideoEditSolidPalette(templateId?: string, theme?: string, style?: string): VideoEditSolidPalette {
   const id = String(templateId || '');
+  const shouldUseDarkSurface = theme === 'dark' || (theme !== 'light' && (style === 'tech' || VIDEO_EDIT_DARK_TEMPLATE_IDS.has(id)));
   if (id === 'farm-story-style') {
     return {
       surface: '#fbfff4',
       panel: '#f7fdf0',
       muted: '#edf7e5',
       card: '#ffffff',
+      actionBg: '#dff3cd',
+      actionHoverBg: '#c9e9b9',
+      actionBorder: '#5f7d47',
+      actionText: '#172a17',
+      actionShadow: 'inset 0 -1px 0 rgba(60, 90, 40, 0.18), 0 1px 0 rgba(255, 255, 255, 0.9)',
+      actionDisabledBg: '#eef3e8',
+      actionDisabledText: '#7f8a74',
     };
   }
   if (id === 'pixel-candy') {
@@ -225,14 +241,28 @@ function resolveVideoEditSolidPalette(templateId?: string, theme?: string, style
       panel: '#fffdf7',
       muted: '#f5ead6',
       card: '#ffffff',
+      actionBg: '#ffe8b6',
+      actionHoverBg: '#ffd982',
+      actionBorder: '#3d2b1f',
+      actionText: '#1f1a12',
+      actionShadow: '2px 2px 0 rgba(61, 43, 31, 0.82)',
+      actionDisabledBg: '#f0eadf',
+      actionDisabledText: '#8f8675',
     };
   }
-  if (theme === 'dark' || style === 'tech' || VIDEO_EDIT_DARK_TEMPLATE_IDS.has(id)) {
+  if (shouldUseDarkSurface) {
     return {
       surface: '#071107',
       panel: '#0f1b10',
       muted: '#162815',
       card: '#101f11',
+      actionBg: '#254217',
+      actionHoverBg: '#315622',
+      actionBorder: '#78a35a',
+      actionText: '#f3ffe7',
+      actionShadow: 'inset 0 -1px 0 rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(185, 255, 138, 0.08)',
+      actionDisabledBg: '#1a2715',
+      actionDisabledText: '#7f9275',
     };
   }
   return {
@@ -240,6 +270,13 @@ function resolveVideoEditSolidPalette(templateId?: string, theme?: string, style
     panel: '#ffffff',
     muted: '#edf5e8',
     card: '#ffffff',
+    actionBg: '#f1eadc',
+    actionHoverBg: '#e6dbc4',
+    actionBorder: '#7b6a50',
+    actionText: '#1c1812',
+    actionShadow: 'inset 0 -1px 0 rgba(91, 70, 45, 0.16), 0 1px 0 rgba(255, 255, 255, 0.85)',
+    actionDisabledBg: '#f3f0e9',
+    actionDisabledText: '#8b8274',
   };
 }
 
@@ -444,11 +481,110 @@ function healthDotClass(level: 'ok' | 'warn' | 'block') {
 
 type VideoImportCandidate = MediaItem & {
   kind: 'video';
+  directUrl?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  thumbnailUrl?: string;
+  filmstripUrls?: string[];
+  filmstripTimes?: number[];
+  waveformPeaks?: number[];
+  hasAudio?: boolean;
   sourceNodeId?: string;
   sourceLabel?: string;
+  sourceCanvasId?: string;
   sourceNodeLabel?: string;
   sourceCanvasName?: string;
 };
+
+const VIDEO_IMPORT_META_ARRAY_FIELDS = {
+  duration: ['durations', 'videoDurations', 'fileDurations'],
+  width: ['widths', 'videoWidths'],
+  height: ['heights', 'videoHeights'],
+  thumbnailUrl: ['thumbnailUrls', 'videoThumbnailUrls', 'videoThumbnails'],
+  filmstripUrls: ['filmstripUrlsList', 'videoFilmstripUrls', 'filmstripUrlGroups'],
+  filmstripTimes: ['filmstripTimesList', 'videoFilmstripTimes', 'filmstripTimeGroups'],
+  waveformPeaks: ['waveformPeaksList', 'videoWaveformPeaks', 'waveformPeakGroups'],
+  hasAudio: ['hasAudios', 'videoHasAudios'],
+} as const;
+
+function finiteOptionalNumber(value: any): number | undefined {
+  const next = Number(value);
+  return Number.isFinite(next) && next > 0 ? next : undefined;
+}
+
+function arrayValueAt(data: any, fields: readonly string[], index: number): any {
+  if (index < 0) return undefined;
+  for (const field of fields) {
+    const value = data?.[field];
+    if (Array.isArray(value) && value[index] !== undefined) return value[index];
+  }
+  return undefined;
+}
+
+function stringArrayValue(value: any): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const clean = value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean);
+  return clean.length ? clean : undefined;
+}
+
+function numberArrayValue(value: any): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const clean = value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item >= 0);
+  return clean.length ? clean : undefined;
+}
+
+function videoImportMetadataFromNodeData(data: any, url: string, index = -1): Partial<VideoImportCandidate> {
+  const videoUrls = Array.isArray(data?.videoUrls) ? data.videoUrls : [];
+  const directVideoUrls = Array.isArray(data?.directVideoUrls) ? data.directVideoUrls : [];
+  const videoIndex = videoUrls.findIndex((item: any) => item === url);
+  const directIndex = directVideoUrls.findIndex((item: any) => item === url);
+  let resolvedIndex = -1;
+  if (videoIndex >= 0) {
+    resolvedIndex = videoIndex;
+  } else if (directIndex >= 0) {
+    resolvedIndex = directIndex;
+  } else if (index >= 0) {
+    resolvedIndex = index;
+  }
+  const directUrl = typeof data?.directVideoUrl === 'string' && data.directVideoUrl
+    ? data.directVideoUrl
+    : (directIndex >= 0 && typeof directVideoUrls[directIndex] === 'string'
+      ? directVideoUrls[directIndex]
+      : (resolvedIndex >= 0 && typeof directVideoUrls[resolvedIndex] === 'string' ? directVideoUrls[resolvedIndex] : undefined));
+  const duration = finiteOptionalNumber(arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.duration, resolvedIndex))
+    ?? finiteOptionalNumber(data?.duration)
+    ?? finiteOptionalNumber(data?.videoDuration);
+  const width = finiteOptionalNumber(arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.width, resolvedIndex))
+    ?? finiteOptionalNumber(data?.width)
+    ?? finiteOptionalNumber(data?.videoWidth);
+  const height = finiteOptionalNumber(arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.height, resolvedIndex))
+    ?? finiteOptionalNumber(data?.height)
+    ?? finiteOptionalNumber(data?.videoHeight);
+  const thumbnailUrlValue = arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.thumbnailUrl, resolvedIndex)
+    ?? data?.thumbnailUrl
+    ?? data?.videoThumbnailUrl;
+  const filmstripUrls = stringArrayValue(arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.filmstripUrls, resolvedIndex))
+    ?? stringArrayValue(data?.filmstripUrls);
+  const filmstripTimes = numberArrayValue(arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.filmstripTimes, resolvedIndex))
+    ?? numberArrayValue(data?.filmstripTimes);
+  const waveformPeaks = numberArrayValue(arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.waveformPeaks, resolvedIndex))
+    ?? numberArrayValue(data?.waveformPeaks);
+  const hasAudioValue = arrayValueAt(data, VIDEO_IMPORT_META_ARRAY_FIELDS.hasAudio, resolvedIndex);
+  return {
+    directUrl,
+    duration,
+    width,
+    height,
+    thumbnailUrl: typeof thumbnailUrlValue === 'string' && thumbnailUrlValue ? thumbnailUrlValue : undefined,
+    filmstripUrls,
+    filmstripTimes,
+    waveformPeaks,
+    hasAudio: typeof hasAudioValue === 'boolean'
+      ? hasAudioValue
+      : (typeof data?.hasAudio === 'boolean' ? data.hasAudio : undefined),
+  };
+}
 
 type VideoEditTimelineTrimDrag = {
   clipId: string;
@@ -722,6 +858,13 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
       '--t8-video-edit-panel': videoEditSolidPalette.panel,
       '--t8-video-edit-muted': videoEditSolidPalette.muted,
       '--t8-video-edit-card': videoEditSolidPalette.card,
+      '--t8-video-edit-action-bg': videoEditSolidPalette.actionBg,
+      '--t8-video-edit-action-hover-bg': videoEditSolidPalette.actionHoverBg,
+      '--t8-video-edit-action-border': videoEditSolidPalette.actionBorder,
+      '--t8-video-edit-action-text': videoEditSolidPalette.actionText,
+      '--t8-video-edit-action-shadow': videoEditSolidPalette.actionShadow,
+      '--t8-video-edit-action-disabled-bg': videoEditSolidPalette.actionDisabledBg,
+      '--t8-video-edit-action-disabled-text': videoEditSolidPalette.actionDisabledText,
       background: 'var(--t8-video-edit-surface)',
       borderColor: 'var(--t8-border)',
     } as CSSProperties),
@@ -2384,6 +2527,60 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
     seekPreviewTo(playback.sourceTime, makePreviewClipKey(nextPreviewClip));
   };
 
+  const findTimelineVideoItemForClip = (clip: VideoEditClip) => {
+    return timelineV2.items.find((item) => {
+      if (item.kind !== 'video') return false;
+      const linkedClip = resolveClipForTimelineItem(item);
+      return linkedClip?.id === clip.id
+        || item.id === clip.id
+        || item.id === `item-${clip.id}-video`
+        || (clip.assetId ? item.assetId === clip.assetId : false)
+        || item.assetId === `asset-${clip.id}`;
+    });
+  };
+
+  const buildNodeTimelinePresentationClip = (
+    clip: VideoEditClip,
+    timelineItem?: VideoEditTimelineItem,
+  ): VideoEditClip => {
+    if (!timelineItem) return clip;
+    const asset = timelineV2.assets.find((entry) => entry.id === timelineItem.assetId) as VideoEditTimelineAsset | undefined;
+    const sourceDuration = Math.max(
+      0.1,
+      Number(timelineItem.sourceOut) || 0,
+      Number(asset?.duration) || 0,
+      Number(clip.duration) || 0,
+      Number(clip.trimEnd) || 0,
+    );
+    return {
+      ...clip,
+      timelineItemId: timelineItem.id,
+      assetId: clip.assetId || timelineItem.assetId,
+      directUrl: clip.directUrl || asset?.directUrl,
+      duration: clip.duration || asset?.duration || sourceDuration,
+      width: clip.width || asset?.width,
+      height: clip.height || asset?.height,
+      size: clip.size || asset?.size,
+      mime: clip.mime || asset?.mime,
+      thumbnailUrl: clip.thumbnailUrl || asset?.thumbnailUrl,
+      filmstripUrls: clip.filmstripUrls?.length ? clip.filmstripUrls : asset?.filmstripUrls || [],
+      filmstripTimes: clip.filmstripTimes?.length ? clip.filmstripTimes : asset?.filmstripTimes || [],
+      waveformPeaks: clip.waveformPeaks?.length ? clip.waveformPeaks : asset?.waveformPeaks || [],
+      hasAudio: typeof clip.hasAudio === 'boolean' ? clip.hasAudio : asset?.hasAudio,
+      trimStart: Math.max(0, Number(timelineItem.sourceIn) || 0),
+      trimEnd: Math.max(Number(timelineItem.sourceOut) || sourceDuration, 0.1),
+    };
+  };
+
+  const selectNodeTimelineClip = (clip: VideoEditClip) => {
+    const timelineItem = findTimelineVideoItemForClip(clip);
+    if (timelineItem) {
+      selectTimelineVideoItem(timelineItem);
+      return;
+    }
+    update({ selectedClipId: clip.id });
+  };
+
   const selectTimelineItemForWorkbench = (item: VideoEditTimelineItem, mode: VideoEditTimelineControllerSelectMode = 'replace') => {
     if (item.kind === 'video') {
       selectTimelineVideoItem(item, mode);
@@ -2738,6 +2935,40 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
     });
   };
 
+  const patchClipVideoElementMetadata = (clipId: string, video: HTMLVideoElement) => {
+    if (!clipId) return;
+    const duration = finiteOptionalNumber(video.duration);
+    const width = finiteOptionalNumber(video.videoWidth);
+    const height = finiteOptionalNumber(video.videoHeight);
+    if (!duration && !width && !height) return;
+    const liveClips = normalizeVideoEditClips((rf.getNode(id)?.data as any)?.clips);
+    const current = liveClips.length ? liveClips : clips;
+    const target = current.find((clip) => clip.id === clipId);
+    if (!target) return;
+    const patch: Partial<VideoEditClip> = {};
+    if (duration && (!target.duration || Math.abs(target.duration - duration) > 0.05)) {
+      patch.duration = duration;
+      if (!target.trimEnd || target.trimEnd <= target.trimStart + 0.1) {
+        patch.trimEnd = duration;
+      }
+    }
+    if (width && !target.width) patch.width = width;
+    if (height && !target.height) patch.height = height;
+    if (!Object.keys(patch).length) return;
+    commitClips(current.map((clip) => (
+      clip.id === clipId
+        ? { ...clip, ...patch, status: clip.status === 'probing' ? 'ready' : clip.status, error: clip.status === 'probing' ? '' : clip.error }
+        : clip
+    )), { selectedClipId: clipId, status: 'ready', error: '' });
+  };
+
+  const handlePreviewLoadedMetadata = (event: SyntheticEvent<HTMLVideoElement>) => {
+    flushPendingPreviewSeek();
+    if (selectedClip?.id) {
+      patchClipVideoElementMetadata(selectedClip.id, event.currentTarget);
+    }
+  };
+
   const patchSettings = (patch: Partial<VideoEditSettings>) => {
     update({ settings: { ...settings, ...patch } });
   };
@@ -2802,11 +3033,23 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
       out.push({
         kind: 'video',
         url,
+        directUrl: item.directUrl,
         name: item.name || fileNameFromUrl(url),
         size: item.size,
         mime: item.mime,
+        duration: item.duration,
+        width: item.width,
+        height: item.height,
+        thumbnailUrl: item.thumbnailUrl,
+        filmstripUrls: item.filmstripUrls,
+        filmstripTimes: item.filmstripTimes,
+        waveformPeaks: item.waveformPeaks,
+        hasAudio: item.hasAudio,
         sourceNodeId: item.sourceNodeId,
         sourceLabel: item.sourceLabel || '上游视频',
+        sourceCanvasId: item.sourceCanvasId,
+        sourceNodeLabel: item.sourceNodeLabel,
+        sourceCanvasName: item.sourceCanvasName,
       });
     };
 
@@ -2819,6 +3062,7 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
         sourceNodeId: item.sourceNodeId,
         sourceLabel: '上游视频',
         sourceNodeLabel: sourceNode ? nodeLabelFromData(sourceNode.data, `节点 ${sourceNode.id}`) : undefined,
+        ...videoImportMetadataFromNodeData(sourceNode?.data, item.url),
       });
     });
 
@@ -2827,10 +3071,11 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
     connectedEdges.forEach((edge) => {
       const sourceNode = nodesById.get(edge.source);
       const nodeData = sourceNode?.data;
-      getMediaItemsFromData(nodeData, 'video').forEach((item) => {
+      getMediaItemsFromData(nodeData, 'video').forEach((item, itemIndex) => {
         push({
           ...item,
           kind: 'video',
+          ...videoImportMetadataFromNodeData(nodeData, item.url, itemIndex),
           sourceNodeId: edge.source,
           sourceLabel: '上游视频',
           sourceNodeLabel: sourceNode ? nodeLabelFromData(sourceNode.data, `节点 ${sourceNode.id}`) : undefined,
@@ -2846,8 +3091,18 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
       createVideoEditClipFromMediaItem(
         { kind: 'video', url: item.url, name: item.name || fileNameFromUrl(item.url), size: item.size, mime: item.mime },
         {
+          directUrl: item.directUrl,
+          duration: item.duration,
+          width: item.width,
+          height: item.height,
+          thumbnailUrl: item.thumbnailUrl,
+          filmstripUrls: item.filmstripUrls,
+          filmstripTimes: item.filmstripTimes,
+          waveformPeaks: item.waveformPeaks,
+          hasAudio: item.hasAudio,
           sourceNodeId: item.sourceNodeId,
           sourceLabel: item.sourceLabel || '上游视频',
+          sourceCanvasId: item.sourceCanvasId,
           sourceNodeLabel: item.sourceNodeLabel,
           sourceCanvasName: item.sourceCanvasName,
           sourceCreatedAt: new Date().toISOString(),
@@ -6070,7 +6325,7 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                 preload="metadata"
                 onPointerDown={stopNodePointer}
                 onDragStart={preventNativeMediaDrag}
-                onLoadedMetadata={flushPendingPreviewSeek}
+                onLoadedMetadata={handlePreviewLoadedMetadata}
                 onPlay={playSelectedClipPreview}
                 onPause={() => syncActivePreviewMedia('pause')}
                 onSeeked={() => syncActivePreviewMedia()}
@@ -6111,7 +6366,13 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
           </div>
         </section>
 
-        <section data-video-edit-quick-actions="true" data-video-edit-action-row="centered" className="grid gap-2 rounded-lg border px-2 py-1 text-xs md:grid-cols-6" style={videoEditPanelStyle}>
+        <section
+          data-video-edit-quick-actions="true"
+          data-video-edit-action-row="centered"
+          data-video-edit-workbench-entry-enabled={VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED ? 'true' : 'false'}
+          className={`grid gap-2 rounded-lg border px-2 py-1 text-xs ${VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}
+          style={videoEditPanelStyle}
+        >
           <button className="t8-secondary-button nodrag inline-flex h-8 items-center justify-center gap-1.5 leading-none" onClick={openVideoFilePicker} disabled={!!busy}>
             <UploadCloud size={14} />
             上传视频
@@ -6120,10 +6381,17 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
             <Plus size={14} />
             导入上游
           </button>
-          <button className="t8-secondary-button nodrag inline-flex h-8 items-center justify-center gap-1.5 leading-none" onClick={() => setWorkbenchOpen(true)} disabled={!!busy && busy !== 'compose' && busy !== 'separate-audio'}>
-            <Film size={14} />
-            打开剪辑台
-          </button>
+          {VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED && (
+            <button
+              data-video-edit-open-workbench="true"
+              className="t8-secondary-button nodrag inline-flex h-8 items-center justify-center gap-1.5 leading-none"
+              onClick={() => setWorkbenchOpen(true)}
+              disabled={!!busy && busy !== 'compose' && busy !== 'separate-audio'}
+            >
+              <Film size={14} />
+              打开剪辑台
+            </button>
+          )}
           <button className="t8-secondary-button nodrag inline-flex h-8 items-center justify-center gap-1.5 leading-none" onClick={handleCompose} disabled={!canCompose || !!busy}>
             {running ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
             {running ? '合成中' : '合成视频'}
@@ -6174,10 +6442,14 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                 {compactTimelineClips.map((clip, index) => {
                   const realIndex = clips.findIndex((item) => item.id === clip.id);
                   const active = selectedClip?.id === clip.id;
-                  const health = videoEditClipHealth(clip, settings);
-                  const duration = videoEditClipDuration(clip);
-                  const basis = Math.max(96, Math.min(320, Math.round((duration / Math.max(1, totalDuration)) * 940 * timelineZoom)));
-                  const trimVisual = buildVideoEditTrimmedCardVisual(clip);
+                  const timelineItem = findTimelineVideoItemForClip(clip);
+                  const clipForTimeline = buildNodeTimelinePresentationClip(clip, timelineItem);
+                  const health = videoEditClipHealth(clipForTimeline, settings);
+                  const duration = videoEditClipDuration(clipForTimeline);
+                  const measuredDuration = duration > 0.25 ? duration : Number(clip.duration || clip.trimEnd || 0);
+                  const layoutDuration = Math.max(1, measuredDuration > 0.25 ? measuredDuration : 5);
+                  const basis = Math.max(96, Math.min(320, Math.round((layoutDuration / Math.max(1, totalDuration)) * 940 * timelineZoom)));
+                  const trimVisual = buildVideoEditTrimmedCardVisual(clipForTimeline);
                   const { sourceDuration, trimStart, trimEnd } = trimVisual;
                   return (
                     <div
@@ -6187,7 +6459,7 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                       tabIndex={0}
                       title={`${health.reason} · ${formatSeconds(duration)}`}
                       style={{
-                        flexGrow: Math.max(1, videoEditClipDuration(clip)),
+                        flexGrow: layoutDuration,
                         flexBasis: `${basis}px`,
                         background: 'var(--t8-video-edit-card)',
                       }}
@@ -6195,7 +6467,7 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                       onDragStart={preventNativeMediaDrag}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => handleTimelineDrop(event, clip.id)}
-                      onClick={() => update({ selectedClipId: clip.id })}
+                      onClick={() => selectNodeTimelineClip(clip)}
                       onKeyDown={(event) => handleWorkbenchClipCardKeyDown(event, clip.id)}
                       onPointerMove={handleTimelineTrimPointerMove}
                       onPointerUp={finishTimelineTrimDrag}
@@ -6203,9 +6475,9 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                       className={`nodrag nopan nowheel group relative flex h-full min-w-[96px] select-none flex-col overflow-hidden rounded-md border text-left text-[10px] ${active ? 'border-cyan-400 ring-1 ring-cyan-300' : ''}`}
                     >
                       <span className="relative block min-h-0 flex-1 overflow-hidden">
-                        {clip.thumbnailUrl ? (
+                        {clipForTimeline.thumbnailUrl ? (
                           <>
-                            <img data-video-edit-trim-thumbnail-mask="true" data-video-edit-trim-thumbnail-mask-mode="hidden-outside-trim" className="absolute inset-0 h-full w-full object-cover opacity-0" src={clip.thumbnailUrl} alt="" aria-hidden="true" draggable={false} onDragStart={preventNativeMediaDrag} />
+                            <img data-video-edit-trim-thumbnail-mask="true" data-video-edit-trim-thumbnail-mask-mode="hidden-outside-trim" className="absolute inset-0 h-full w-full object-cover opacity-0" src={clipForTimeline.thumbnailUrl} alt="" aria-hidden="true" draggable={false} onDragStart={preventNativeMediaDrag} />
                             <span
                               data-video-edit-trim-thumbnail-window="true"
                               data-video-edit-trim-thumbnail-window-mode="trim-range-sync"
@@ -6217,13 +6489,24 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                                 data-video-edit-trim-thumbnail-active="true"
                                 className="absolute inset-y-0 h-full object-cover opacity-85"
                                 style={trimVisual.activeThumbnailStyle}
-                                src={clip.thumbnailUrl}
-                                alt={clip.name}
+                                src={clipForTimeline.thumbnailUrl}
+                                alt={clipForTimeline.name}
                                 draggable={false}
                                 onDragStart={preventNativeMediaDrag}
                               />
                             </span>
                           </>
+                        ) : clipForTimeline.url ? (
+                          <video
+                            className="absolute inset-0 h-full w-full object-cover opacity-80"
+                            src={clipForTimeline.url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            draggable={false}
+                            onDragStart={preventNativeMediaDrag}
+                            onLoadedMetadata={(event) => patchClipVideoElementMetadata(clip.id, event.currentTarget)}
+                          />
                         ) : (
                           <span className="absolute inset-0 grid place-items-center bg-black/20 opacity-60"><Film size={16} /></span>
                         )}
@@ -6260,10 +6543,10 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                         className="nodrag nopan nowheel relative mx-2 mb-1 mt-1 h-3 shrink-0 cursor-ew-resize select-none rounded-full bg-black/55 ring-1 ring-white/20"
                         style={trimVisual.trackStyle}
                         onDragStartCapture={preventNativeMediaDrag}
-                        onMouseDownCapture={(event) => beginTimelineTrimTrackMouseDrag(event, clip, trimVisual, 'trimmed-window')}
-                        onMouseMoveCapture={(event) => continueOrStartTimelineTrimTrackMouseDrag(event, clip, trimVisual, 'trimmed-window')}
-                        onPointerDownCapture={(event) => beginTimelineTrimTrackDrag(event, clip, trimVisual, 'trimmed-window')}
-                        onPointerMoveCapture={(event) => continueOrStartTimelineTrimTrackDrag(event, clip, trimVisual, 'trimmed-window')}
+                        onMouseDownCapture={(event) => { selectNodeTimelineClip(clip); beginTimelineTrimTrackMouseDrag(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem?.id); }}
+                        onMouseMoveCapture={(event) => continueOrStartTimelineTrimTrackMouseDrag(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem?.id)}
+                        onPointerDownCapture={(event) => { selectNodeTimelineClip(clip); beginTimelineTrimTrackDrag(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem?.id); }}
+                        onPointerMoveCapture={(event) => continueOrStartTimelineTrimTrackDrag(event, clipForTimeline, trimVisual, 'trimmed-window', timelineItem?.id)}
                       >
                         <span
                           data-video-edit-node-trim-range="true"
@@ -6281,8 +6564,8 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                           aria-valuenow={Number(trimStart.toFixed(2))}
                           className="nodrag nopan nowheel absolute top-1/2 z-20 h-5 w-2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize select-none rounded-full border border-cyan-100 bg-cyan-400 shadow"
                           style={trimVisual.trimmedWindowStartHandleStyle}
-                          onMouseDownCapture={(event) => beginTimelineTrimMouseDrag(event, clip, 'start', trimVisual.trackElement, 'trimmed-window')}
-                          onPointerDownCapture={(event) => beginTimelineTrimDrag(event, clip, 'start', trimVisual.trackElement, 'trimmed-window')}
+                          onMouseDownCapture={(event) => { selectNodeTimelineClip(clip); beginTimelineTrimMouseDrag(event, clipForTimeline, 'start', trimVisual.trackElement, 'trimmed-window', timelineItem?.id); }}
+                          onPointerDownCapture={(event) => { selectNodeTimelineClip(clip); beginTimelineTrimDrag(event, clipForTimeline, 'start', trimVisual.trackElement, 'trimmed-window', timelineItem?.id); }}
                           title="拖动调整入点并预览"
                         />
                         <span
@@ -6296,15 +6579,15 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                           aria-valuenow={Number(trimEnd.toFixed(2))}
                           className="nodrag nopan nowheel absolute top-1/2 z-20 h-5 w-2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize select-none rounded-full border border-cyan-100 bg-cyan-400 shadow"
                           style={trimVisual.trimmedWindowEndHandleStyle}
-                          onMouseDownCapture={(event) => beginTimelineTrimMouseDrag(event, clip, 'end', trimVisual.trackElement, 'trimmed-window')}
-                          onPointerDownCapture={(event) => beginTimelineTrimDrag(event, clip, 'end', trimVisual.trackElement, 'trimmed-window')}
+                          onMouseDownCapture={(event) => { selectNodeTimelineClip(clip); beginTimelineTrimMouseDrag(event, clipForTimeline, 'end', trimVisual.trackElement, 'trimmed-window', timelineItem?.id); }}
+                          onPointerDownCapture={(event) => { selectNodeTimelineClip(clip); beginTimelineTrimDrag(event, clipForTimeline, 'end', trimVisual.trackElement, 'trimmed-window', timelineItem?.id); }}
                           title="拖动调整出点并预览"
                         />
                       </span>
                     </div>
                   );
                 })}
-                {clips.length > compactTimelineClips.length && (
+                {VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED && clips.length > compactTimelineClips.length && (
                   <button className="t8-secondary-button nodrag h-14 min-w-[116px] justify-center text-[11px]" onClick={() => setWorkbenchOpen(true)}>
                     查看全部 {clips.length} 段
                   </button>
@@ -6412,8 +6695,8 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
               />
             </div>
             <div className="mt-1 grid grid-cols-2 gap-1">
-              <button className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px] leading-none" onClick={distributeToTargetDuration} disabled={!clips.length || !settings.targetDuration || running}>均分</button>
-              <button className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px] leading-none" onClick={compressToTargetDuration} disabled={!clips.length || !settings.targetDuration || running}>压缩</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px] leading-none" onClick={distributeToTargetDuration} disabled={!clips.length || !settings.targetDuration || running}>均分</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px] leading-none" onClick={compressToTargetDuration} disabled={!clips.length || !settings.targetDuration || running}>压缩</button>
             </div>
           </div>
 
@@ -6431,8 +6714,10 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
               >
                 {VIDEO_EDIT_CREATOR_TEMPLATES.map((item) => <option key={item.id} value={item.id} title={item.changes.join(' / ')}>{item.label}</option>)}
               </select>
-              <button className="t8-mini-button nodrag h-7 justify-center px-2 py-0 text-[10px]" onClick={sortClipsByName} disabled={!clips.length || running}>排序</button>
-              <button data-video-edit-node-detail-gate="true" className="t8-mini-button nodrag h-7 justify-center px-2 py-0 text-[10px]" onClick={() => setWorkbenchOpen(true)}>剪辑台细调</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-7 justify-center px-2 py-0 text-[10px]" onClick={sortClipsByName} disabled={!clips.length || running}>排序</button>
+              {VIDEO_EDIT_WORKBENCH_ENTRY_ENABLED && (
+                <button data-video-edit-compact-action-button="true" data-video-edit-node-detail-gate="true" className="t8-mini-button nodrag h-7 justify-center px-2 py-0 text-[10px]" onClick={() => setWorkbenchOpen(true)}>剪辑台细调</button>
+              )}
             </div>
             <div className="mt-1 flex h-6 flex-wrap gap-1 overflow-hidden">
               {(selectedCreatorTemplate?.changes || ['保留当前设置']).slice(0, 3).map((change) => (
@@ -6442,9 +6727,9 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
               ))}
             </div>
             <div className="mt-1 grid grid-cols-3 gap-1">
-              <button className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px]" onClick={() => recipeInputRef.current?.click()} disabled={running}>导入配方</button>
-              <button className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px]" onClick={exportVideoEditRecipe} disabled={!clips.length || running}>导出配方</button>
-              <button className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px]" onClick={() => void handleBatchPlatformExport()} disabled={!canCompose || !!busy || !selectedPlatformPackageIds.length}>套餐</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px]" onClick={() => recipeInputRef.current?.click()} disabled={running}>导入配方</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px]" onClick={exportVideoEditRecipe} disabled={!clips.length || running}>导出配方</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-2 py-0 text-[10px]" onClick={() => void handleBatchPlatformExport()} disabled={!canCompose || !!busy || !selectedPlatformPackageIds.length}>套餐</button>
             </div>
           </div>
 
@@ -6472,10 +6757,10 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
               </select>
             </div>
             <div className="mt-1 grid grid-cols-4 gap-1">
-              <button className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => void handleSeparateAudio('mute-video')} disabled={!clips.length || !!busy}>无声</button>
-              <button className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => void handleSeparateAudio('audio-only')} disabled={!clips.length || !!busy || !hasPotentialAudio}>音频</button>
-              <button className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => { if (selectedClip) locateSourceClip(selectedClip); }} disabled={!selectedClip}>源节点</button>
-              <button className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => addOutputNodeFromVersion(outputVersions[0], 'video')} disabled={!outputVersions[0]}>输出</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => void handleSeparateAudio('mute-video')} disabled={!clips.length || !!busy}>无声</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => void handleSeparateAudio('audio-only')} disabled={!clips.length || !!busy || !hasPotentialAudio}>音频</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => { if (selectedClip) locateSourceClip(selectedClip); }} disabled={!selectedClip}>源节点</button>
+              <button data-video-edit-compact-action-button="true" className="t8-mini-button nodrag h-6 justify-center px-1 py-0 text-[10px]" onClick={() => addOutputNodeFromVersion(outputVersions[0], 'video')} disabled={!outputVersions[0]}>输出</button>
             </div>
           </div>
         </section>
@@ -6849,7 +7134,7 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
                       preload="metadata"
                       onPointerDown={stopNodePointer}
                       onDragStart={preventNativeMediaDrag}
-                      onLoadedMetadata={flushPendingPreviewSeek}
+                      onLoadedMetadata={handlePreviewLoadedMetadata}
                       onPlay={playSelectedClipPreview}
                       onPause={() => syncActivePreviewMedia('pause')}
                       onSeeked={() => syncActivePreviewMedia()}

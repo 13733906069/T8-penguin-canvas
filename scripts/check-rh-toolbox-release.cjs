@@ -15,6 +15,8 @@ const REQUIRED_TOOL_IDS = [
   'bernini1',
   'berninituxiangbianji',
   'bernini2',
+  'video-nividia-upscale',
+  'video-flashvsr',
 ];
 const REQUIRED_CATEGORY_IDS = [
   'custom-rh-tools',
@@ -22,6 +24,7 @@ const REQUIRED_CATEGORY_IDS = [
   'image-category-d5zwl',
   'video-category-e2v4g',
   'image-category-e78o2',
+  'video-category-9d33p',
 ];
 const VALID_MEDIA_KINDS = new Set(['text', 'image', 'video', 'audio']);
 const VALID_PARAM_KINDS = new Set(['text', 'number', 'select', 'boolean']);

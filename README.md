@@ -10,13 +10,13 @@ https://www.runninghub.cn/?inviteCode=rh-v1121
 My favorite girl Go YounJung
 # 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
-> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.4.1
+> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.4.8
 >
 > GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
 一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器和桌面端均可使用。
 
-![status](https://img.shields.io/badge/version-v2.4.1-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
+![status](https://img.shields.io/badge/version-v2.4.8-brightgreen) ![node](https://img.shields.io/badge/node-55-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
@@ -35,10 +35,17 @@ My favorite girl Go YounJung
 
 ## ✨ 功能亮点
 
-- 🎨 **53 个节点**，覆盖文本 / 图像 / 视频 / 音频 / LLM / RunningHub / ComfyUI / 3D / 工具 / 辅助 / 工具箱 / 输出预览 / 上传素材 / 素材集
+- 🎨 **55 个节点**，覆盖文本 / 图像 / 视频 / 音频 / LLM / RunningHub / ComfyUI / 3D / 工具 / 辅助 / 工具箱 / 输出预览 / 上传素材 / 素材集 / 批量打标 / 随机路由
 - 🧺 **画布级批量导入 + 素材合集打散**：上传节点支持一次选择多张图 / 多个视频 / 多段音频；也可直接把剪贴板或文件拖到画布，同类型多素材自动形成合集，上传和输出合集都可一键打散为多个独立素材节点
+- 🧩 **v2.4.8 插件安装与素材工作流自动更新版**：顶部在“画布教程”左侧新增独立“插件安装”入口，集中说明 Photoshop UXP、Figma Bridge 和网页图片反推插件安装路径；批量打标补齐单项删除、LLM/Vision 预设、自定义模型、TXT/JSON 互斥、原素材目录保存和 Ideogram-4 JSON；上传 / 输出视频素材新增首尾帧获取、英伟达极速超分和 FlashVsr 质量超分；PS 插件升级到 0.1.3，增加启动诊断、资产分页和 UXP 面板尺寸护栏，并随 Electron 包一并校验打包。
+- 🖌️ **v2.4.7 Photoshop 联动 UI 热修自动更新版**：修复 `T8 Photoshop Link` 面板紧凑宽度下 `刷新 / 连接` 按钮文字被挤成竖排的问题，并补强插件 UI 自动化，覆盖资产库、生成、设置、PS 当前画面上传回 T8、画布发送到 PS 命令置入和生成后置入 PS。
+- 🖌️ **v2.4.6 Photoshop 联动热修自动更新版**：修复 `T8 Photoshop Link` 在 Photoshop UXP Manifest v5 下访问 `http://127.0.0.1:18766` 被 `Permission denied / Manifest entry not found` 拦截的问题，插件 manifest 改为带协议和端口的本机白名单；同时支持 18766-18776 本机端口 fallback，避免旧后端占用 18766 时新版桌面端退到后续端口后插件仍连错。
+- 🖌️ **v2.4.5 Photoshop 联动自动更新版**：新增 `T8 Photoshop Link` UXP 插件与 `/api/photoshop-bridge` 本机桥接，PS 图层可发送回当前画布，画布图像素材也可排队置入当前 PS 文档；插件内支持浏览 T8 最近输出 / 上传 / 资源库图像，并复用扩展 API 图像模型做生成或参考图编辑。Electron 打包会携带 `resources\tools\photoshop-bridge\plugin` 并校验 `photoshopBridge.t8c`，同时修复随机路由透传素材时误自动生成独立输出素材节点的问题。
+- 🎲 **v2.4.4 随机路由与输入体验自动更新版**：新增“随机路由”工具节点，支持 `total_outputs` 1-100 动态输出口和 `random_pass_count` 精确随机命中，未命中分支不会进入运行队列；上传多视频合集的打散按钮保持常显；图像等节点的富文本 Prompt 针对微信输入法组合输入清理泄漏拼音，避免多出字母。
+- 📦 **v2.4.3 上传素材无限制自动更新版**：上传素材节点移除 20MB 应用层大小限制，后端 `/api/files/upload` 不再给 multer 设置 `fileSize`，大体积本地素材上传只受磁盘、系统和运行环境约束；节点不再提示“文件超过上传上限 20MB，请压缩后重试”。
 - 👁️ **上传 / 输出图像原图悬停预览**（v1.8.7）：上传素材与输出素材的图像卡片在 hover 时显示小眼睛按钮，鼠标停在按钮上可按 100% 原尺寸预览，超出视口时自动等比收进可见区域，输出素材入口位于图像对比按钮下方
 - 🧾 **提示词模板库媒体套件**（v2.1.2）：图像 / 视频 / 音频 / 文本素材可从节点右键直接保存到提示词模板库，连同原 Prompt、标题、标签和配套媒体一起沉淀；右键保存时可选择或新建模板分类，模板库支持分类新增 / 删除 / 重命名，预览采用懒加载并支持图像 100% 查看
+- 🏷️ **v2.4.2 批量打标节点自动更新版**：工具箱新增“批量打标”节点，支持图像 / 视频多文件、文件夹、拖拽和上游素材批量进入队列，调用贞贞 LLM 独立 Key或扩展 API 视觉模型生成 TAG、自然语言、短句或 JSON，并按原素材文件名前缀保存 `.txt` / `.json` 到 `output/batch-tags`；ModelScope 推荐并实测 `Qwen/Qwen3-VL-235B-A22B-Instruct`。
 - 🧩 **v2.4.1 Agnes 专用图像编辑热修自动更新版**：扩展 API 平台里的 Agnes AI 专用适配器按官方文生图 / 图生图文档保持 `/v1/images/generations` JSON，图像编辑参考图统一写入 `extra_body.image`，`imageUrls` / `imageUrl` / `image` 等入口别名都会正确传给上游，避免专用 Agnes 图像编辑 503 或退化为无参考图生成。
 - 🧩 **v2.4.0 Agnes 图像编辑与生成停止自动更新版**：Agnes 在扩展 OpenAI 兼容配置下的图像编辑按官方文档改走 `/v1/images/generations` JSON 与 `extra_body.image`，避免误打 `/v1/images/edits` multipart 导致 503；提示词库和素材右键分类新增 / 重命名改为 Electron 内联表单；图像、视频、SD2.0 节点生成中可停止本地轮询并立即重新发起新任务。
 - 🍌 **v2.3.9 Gemini 官方图像与完整剪辑台自动更新版**：图像节点新增 `gemini-3.1-flash-lite-image` 与 `gemini-3-pro-image`，两者走 Gemini 官方 `generateContent` 图像格式并兼容异步任务返回；OpenAI 兼容扩展支持 `/v1/images/edits` 参考图编辑；资源库“我的资产”支持先选分类再上传本地文件；完整视频剪辑台补齐宽屏实底布局、63 个转场、ffprobe/xfade 打包校验与任务异常反馈。
@@ -100,6 +107,16 @@ My favorite girl Go YounJung
 `npm run figma:bridge` 和 `tools\figma-bridge\start-figma-bridge.cmd` 仍保留为排障入口；只有设置了 `T8_FIGMA_BRIDGE_AUTOSTART=0` 禁用自动启动时，才需要手动运行。
 
 图像会以 Figma 图片图层插入，文本会以文本图层插入；视频和音频会以引用卡片形式插入，方便保留素材地址。
+
+### Photoshop Bridge 本机联动
+
+`发送到 Photoshop` 和 `T8 Photoshop Link` 面板通过 T8 后端本机队列通信，不需要把素材发到第三方中转：
+
+1. 打开 Adobe UXP Developer Tool，点击 Add Plugin，选择 `tools\photoshop-bridge\plugin\manifest.json`；打包版位置是应用目录 `resources\tools\photoshop-bridge\plugin\manifest.json`。
+2. 在 Photoshop 中运行 `T8 Photoshop Link` 面板，并保持 T8 后端 / 桌面端打开。
+3. 从 T8 的发送素材弹窗点击 `发送到 Photoshop`，图像会进入 PS 队列并自动置入当前文档；也可以在 PS 面板里导出当前图层 / 文档回到当前画布。
+
+PS 面板包含 `资产 / 生成 / 设置` 三个页签：资产页可浏览最近输出、上传素材和资源库图像；生成页复用 T8 扩展 API 图像模型，支持文生图和带当前图层参考图的图像编辑，结果可自动回传画布。
 - 🧍 **肖像大师**：工具箱新增捏人 Prompt 设计器，内置 9 大类词库，每个小参数 100 个可选词条，支持不选、锁定、权重、自定义补充、Avatar 分层方向预览、角色库收藏、JSON 导入导出、资源库角色分类、跨画布发送配置 / Prompt、高级随机、风格随机包、种子复现和批量输出文本节点 / 文本素材集
 - 🧍‍♂️ **姿势大师**：支持 100 种常用姿势、多人骨架、MediaPipe 识别、手部控制、A/B 关键帧、姿势库、批量分镜，并可在节点内切换线稿 / OpenPose / COCO 预览与运行输出；OpenPose/COCO keypoints JSON 可单独导出给 ComfyUI / ControlNet 复用
 - 🧪 **Grok Image / Sora2 FAL / Grok Video FAL / 即梦 CLI Seedance**：图像节点新增 Grok Image TAB；视频节点模型类型默认 `Grok Video → Veo → Sora2`，Veo 分类默认 `veo-omni-10s`，Grok Video TAB 默认 `Grok Video 1.5 (FAL)`，图像传入默认 base64，最多 1 张参考图且不发送比例参数；选择即梦 CLI Seedance 时支持 9 张图像、3 个视频、3 段音频参考，旧版 Grok FAL / Sora2 FAL 仍保留兼容入口

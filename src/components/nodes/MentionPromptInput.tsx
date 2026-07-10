@@ -16,6 +16,15 @@ import PromptExpandModal from '../PromptExpandModal';
 import PromptTemplateLibraryModal from '../PromptTemplateLibraryModal';
 import { useShortcutStore } from '../../stores/shortcuts';
 import { formatShortcutList, matchesAnyShortcut } from '../../utils/keyboardShortcuts';
+import {
+  createCompositionLeakSnapshot,
+  createPlainInputRunSnapshot,
+  isImeCompositionInput,
+  isImeKeyboardEvent,
+  stripCompositionLeak,
+  type CompositionLeakSnapshot,
+  type PlainInputRunSnapshot,
+} from '../../utils/imeComposition';
 import type { PromptTemplateKind } from '../../data/promptTemplateLibrary';
 import type { Material } from './useUpstreamMaterials';
 import {
@@ -54,19 +63,6 @@ interface QueryState {
   end: number;
   query: string;
   activeIndex: number;
-}
-
-interface PlainInputSnapshot {
-  text: string;
-  caret: number;
-  data: string;
-  at: number;
-}
-
-interface CompositionLeakSnapshot {
-  start: number;
-  end: number;
-  data: string;
 }
 
 function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
@@ -240,41 +236,6 @@ function readRichEditor(root: HTMLElement, fallbackMentions: MediaMention[]): { 
   return { text, mentions };
 }
 
-function isImeCompositionInput(event: Event | null | undefined) {
-  const native = event as (InputEvent & { isComposing?: boolean }) | null | undefined;
-  return !!native?.isComposing || /Composition/i.test(String(native?.inputType || ''));
-}
-
-function isImeKeyboardEvent(event: KeyboardEvent | null | undefined) {
-  const native = event as (KeyboardEvent & { isComposing?: boolean; keyCode?: number; which?: number }) | null | undefined;
-  return !!native?.isComposing || native?.key === 'Process' || native?.keyCode === 229 || native?.which === 229;
-}
-
-function stripCompositionLeak(
-  text: string,
-  mentions: MediaMention[],
-  leak: CompositionLeakSnapshot | null,
-): { text: string; mentions: MediaMention[]; caretDelta: number; changed: boolean } {
-  if (!leak || !leak.data) return { text, mentions, caretDelta: 0, changed: false };
-  const start = Math.max(0, Math.min(text.length, leak.start));
-  const end = Math.max(start, Math.min(text.length, leak.end));
-  if (text.slice(start, end) !== leak.data) return { text, mentions, caretDelta: 0, changed: false };
-  const following = text.slice(end, end + 2);
-  if (!/[\u3400-\u9fff\uf900-\ufaff]/.test(following)) return { text, mentions, caretDelta: 0, changed: false };
-
-  const removed = end - start;
-  const nextText = `${text.slice(0, start)}${text.slice(end)}`;
-  const nextMentions = mentions
-    .filter((mention) => mention.end <= start || mention.start >= end)
-    .map((mention) => {
-      if (mention.start >= end) {
-        return { ...mention, start: mention.start - removed, end: mention.end - removed };
-      }
-      return mention;
-    });
-  return { text: nextText, mentions: nextMentions, caretDelta: -removed, changed: true };
-}
-
 const MentionPromptInput = ({
   value,
   mentions = [],
@@ -294,7 +255,7 @@ const MentionPromptInput = ({
 }: Props) => {
   const localRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
-  const lastPlainInputRef = useRef<PlainInputSnapshot | null>(null);
+  const lastPlainInputRef = useRef<PlainInputRunSnapshot | null>(null);
   const compositionLeakRef = useRef<CompositionLeakSnapshot | null>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const expandShortcuts = useShortcutStore((s) => s.shortcuts['editor.expand-prompt']);
@@ -500,24 +461,39 @@ const MentionPromptInput = ({
     const el = localRef.current;
     if (!el) return;
     const nativeEvent = event?.nativeEvent;
+    const inputEvent = nativeEvent as (InputEvent & { data?: string; inputType?: string }) | undefined;
     if (isImeCompositionInput(nativeEvent) || composingRef.current) {
+      if (
+        inputEvent?.inputType === 'insertText' &&
+        /^[A-Za-z]$/.test(String(inputEvent.data || ''))
+      ) {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const caret = getCaretPlainOffset(el);
+        const { text: composingText } = readRichEditor(el, mentions);
+        lastPlainInputRef.current = createPlainInputRunSnapshot({
+          text: composingText,
+          caret,
+          data: String(inputEvent.data),
+          now,
+        });
+        compositionLeakRef.current = createCompositionLeakSnapshot(lastPlainInputRef.current, now) || compositionLeakRef.current;
+      }
       composingRef.current = true;
       return;
     }
     const caret = getCaretPlainOffset(el);
     const { text: nextValue, mentions: nextMentions } = readRichEditor(el, mentions);
-    const inputEvent = nativeEvent as (InputEvent & { data?: string; inputType?: string }) | undefined;
     if (
       inputEvent?.inputType === 'insertText' &&
       /^[A-Za-z]$/.test(String(inputEvent.data || '')) &&
       caret > 0
     ) {
-      lastPlainInputRef.current = {
+      lastPlainInputRef.current = createPlainInputRunSnapshot({
         text: nextValue,
         caret,
         data: String(inputEvent.data),
-        at: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-      };
+        now: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+      });
     } else {
       lastPlainInputRef.current = null;
     }
@@ -700,18 +676,7 @@ const MentionPromptInput = ({
           }}
           onCompositionStart={() => {
             const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-            const lastPlain = lastPlainInputRef.current;
-            compositionLeakRef.current =
-              lastPlain &&
-              now - lastPlain.at < 450 &&
-              /^[A-Za-z]$/.test(lastPlain.data) &&
-              lastPlain.text.slice(lastPlain.caret - lastPlain.data.length, lastPlain.caret) === lastPlain.data
-                ? {
-                    start: lastPlain.caret - lastPlain.data.length,
-                    end: lastPlain.caret,
-                    data: lastPlain.data,
-                  }
-                : null;
+            compositionLeakRef.current = createCompositionLeakSnapshot(lastPlainInputRef.current, now);
             composingRef.current = true;
             setQueryState((s) => ({ ...s, open: false }));
           }}
@@ -825,12 +790,14 @@ const MentionPromptInput = ({
             caretColor: 'currentColor',
             cursor: 'text',
             paddingRight: expandable ? (templateEnabled ? 64 : 34) : style?.paddingRight,
+            paddingLeft: style?.paddingLeft ?? 10,
           }}
         />
         {!value && !isFocused && placeholder && (
           <div
             className="pointer-events-none absolute left-2 top-1 text-[11px]"
             style={{
+              left: style?.paddingLeft ?? 10,
               color: isPixel
                 ? 'var(--px-ink-soft, rgba(26,20,16,.62))'
                 : isDark
