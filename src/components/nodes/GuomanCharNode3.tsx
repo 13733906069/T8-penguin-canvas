@@ -11,7 +11,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useNodeConnections, useNodesData, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { ZoomIn, Loader2, AlertCircle, Square, RefreshCw, Play, ChevronDown, Upload, X } from 'lucide-react';
-import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset, uploadFile } from '../../services/generation';
+import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset, uploadFile, cancelRh } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -71,6 +71,8 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
+  const taskIdRef = useRef(taskId);
+  taskIdRef.current = taskId;
   const currentPollKeyRef = useRef<string | null>(taskId ? pollKey(id, taskId) : null);
 
   const src = `[${APP_NAME}]`;
@@ -338,7 +340,12 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
     await handleRun();
   });
 
-  const handleStop = () => { stopPoll(); update({ status: 'idle' }); };
+  const handleStop = () => {
+    stopPoll();
+    update({ status: 'idle' });
+    // 向后端发送取消请求，真正停止远程 RH 任务
+    if (taskId) { cancelRh(taskId).catch(() => {}); }
+  };
 
   // ========== 副作用 ==========
   const isBusy = status === 'submitting' || status === 'polling';
@@ -357,7 +364,13 @@ const GuomanCharNode3 = ({ id, data, selected }: NodeProps) => {
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; stopPoll(); };
+    return () => {
+      mountedRef.current = false;
+      stopPoll();
+      // 组件卸载时也取消远程任务（例如用户直接删除节点）
+      const tid = taskIdRef.current;
+      if (tid) { cancelRh(tid).catch(() => {}); }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

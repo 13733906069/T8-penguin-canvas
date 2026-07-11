@@ -71,6 +71,7 @@ import { materialMentionKey, type MediaMention } from './mediaMentions';
 const MODEL_OPTIONS = [
   { value: 'doubao-seedance-2-0-fast-260128', label: 'seedance-2-0-fast' },
   { value: 'doubao-seedance-2-0-260128', label: 'seedance-2-0' },
+  { value: 'doubao-seedance-2.0-mini', label: 'seedance-2.0-mini' },
 ];
 const RATIO_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'];
 const RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', '1080p', '2k', '4k'];

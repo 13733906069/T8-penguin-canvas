@@ -11,10 +11,11 @@ import {
   normalizeRandomRouteSettings,
   RANDOM_ROUTE_MAX_OUTPUTS,
   RANDOM_ROUTE_MIN_OUTPUTS,
+  type RandomRouteExecutionMode,
   randomRouteOutputHandle,
   selectRandomRouteHandles,
 } from '../../utils/randomRoute';
-import { topologicalSort } from '../../utils/topologicalSort';
+import { topologicalLayers, topologicalSort } from '../../utils/topologicalSort';
 import { collectMaterialSetBucketsFromData, valueOfMaterialSetItem } from '../../utils/materialSet';
 import { useUpdateNodeData } from './useUpdateNodeData';
 
@@ -75,6 +76,12 @@ function routeSubgraphOrder(routeId: string, activeHandles: string[], nodes: Nod
   const subgraph = createRandomRouteExecutionSubgraph({ routeId, activeHandles, nodes, edges });
   const pruned = excludeRandomRouteBranchDescendants(subgraph.nodes, subgraph.edges);
   return topologicalSort(pruned.nodes, pruned.edges, EXEC_TYPES);
+}
+
+function routeSubgraphLayers(routeId: string, activeHandles: string[], nodes: Node[], edges: Edge[]) {
+  const subgraph = createRandomRouteExecutionSubgraph({ routeId, activeHandles, nodes, edges });
+  const pruned = excludeRandomRouteBranchDescendants(subgraph.nodes, subgraph.edges);
+  return topologicalLayers(pruned.nodes, pruned.edges, EXEC_TYPES);
 }
 
 const RandomRouteNode = (p: NodeProps) => {
@@ -262,6 +269,7 @@ const RandomRouteNode = (p: NodeProps) => {
       update({
         randomRouteTotalOutputs: next.totalOutputs,
         randomRoutePassCount: next.randomPassCount,
+        randomRouteExecutionMode: next.executionMode,
       });
     },
     [d, update],
@@ -274,6 +282,7 @@ const RandomRouteNode = (p: NodeProps) => {
     update({
       randomRouteTotalOutputs: normalized.totalOutputs,
       randomRoutePassCount: normalized.randomPassCount,
+      randomRouteExecutionMode: normalized.executionMode,
       randomRouteActiveHandles: selectedHandles,
       randomRouteLastRunAt: runAt,
       randomRouteLastOrder: [],
@@ -296,13 +305,18 @@ const RandomRouteNode = (p: NodeProps) => {
         : node,
     );
     const currentEdges = getEdges();
-    const order = routeSubgraphOrder(p.id, selectedHandles, currentNodes, currentEdges);
+    const layers = normalized.executionMode === 'parallel'
+      ? routeSubgraphLayers(p.id, selectedHandles, currentNodes, currentEdges)
+      : routeSubgraphOrder(p.id, selectedHandles, currentNodes, currentEdges).map((nodeId) => [nodeId]);
+    const order = layers.flat();
     let okCount = 0;
     let failCount = 0;
 
-    for (const nodeId of order) {
-      const result = await waitForNodeRun(nodeId);
-      if (result === 'cancelled') {
+    for (const layer of layers) {
+      const results = normalized.executionMode === 'parallel'
+        ? await Promise.all(layer.map((nodeId) => waitForNodeRun(nodeId)))
+        : [await waitForNodeRun(layer[0])];
+      if (results.includes('cancelled')) {
         update({
           randomRouteLastOrder: order,
           randomRouteLastOkCount: okCount,
@@ -312,8 +326,10 @@ const RandomRouteNode = (p: NodeProps) => {
         });
         return;
       }
-      if (result === 'ok') okCount += 1;
-      else failCount += 1;
+      for (const result of results) {
+        if (result === 'ok') okCount += 1;
+        else failCount += 1;
+      }
     }
 
     update({
@@ -439,6 +455,21 @@ const RandomRouteNode = (p: NodeProps) => {
           <div className="rounded bg-violet-300/10 py-1" style={{ color: PORT_COLOR.audio }}>A {audioCount}</div>
           <div className="rounded bg-blue-300/10 py-1" style={{ color: PORT_COLOR.model3d }}>3D {modelCount}</div>
         </div>
+
+        <label className="block text-[10px] font-bold" style={{ color: textMuted }}>
+          运行方式
+          <select
+            className="nodrag nopan mt-1 w-full rounded border px-2 py-1 text-[11px] font-semibold outline-none"
+            style={{ borderColor: 'rgba(249,115,22,0.35)', background: inputBg, color: textPrimary }}
+            value={settings.executionMode}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onChange={(event) => updateSettings({ randomRouteExecutionMode: event.target.value as RandomRouteExecutionMode })}
+          >
+            <option value="parallel" style={{ background: panelBg, color: textPrimary }}>并发生成</option>
+            <option value="serial" style={{ background: panelBg, color: textPrimary }}>顺序生成</option>
+          </select>
+        </label>
 
         <div className="rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: lineColor, background: sectionBg, color: textMuted }}>
           <div className="flex items-center gap-1 font-bold" style={{ color: textSoft }}>

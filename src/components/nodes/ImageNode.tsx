@@ -73,7 +73,7 @@ import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 
 /**
  * ImageNode - 图像生成(ZhenzhenMagic)
- * 多 TAB 切换:GPT2 / 香蕉2 / 香蕉Pro / Grok / MJ,参数与主项目 gpt-image-2-web 对齐
+ * 多 TAB 切换:GPT2 / 香蕉2 / 香蕉Pro / Grok / Seedream / MJ
  * 参数:模型 TAB / 比例 / 尺寸 / 多张参考图 / 本地 prompt
  * 上游 text 节点 → prompt(优先);上游 image 节点 → 参考图(并入 references)
  */
@@ -193,6 +193,8 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   const providerParams = (d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {};
   const isModelScopeExternal = isExternalSelected && providerSelection.provider?.protocol === 'modelscope';
   const isComfyExternal = isExternalSelected && providerSelection.provider?.protocol === 'comfyui';
+  const isJimengCliImageSelected = isExternalSelected && providerSelection.provider?.protocol === 'jimeng-cli';
+  const externalImageCountLimit = isJimengCliImageSelected ? 10 : 4;
   const comfyWorkflow = isComfyExternal
     ? providerSelection.provider?.comfyuiConfig?.workflows?.find((workflow) => workflow.id === externalProviderModel || workflow.name === externalProviderModel)
     : undefined;
@@ -391,6 +393,13 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   // ========== MJ 渠道识别及参数(完全对齐 gpt-image-2-web mj_* 控件 L1552~L1580) ==========
   const isMj = modelDef.paramKind === 'mj';
   const isGrokImage = modelDef.paramKind === 'grok-image';
+  const isSeedream = modelDef.paramKind === 'seedream-v5';
+  const seedreamOutputFormat: 'png' | 'jpeg' = d?.seedreamOutputFormat === 'jpeg' ? 'jpeg' : 'png';
+  const seedreamCustomSize = typeof d?.seedreamCustomSize === 'string' ? d.seedreamCustomSize : '2048x2048';
+  const seedreamResolvedSize = (sizeLevel === 'custom' ? seedreamCustomSize : sizeLevel)
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[X×]/g, 'x');
   const mjVersion: string = d?.mjVersion || DEFAULT_MJ_VERSION;
   const mjAr: string = d?.mjAr || DEFAULT_MJ_RATIO;
   const mjSpeed: MjSpeed = (d?.mjSpeed as MjSpeed) || DEFAULT_MJ_SPEED;
@@ -515,7 +524,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
     if (!files.length) return;
     setError(null);
     try {
-      const remain = maxRefs - refImages.length;
+      const remain = maxRefs - orderedImages.length;
       const accepted = files.slice(0, Math.max(0, remain));
       const uploaded: string[] = [];
       for (const f of accepted) {
@@ -579,6 +588,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       logBus.error('生成中止: 缺少 prompt', src);
       return;
     }
+    if (isSeedream && !/^\d+x\d+$/.test(seedreamResolvedSize)) {
+      setError('Seedream 自定义尺寸格式应为 宽x高，例如 2048x1536');
+      logBus.error(`生成中止: Seedream 尺寸格式无效 ${seedreamResolvedSize || '(空)'}`, src);
+      return;
+    }
     const runId = nextGenerationRun();
     taskCompletionSound.primeAudio();
     update({ status: 'generating', progress: '0%', error: null });
@@ -636,7 +650,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           images: allRefs,
           negativePrompt: externalNegativePrompt || undefined,
           negative: externalNegativePrompt || undefined,
-          n: Math.max(1, Math.min(4, Number(d?.providerParams?.n || 1))),
+          n: Math.max(1, Math.min(externalImageCountLimit, Number(d?.providerParams?.n || 1))),
           providerParams: externalProviderParams,
         });
         if (!isCurrentGenerationRun(runId)) return;
@@ -867,8 +881,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         apiModel: apiModel,
         paramKind: modelDef.paramKind,
         prompt: finalPrompt,
-        aspect_ratio: aspectRatio,
-        image_size: sizeLevel,
+        aspect_ratio: isSeedream ? undefined : aspectRatio,
+        image_size: isSeedream ? undefined : sizeLevel,
+        size: isSeedream ? seedreamResolvedSize : undefined,
+        response_format: isSeedream ? 'url' : undefined,
+        output_format: isSeedream ? seedreamOutputFormat : undefined,
         images: allRefs,
         n: 1,
         providerParams,
@@ -1069,6 +1086,21 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                       ))}
                     </select>
                   </div>
+                )}
+                {isJimengCliImageSelected && (
+                  <label className="block space-y-1">
+                    <span className="text-[10px] text-white/50">生成数量</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={String(providerParams.n ?? 1)}
+                      onChange={(e) => patchProviderParams({ n: Math.max(1, Math.min(10, Number(e.target.value) || 1)) })}
+                      style={{ background: '#18181b', color: '#ffffff' }}
+                      className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
+                    />
+                    <span className="block text-[10px] text-white/40">即梦 CLI v1.4.10 起支持 text2image / image2image 一次生成 1-10 张。</span>
+                  </label>
                 )}
                 {isModelScopeExternal && (
                   <div className="rounded border border-white/10 bg-white/[0.03] p-2 space-y-2">
@@ -1470,10 +1502,10 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           }}
         />
 
-        {/* 比例 + 尺寸 并排(非 FAL 且非 MJ 模型);Grok Image 只需要比例 */}
+        {/* 比例 + 尺寸;Seedream 使用像素尺寸 + 输出格式,Grok Image 只需要比例 */}
         {(!isFal && !isMj && !isComfyExternal) && (
-          <div className={`grid gap-2 ${isGrokImage || !modelDef.sizes.length ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            <div>
+          <div className={`grid gap-2 ${isSeedream || (!isGrokImage && modelDef.sizes.length) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {modelDef.aspectRatios.length > 0 && <div>
               <label className="text-[10px] text-white/50 block mb-1">比例</label>
               <select
                 value={aspectRatio}
@@ -1485,7 +1517,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                   <option key={r} value={r} style={{ background: '#18181b', color: '#ffffff' }}>{r}</option>
                 ))}
               </select>
-            </div>
+            </div>}
             {!isGrokImage && modelDef.sizes.length > 0 && (
               <div>
                 <label className="text-[10px] text-white/50 block mb-1">尺寸</label>
@@ -1499,6 +1531,33 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                     <option key={s} value={s} style={{ background: '#18181b', color: '#ffffff' }}>{s}</option>
                   ))}
                 </select>
+              </div>
+            )}
+            {isSeedream && (
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">格式</label>
+                <select
+                  value={seedreamOutputFormat}
+                  onChange={(e) => update({ seedreamOutputFormat: e.target.value })}
+                  style={{ background: '#18181b', color: '#ffffff' }}
+                  className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
+                >
+                  <option value="png" style={{ background: '#18181b', color: '#ffffff' }}>PNG</option>
+                  <option value="jpeg" style={{ background: '#18181b', color: '#ffffff' }}>JPEG</option>
+                </select>
+              </div>
+            )}
+            {isSeedream && sizeLevel === 'custom' && (
+              <div className="col-span-2">
+                <label className="text-[10px] text-white/50 block mb-1">自定义尺寸</label>
+                <input
+                  value={seedreamCustomSize}
+                  onChange={(e) => update({ seedreamCustomSize: e.target.value })}
+                  placeholder="2048x1536"
+                  inputMode="text"
+                  style={{ background: '#18181b', color: '#ffffff' }}
+                  className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
+                />
               </div>
             )}
           </div>
@@ -1954,11 +2013,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             groups={['text', 'image']}
             title={isMj ? '主参考图 · 上游+本地' : '参考图 · 上游+本地'}
             imageUploadAction={
-              refImages.length < maxRefs
+              orderedImages.length < maxRefs
                 ? {
                     onClick: handlePickFile,
                     title: '上传本地参考图',
-                    remaining: maxRefs - refImages.length,
+                    remaining: maxRefs - orderedImages.length,
                   }
                 : undefined
             }

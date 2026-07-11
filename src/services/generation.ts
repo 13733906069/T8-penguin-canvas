@@ -22,9 +22,9 @@ async function safeJsonResponse(response: Response, label: string): Promise<any>
 }
 
 export interface GenerateImageRequest {
-  model: string;          // 节点 id (gpt-image-2 / nano-banana-2 / nano-banana-pro / grok-image)
+  model: string;          // 节点 id (gpt-image-2 / nano-banana-2 / nano-banana-pro / grok-image / seedream-v5-pro)
   apiModel?: string;       // 上游真实模型名(优先使用)
-  paramKind?: 'gpt-size' | 'banana-ratio' | 'grok-image' | 'mj';
+  paramKind?: 'gpt-size' | 'banana-ratio' | 'grok-image' | 'seedream-v5' | 'mj';
   prompt: string;
   n?: number;
   // 主参数(双协议通用):
@@ -38,6 +38,8 @@ export interface GenerateImageRequest {
   // 兼容旧参数:若传了 size(像素串)则优先用、image 单张也会并入 images
   size?: string;
   image?: string;
+  response_format?: 'url' | 'b64_json';
+  output_format?: 'png' | 'jpeg';
   providerParams?: Record<string, any>;
 }
 

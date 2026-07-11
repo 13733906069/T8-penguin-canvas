@@ -255,6 +255,13 @@ test('topbar canvas tutorial panel replaces RH ApiKey shortcut in latest apps', 
   assert.match(app, /批量素材节点完善扩图/);
   assert.match(app, /BV1mj7h6CEYx/);
   assert.match(app, /wCOoTtuxQPM/);
+  assert.match(app, /教程第十五弹/);
+  assert.match(app, /新增植物大战僵尸主题/);
+  assert.match(app, /新增PS插件支持Photoshop和画布发送及生成/);
+  assert.match(app, /新增批量打标节点/);
+  assert.match(app, /视频类素材左侧新增首尾帧/);
+  assert.match(app, /BV1RoN76RE9m/);
+  assert.match(app, /K65BqvSTfh4/);
   assert.ok(app.indexOf('画布教程') < app.indexOf('最新应用'));
   assert.doesNotMatch(app, /获取 RH ApiKey/);
   assert.doesNotMatch(app, /enterprise-api\/consumerApi/);
@@ -267,4 +274,11 @@ test('topbar canvas tutorial panel replaces RH ApiKey shortcut in latest apps', 
   assert.match(features, /VibeX联动发送功能及节点/);
   assert.match(features, /BV1mj7h6CEYx/);
   assert.match(features, /wCOoTtuxQPM/);
+  assert.match(features, /教程第十五弹/);
+  assert.match(features, /新增植物大战僵尸主题/);
+  assert.match(features, /新增PS插件支持Photoshop和画布发送及生成/);
+  assert.match(features, /新增批量打标节点/);
+  assert.match(features, /视频类素材左侧新增首尾帧/);
+  assert.match(features, /BV1RoN76RE9m/);
+  assert.match(features, /K65BqvSTfh4/);
 });

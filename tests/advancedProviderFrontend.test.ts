@@ -165,8 +165,12 @@ test('advancedProviderModelOptions uses explicit lists before safe provider defa
     [
       'seedance2.0fast_vip',
       'seedance2.0_vip',
+      'seedance2.0mini',
       'seedance2.0fast',
       'seedance2.0',
+      'seedance1.5pro',
+      'seedance1.0fast',
+      'seedance1.0',
       'jimeng-video-720p',
       'jimeng-video-1080p',
     ],
@@ -270,6 +274,16 @@ test('ImageNode makes ModelScope multi-LoRA total weight visible and bounded', (
   assert.match(source, /max=\{rowMax\}/);
 });
 
+test('ImageNode lets Jimeng CLI request up to 10 images without lifting other providers past 4', () => {
+  const source = fs.readFileSync(new URL('../src/components/nodes/ImageNode.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const isJimengCliImageSelected = isExternalSelected && providerSelection\.provider\?\.protocol === 'jimeng-cli'/);
+  assert.match(source, /const externalImageCountLimit = isJimengCliImageSelected \? 10 : 4/);
+  assert.match(source, /Math\.min\(externalImageCountLimit,\s*Number\(d\?\.providerParams\?\.n \|\| 1\)\)/);
+  assert.match(source, /生成数量/);
+  assert.match(source, /即梦 CLI v1\.4\.10 起支持 text2image \/ image2image 一次生成 1-10 张/);
+});
+
 test('VideoNode keeps Jimeng Seedance media limits separate from Grok FAL controls', () => {
   const source = fs.readFileSync(new URL('../src/components/nodes/VideoNode.tsx', import.meta.url), 'utf8');
   const ports = fs.readFileSync(new URL('../src/config/portTypes.ts', import.meta.url), 'utf8');
@@ -277,6 +291,7 @@ test('VideoNode keeps Jimeng Seedance media limits separate from Grok FAL contro
   assert.match(source, /JIMENG_SEEDANCE_LIMITS = \{ images: 9, videos: 3, audios: 3 \}/);
   assert.match(source, /showBuiltinFalControls = !isExternalSelected && isFal/);
   assert.match(source, /isJimengSeedanceSelected \? \['image', 'video', 'audio', 'text'\]/);
+  assert.match(source, /isJimengSeedanceSelected\s*\?\s*\['480p', '720p', '1080p', '4k'\]/);
   assert.match(source, /videos: videoRefs/);
   assert.match(source, /audios: audioRefs/);
   assert.match(source, /图\$\{refs\.length\}\/视\$\{videoRefs\.length\}\/音\$\{audioRefs\.length\}/);

@@ -613,6 +613,7 @@ function main() {
   checkFrontendAsset('dragonball-shenron-cha-la-head-cha-la-', '.mp3');
   checkFrontendAsset('saint-seiya-pegasus-fantasy-', '.mp3');
   checkFrontendAsset('saint-seiya-hades-last-holy-war-', '.mp3');
+  checkFrontendAsset('garden-defense-grasswalk-', '.mp3');
   checkAchievementMedia();
 
   console.log('\n[3] 清除可能混入的明文后端源码:');

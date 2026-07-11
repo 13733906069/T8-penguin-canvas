@@ -313,6 +313,8 @@ test('director storyboard bridge UI is edited per shot pair instead of a global 
 test('director storyboard active shot can override global model ratio and resolution', () => {
   const node = read('../src/components/nodes/DirectorStoryboardNode.tsx');
 
+  assert.match(node, /doubao-seedance-2\.0-mini/);
+  assert.match(node, /seedance-2\.0-mini/);
   assert.match(node, /镜头覆盖/);
   assert.match(node, /activeShot\.modelOverride \|\| ''/);
   assert.match(node, /activeShot\.ratioOverride \|\| ''/);

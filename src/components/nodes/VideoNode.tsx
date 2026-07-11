@@ -179,7 +179,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     ? []
     : modelDef.durations || [];
   const resolutionOptions = isJimengSeedanceSelected
-    ? ['480p', '720p', '1080p']
+    ? ['480p', '720p', '1080p', '4k']
     : isAgnesExternalSelected
     ? ['480p', '720p', '1080p']
     : isGrok15New

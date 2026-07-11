@@ -107,17 +107,53 @@ function imageModelVersion(model) {
   return found ? found[1] : '';
 }
 
+function firstDefined(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function imageGenerateNum(input = {}) {
+  const params = input.providerParams && typeof input.providerParams === 'object' ? input.providerParams : {};
+  return clampInt(firstDefined(
+    params.generate_num,
+    params.generateNum,
+    input.generate_num,
+    input.generateNum,
+    input.n,
+    params.n,
+  ), 1, 10, 1);
+}
+
 function videoResolution(model, resolution) {
   const modelVersion = videoModelVersion(model);
   const value = String(resolution || '').trim().toUpperCase();
   if (modelVersion.startsWith('seedance2.0')) {
-    return modelVersion === 'seedance2.0_vip' && value === '1080P' ? '1080P' : '720P';
+    if (modelVersion === 'seedance2.0_vip') {
+      if (['4K', 'NATIVE4K', '2160P', 'UHD'].includes(value)) return '4K';
+      if (value === '1080P') return '1080P';
+    }
+    return '720P';
   }
-  if (['480P', '720P', '1080P'].includes(value)) return value;
+  if (modelVersion.startsWith('seedance1.') || /^3\./.test(modelVersion)) return '720P';
+  if (['480P', '720P', '1080P', '4K'].includes(value)) return value;
   const text = String(model || '').toLowerCase();
+  if (text.includes('4k')) return '4K';
   if (text.includes('1080')) return '1080P';
   if (text.includes('480')) return '480P';
   return '720P';
+}
+
+function commandSupportsVideoModel(command, modelVersion) {
+  if (!modelVersion) return false;
+  if (modelVersion.startsWith('seedance2.0')) return command !== 'multiframe2video';
+  if (modelVersion === 'seedance1.5pro') return command === 'image2video' || command === 'frames2video';
+  if (modelVersion === 'seedance1.0fast' || modelVersion === 'seedance1.0') return command === 'image2video';
+  return false;
 }
 
 function videoDuration(value) {
@@ -127,19 +163,42 @@ function videoDuration(value) {
 
 function videoModelVersion(model) {
   const low = String(model || '').toLowerCase();
+  const compact = (value) => String(value || '').toLowerCase().replace(/[\s_-]+/g, '');
+  const flat = (value) => String(value || '').toLowerCase().replace(/[\s_.-]+/g, '');
+  const matches = (key) => low.includes(key) || compact(low).includes(compact(key)) || flat(low).includes(flat(key));
   const aliases = [
     ['seedance2.0fast_vip', 'seedance2.0fast_vip'],
     ['seedance2.0_vip', 'seedance2.0_vip'],
+    ['seedance2.0mini', 'seedance2.0mini'],
+    ['seedance2.0_mini', 'seedance2.0mini'],
+    ['seedance-2.0-mini', 'seedance2.0mini'],
     ['seedance2.0fast', 'seedance2.0fast'],
     ['seedance2.0', 'seedance2.0'],
-    ['3.0_fast', '3.0fast'],
-    ['3.0fast', '3.0fast'],
-    ['3.0_pro', '3.0pro'],
-    ['3.0pro', '3.0pro'],
-    ['3.5_pro', '3.5pro'],
-    ['3.5pro', '3.5pro'],
+    ['seedance1.5pro', 'seedance1.5pro'],
+    ['seedance1.5_pro', 'seedance1.5pro'],
+    ['seedance-1.5-pro', 'seedance1.5pro'],
+    ['seedance1.0fast', 'seedance1.0fast'],
+    ['seedance1.0_fast', 'seedance1.0fast'],
+    ['seedance-1.0-fast', 'seedance1.0fast'],
+    ['seedance1.0', 'seedance1.0'],
+    ['seedance-1.0', 'seedance1.0'],
+    ['seedance1.0pro', 'seedance1.0'],
+    ['seedance1.0_pro', 'seedance1.0'],
+    ['seedance-1.0-pro', 'seedance1.0'],
+    ['seedance1.0lite_t2v', 'seedance1.0fast'],
+    ['seedance1.0_lite_t2v', 'seedance1.0fast'],
+    ['seedance-1.0-lite-t2v', 'seedance1.0fast'],
+    ['seedance1.0lite_i2v', 'seedance1.0fast'],
+    ['seedance1.0_lite_i2v', 'seedance1.0fast'],
+    ['seedance-1.0-lite-i2v', 'seedance1.0fast'],
+    ['3.0_fast', 'seedance1.0fast'],
+    ['3.0fast', 'seedance1.0fast'],
+    ['3.0_pro', 'seedance1.0'],
+    ['3.0pro', 'seedance1.0'],
+    ['3.5_pro', 'seedance1.5pro'],
+    ['3.5pro', 'seedance1.5pro'],
   ];
-  const found = aliases.find(([key]) => low.includes(key));
+  const found = aliases.find(([key]) => matches(key));
   return found ? found[1] : '';
 }
 
@@ -162,7 +221,7 @@ function appendVideoModelResolutionArgs(args, command, model, resolution) {
   // dreamina multiframe2video infers ratio/model/resolution from the frames and rejects these flags.
   if (command === 'multiframe2video') return;
   const modelVersion = videoModelVersion(model);
-  if (modelVersion) args.push(`--model_version=${modelVersion}`);
+  if (commandSupportsVideoModel(command, modelVersion)) args.push(`--model_version=${modelVersion}`);
   args.push(`--video_resolution=${videoResolution(model, resolution).toLowerCase()}`);
 }
 
@@ -673,6 +732,8 @@ async function generateImage(provider, input = {}, options = {}) {
     }
     const modelVersion = imageModelVersion(model);
     if (modelVersion) args.push(`--model_version=${modelVersion}`);
+    const generateNum = imageGenerateNum(input);
+    if (generateNum > 1) args.push(`--generate_num=${generateNum}`);
     args.push(`--resolution_type=${imageResolution(model, input.size || '1024x1024')}`, `--poll=${pollSeconds(provider)}`);
     const raw = await runCli(provider, args, options, 120);
     const imageUrls = await storeOutputs(raw, 'image', provider, options);

@@ -159,6 +159,7 @@ import MaterialDragOverlay from './MaterialDragOverlay';
 import ThemeMusicToggle from './ThemeMusicToggle';
 import CreativeDeskLayer from './CreativeDeskLayer';
 import FarmCanvasLayer, { type FarmCanvasFloatingFeedback } from './FarmCanvasLayer';
+import GardenDefenseExperience from '../features/garden-defense/GardenDefenseExperience.tsx';
 import DragonBallRadar from './DragonBallRadar';
 import SaintSeiyaSanctuary from './SaintSeiyaSanctuary';
 import TetrisPanel from './TetrisPanel';
@@ -823,6 +824,15 @@ function withFarmNodeVisualState(node: Node): Node {
   const visualState = farmNodeVisualStateFromData(node.data);
   const currentClassName = typeof node.className === 'string' ? node.className : '';
   const className = `${currentClassName} t8-farm-node-state is-farm-node-${visualState}`.trim();
+  if (className === currentClassName) return node;
+  return { ...node, className };
+}
+
+function withGardenDefenseNodeVisualState(node: Node): Node {
+  if (node.type === 'groupBox' || node.type === 'bulkPhantom') return node;
+  const visualState = farmNodeVisualStateFromData(node.data);
+  const currentClassName = typeof node.className === 'string' ? node.className : '';
+  const className = `${currentClassName} t8-garden-node-state is-garden-node-${visualState}`.trim();
   if (className === currentClassName) return node;
   return { ...node, className };
 }
@@ -3064,6 +3074,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
   const isDragonBall = visualStyle === 'dragon-ball';
   const isTetris = visualStyle === 'tetris';
   const isFarmStory = visualStyle === 'farm-story';
+  const isGardenDefense = visualStyle === 'garden-defense';
   const farmDevToolsEnabled = isFarmStory && import.meta.env.DEV;
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
   const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
@@ -3590,8 +3601,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     radialMenuRef.current = radialMenu;
   }, [radialMenu]);
 
-  const annotateFarmPortHandles = useCallback(() => {
-    if (!isFarmStory || typeof document === 'undefined') return;
+  const annotateThemedPortHandles = useCallback(() => {
+    if ((!isFarmStory && !isGardenDefense) || typeof document === 'undefined') return;
+    const ariaTheme = isGardenDefense ? 'garden-defense' : 'farm-story';
     const nodeById = new Map(nodesRef.current.map((node) => [node.id, node]));
     document.querySelectorAll<HTMLElement>('.react-flow__handle').forEach((handleEl) => {
       const nodeId =
@@ -3607,7 +3619,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       if (!portType) {
         handleEl.removeAttribute('data-t8-port-type');
         handleEl.removeAttribute('data-t8-port-label');
-        if (handleEl.getAttribute('data-t8-port-aria') === 'farm-story') {
+        if (['farm-story', 'garden-defense'].includes(handleEl.getAttribute('data-t8-port-aria') || '')) {
           handleEl.removeAttribute('aria-label');
           handleEl.removeAttribute('data-t8-port-aria');
         }
@@ -3615,35 +3627,35 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
       }
       handleEl.setAttribute('data-t8-port-type', portType);
       handleEl.setAttribute('data-t8-port-label', PORT_LABEL[portType]);
-      handleEl.setAttribute('data-t8-port-aria', 'farm-story');
+      handleEl.setAttribute('data-t8-port-aria', ariaTheme);
       handleEl.setAttribute('aria-label', `${PORT_LABEL[portType]}${rawHandleType === 'source' ? '输出' : '输入'}端口`);
     });
-  }, [isFarmStory]);
+  }, [isFarmStory, isGardenDefense]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
-    const clearFarmPortHandles = () => {
+    const clearThemedPortHandles = () => {
       document.querySelectorAll<HTMLElement>('.react-flow__handle[data-t8-port-type]').forEach((handleEl) => {
         handleEl.removeAttribute('data-t8-port-type');
         handleEl.removeAttribute('data-t8-port-label');
-        if (handleEl.getAttribute('data-t8-port-aria') === 'farm-story') {
+        if (['farm-story', 'garden-defense'].includes(handleEl.getAttribute('data-t8-port-aria') || '')) {
           handleEl.removeAttribute('aria-label');
           handleEl.removeAttribute('data-t8-port-aria');
         }
       });
     };
-    if (!isFarmStory) {
-      clearFarmPortHandles();
+    if (!isFarmStory && !isGardenDefense) {
+      clearThemedPortHandles();
       return undefined;
     }
-    annotateFarmPortHandles();
+    annotateThemedPortHandles();
     const root = document.querySelector('.react-flow') || document.body;
-    const observer = new MutationObserver(() => annotateFarmPortHandles());
+    const observer = new MutationObserver(() => annotateThemedPortHandles());
     observer.observe(root, { childList: true, subtree: true });
     return () => {
       observer.disconnect();
     };
-  }, [annotateFarmPortHandles, isFarmStory, nodes]);
+  }, [annotateThemedPortHandles, isFarmStory, isGardenDefense, nodes]);
 
   const suppressRadialContextMenu = useCallback(() => {
     radialContextMenuSuppressedUntilRef.current = Date.now() + RADIAL_MENU_CONTEXT_SUPPRESS_MS;
@@ -9344,7 +9356,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
 
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
-  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall || isTetris || isFarmStory;
+  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall || isTetris || isFarmStory || isGardenDefense;
   const heavyEdgeMotion = isDecorativeEdgeVisual && edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
   const edgeMotionReduced = isDecorativeEdgeVisual && (viewportMoving || nodeDragging);
   const edgeMotionMode = isDecorativeEdgeVisual ? (edgeMotionReduced ? 'reduced' : 'scoped') : undefined;
@@ -9432,8 +9444,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
     });
   }, [farmMiniMapRouteHint, farmMiniMapRouteHintCountLabel, farmMiniMapRouteHintMarker, flashFarmObject, getFarmViewportCenter, getViewport, pushFarmFloatingFeedback, setCenter]);
   const renderedNodes = useMemo(
-    () => (isFarmStory ? nodes.map(withFarmNodeVisualState) : nodes),
-    [isFarmStory, nodes],
+    () => (isFarmStory ? nodes.map(withFarmNodeVisualState) : isGardenDefense ? nodes.map(withGardenDefenseNodeVisualState) : nodes),
+    [isFarmStory, isGardenDefense, nodes],
   );
   const farmMiniMapHeavySurface = isFarmStory
     && ((farmCanvas.objects.length + farmCanvas.animals.length) >= FARM_MINIMAP_HEAVY_OBJECT_COUNT
@@ -9750,9 +9762,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
             <span aria-hidden="true" data-farm-toolbar-priority-dot="true" />
           </button>
         )}
+        <GardenDefenseExperience
+          visualStyle={visualStyle}
+          canvasId={activeId}
+          viewportMoving={viewportMoving}
+          nodeDragging={nodeDragging}
+        />
         <TetrisPanel
-            visualStyle={visualStyle}
-            viewportMoving={viewportMoving}
+          visualStyle={visualStyle}
+          viewportMoving={viewportMoving}
           nodeDragging={nodeDragging}
         />
         <DragonBallRadar
@@ -10041,9 +10059,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
             setCenter(position.x, position.y, { zoom, duration: 400 });
           }}
           style={{
-            width: isFarmStory ? 214 : isOp ? 144 : isNaruto ? 182 : isEva ? 258 : isYyh ? 224 : isSlamdunk ? 214 : isSoccer ? 224 : isDragonBall ? 192 : undefined,
-            height: isFarmStory ? 136 : isOp ? 144 : isNaruto ? 122 : isEva ? 172 : isYyh ? 144 : isSlamdunk ? 128 : isSoccer ? 136 : isDragonBall ? 192 : undefined,
+            width: isGardenDefense ? 224 : isFarmStory ? 214 : isOp ? 144 : isNaruto ? 182 : isEva ? 258 : isYyh ? 224 : isSlamdunk ? 214 : isSoccer ? 224 : isDragonBall ? 192 : undefined,
+            height: isGardenDefense ? 144 : isFarmStory ? 136 : isOp ? 144 : isNaruto ? 122 : isEva ? 172 : isYyh ? 144 : isSlamdunk ? 128 : isSoccer ? 136 : isDragonBall ? 192 : undefined,
             background: isFarmStory
+              ? themeTokens.panelBg
+              : isGardenDefense
               ? themeTokens.panelBg
               : isOp
               ? themeTokens.panelBg
@@ -10062,6 +10082,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
               : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
             border: isFarmStory
               ? `3px solid ${themeTokens.secondary}`
+              : isGardenDefense
+              ? `4px solid ${themeTokens.edge}`
               : isOp
               ? `4px double ${themeTokens.textMain}`
               : isNaruto
@@ -10077,11 +10099,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
               : isDragonBall
                   ? `3px solid ${themeTokens.warning}`
                 : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-            borderRadius: isFarmStory ? 10 : isOp ? 999 : isNaruto ? '18px 18px 12px 12px' : isEva ? 8 : isYyh ? 12 : isSlamdunk ? 10 : isSoccer ? 12 : isDragonBall ? 999 : 8,
-            right: isFarmStory ? 24 : isOp ? 24 : isNaruto ? 24 : isEva ? 24 : isYyh ? 24 : isSlamdunk ? 24 : isSoccer ? 24 : isDragonBall ? 28 : undefined,
-            bottom: isFarmStory ? 32 : isOp ? 42 : isNaruto ? 40 : isEva ? 24 : isYyh ? 28 : isSlamdunk ? 32 : isSoccer ? 32 : isDragonBall ? 34 : undefined,
+            borderRadius: isGardenDefense ? 7 : isFarmStory ? 10 : isOp ? 999 : isNaruto ? '18px 18px 12px 12px' : isEva ? 8 : isYyh ? 12 : isSlamdunk ? 10 : isSoccer ? 12 : isDragonBall ? 999 : 8,
+            right: isGardenDefense ? 24 : isFarmStory ? 24 : isOp ? 24 : isNaruto ? 24 : isEva ? 24 : isYyh ? 24 : isSlamdunk ? 24 : isSoccer ? 24 : isDragonBall ? 28 : undefined,
+            bottom: isGardenDefense ? 34 : isFarmStory ? 32 : isOp ? 42 : isNaruto ? 40 : isEva ? 24 : isYyh ? 28 : isSlamdunk ? 32 : isSoccer ? 32 : isDragonBall ? 34 : undefined,
             boxShadow: isFarmStory
               ? `0 0 0 5px ${themeTokens.warning}, 5px 5px 0 ${themeTokens.edge}, 0 18px 46px rgba(76,49,20,.24)`
+              : isGardenDefense
+              ? `0 0 0 5px ${themeTokens.warning}, 6px 7px 0 ${themeTokens.edge}, 0 20px 48px rgba(54,39,16,.3)`
               : isOp
               ? `0 0 0 7px ${themeTokens.warning}, 5px 5px 0 ${themeTokens.textMain}`
               : isNaruto
@@ -10098,11 +10122,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef, onOpenGuomanModels }: 
                   ? `0 0 0 5px ${themeTokens.secondary}, 5px 5px 0 ${themeTokens.textMain}, 0 18px 46px rgba(0,0,0,.28), inset 0 0 34px ${themeTokens.warning}33`
               : undefined,
             cursor: 'pointer',
-            overflow: isFarmStory || isOp || isNaruto || isEva || isYyh || isSlamdunk || isSoccer || isDragonBall ? 'hidden' : undefined,
+            overflow: isGardenDefense || isFarmStory || isOp || isNaruto || isEva || isYyh || isSlamdunk || isSoccer || isDragonBall ? 'hidden' : undefined,
             display: (viewportMoving || nodeDragging) && heavyCanvasSurface ? 'none' : undefined,
           }}
-          maskColor={isFarmStory ? 'rgba(111,191,74,.22)' : isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isEva ? 'rgba(156,255,0,.18)' : isYyh ? 'rgba(67,247,255,.16)' : isSlamdunk ? 'rgba(240,123,34,.22)' : isSoccer ? 'rgba(18,107,216,.22)' : isDragonBall ? 'rgba(255,176,0,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
-          nodeColor={() => (isFarmStory ? themeTokens.secondary : isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isEva ? themeTokens.danger : isYyh ? themeTokens.success : isSlamdunk ? themeTokens.accent : isSoccer ? themeTokens.accent : isDragonBall ? themeTokens.warning : isDark ? '#a1a1aa' : '#52525b')}
+          maskColor={isGardenDefense ? 'rgba(255,216,83,.2)' : isFarmStory ? 'rgba(111,191,74,.22)' : isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isEva ? 'rgba(156,255,0,.18)' : isYyh ? 'rgba(67,247,255,.16)' : isSlamdunk ? 'rgba(240,123,34,.22)' : isSoccer ? 'rgba(18,107,216,.22)' : isDragonBall ? 'rgba(255,176,0,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
+          nodeColor={() => (isGardenDefense ? themeTokens.warning : isFarmStory ? themeTokens.secondary : isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isEva ? themeTokens.danger : isYyh ? themeTokens.success : isSlamdunk ? themeTokens.accent : isSoccer ? themeTokens.accent : isDragonBall ? themeTokens.warning : isDark ? '#a1a1aa' : '#52525b')}
         />
         {farmMiniMapVisible && (
           <div

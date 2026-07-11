@@ -51,6 +51,8 @@ function isShortcutTypingTarget(target: EventTarget | null): boolean {
 }
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 't8-sidebar-collapsed';
+const ZHAOTUTU_TAGGER_TRAINER_URL = 'https://zhaotutu.xyz';
+const ZHAOTUTU_TAGGER_TRAINER_LABEL = '最好的打标和模型训练工具-图图打标及训练器：点击获取';
 
 function readSidebarCollapsedPreference(): boolean {
   if (typeof window === 'undefined') return false;
@@ -184,6 +186,11 @@ const CANVAS_TUTORIALS = [
     bilibili: 'https://www.bilibili.com/video/BV1mj7h6CEYx/',
     youtube: 'https://www.youtube.com/watch?v=wCOoTtuxQPM',
   },
+  {
+    title: '教程第十五弹（新增植物大战僵尸主题，新增PS插件支持Photoshop和画布发送及生成，图像节点新增seedream模块，修复agnes图像编辑报错，新增即梦cli，导演台，SD2.0节点的sd2.0mini和原生4K，新增随机路由节点，新增批量打标节点，新增视频剪辑节点，优化提示库模板功能，视频类素材左侧新增首尾帧，极速放大及质量放大功能）',
+    bilibili: 'https://www.bilibili.com/video/BV1RoN76RE9m/',
+    youtube: 'https://www.youtube.com/watch?v=K65BqvSTfh4',
+  },
 ];
 
 const CANVAS_PLUGIN_INSTALL_GUIDES = [
@@ -265,6 +272,9 @@ function App() {
   // 「视频教程」推广浮层开关
   const [videoOpen, setVideoOpen] = useState(false);
   const videoWrapRef = useRef<HTMLDivElement>(null);
+  // 「图图打标器」推广浮层开关
+  const [zhaotutuOpen, setZhaotutuOpen] = useState(false);
+  const zhaotutuWrapRef = useRef<HTMLDivElement>(null);
   // 「插件安装」说明浮层开关
   const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
   const pluginInstallWrapRef = useRef<HTMLDivElement>(null);
@@ -284,6 +294,22 @@ function App() {
   // 画布接收节点添加的 ref(从 Sidebar -> Canvas)
   const addNodeRef = useRef<AddNodeFn | null>(null);
   const insertWorkflowRef = useRef<InsertWorkflowFn | null>(null);
+
+  const handleOpenZhaotutuTaggerTrainer = useCallback(async () => {
+    setZhaotutuOpen(false);
+    setPluginInstallOpen(false);
+    setCanvasTutorialOpen(false);
+    if (typeof window === 'undefined') return;
+    if (typeof window.t8pc?.openExternal === 'function') {
+      try {
+        const result = await window.t8pc.openExternal(ZHAOTUTU_TAGGER_TRAINER_URL);
+        if (result?.success === true) return;
+      } catch {
+        /* fallback to browser window below */
+      }
+    }
+    window.open(ZHAOTUTU_TAGGER_TRAINER_URL, '_blank', 'noopener,noreferrer');
+  }, []);
 
   const toggleSidebarCollapsed = useCallback(() => {
     setSidebarCollapsed((collapsed) => !collapsed);
@@ -324,6 +350,24 @@ function App() {
       document.removeEventListener('keydown', onKey);
     };
   }, [videoOpen]);
+
+  // 「图图打标器」浮层: 点击容器外部 / 按 ESC 自动关闭
+  useEffect(() => {
+    if (!zhaotutuOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (!zhaotutuWrapRef.current) return;
+      if (!zhaotutuWrapRef.current.contains(e.target as Node)) setZhaotutuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setZhaotutuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [zhaotutuOpen]);
 
   // 「插件安装」浮层: 点击容器外部 / 按 ESC 自动关闭
   useEffect(() => {
@@ -416,7 +460,8 @@ function App() {
   }, [aixOpen]);
 
   useEffect(() => {
-    const hasOpenTopSurface = cloudOpen || videoOpen || pluginInstallOpen || canvasTutorialOpen || zhenOpen || appOpen || aixOpen || resourceOpen || guomanOpen;
+    const hasOpenTopSurface =
+      cloudOpen || videoOpen || zhaotutuOpen || pluginInstallOpen || canvasTutorialOpen || zhenOpen || appOpen || aixOpen || resourceOpen || guomanOpen;
     if (!hasOpenTopSurface) return;
 
     const onDocPointerDown = (e: PointerEvent) => {
@@ -438,6 +483,7 @@ function App() {
 
       setCloudOpen(false);
       setVideoOpen(false);
+      setZhaotutuOpen(false);
       setPluginInstallOpen(false);
       setCanvasTutorialOpen(false);
       setZhenOpen(false);
@@ -451,7 +497,7 @@ function App() {
     return () => {
       document.removeEventListener('pointerdown', onDocPointerDown, true);
     };
-  }, [cloudOpen, videoOpen, pluginInstallOpen, canvasTutorialOpen, zhenOpen, appOpen, aixOpen, resourceOpen, guomanOpen]);
+  }, [cloudOpen, videoOpen, zhaotutuOpen, pluginInstallOpen, canvasTutorialOpen, zhenOpen, appOpen, aixOpen, resourceOpen, guomanOpen]);
 
   const handleCopyWx = async () => {
     try {
@@ -894,6 +940,80 @@ function App() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          {/* 「图图打标器」推广按钮: 放在插件安装左侧, 点击后展示说明与获取链接 */}
+          <div ref={zhaotutuWrapRef} className="relative">
+            <button
+              onClick={() => {
+                setZhaotutuOpen((v) => !v);
+                setPluginInstallOpen(false);
+                setCanvasTutorialOpen(false);
+              }}
+              className={
+                isPixel
+                  ? 'px-btn px-btn--sm px-btn--mint'
+                  : `flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all border ${
+                      isDark
+                        ? zhaotutuOpen
+                          ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.32)]'
+                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                        : zhaotutuOpen
+                          ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                          : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                    }`
+              }
+              title="图图打标器 · 打标和模型训练工具"
+            >
+              <ExternalLink size={14} />
+              <span className="text-[11px]">图图打标器</span>
+            </button>
+
+            {zhaotutuOpen && (
+              <div
+                className={
+                  isPixel
+                    ? 'absolute right-0 top-full mt-2 z-[60] w-[360px] px-panel rounded-2xl p-3 animate-[fadeIn_.18s_ease-out]'
+                    : `absolute right-0 top-full mt-2 z-[60] w-[360px] max-w-[calc(100vw-24px)] rounded-xl p-3 border shadow-2xl backdrop-blur-md animate-[fadeIn_.18s_ease-out] ${
+                        isDark
+                          ? 'bg-zinc-900/95 border-emerald-400/20 shadow-emerald-500/10'
+                          : 'bg-white/95 border-emerald-200 shadow-emerald-500/10'
+                      }`
+                }
+                style={{ zoom: 1.25 }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className={`flex items-center gap-2 ${isPixel ? '' : isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                  <ExternalLink size={16} className={isPixel ? '' : 'shrink-0'} />
+                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>图图打标器</span>
+                </div>
+
+                <div
+                  className={`mt-2 text-[12px] leading-relaxed ${
+                    isPixel ? '' : isDark ? 'text-white/75' : 'text-zinc-700'
+                  }`}
+                >
+                  {ZHAOTUTU_TAGGER_TRAINER_LABEL.replace('：点击获取', '')}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenZhaotutuTaggerTrainer}
+                  className={
+                    isPixel
+                      ? 'mt-3 px-btn px-btn--mint w-full justify-center'
+                      : `mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-all ${
+                          isDark
+                            ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-300/60'
+                            : 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100'
+                        }`
+                  }
+                >
+                  <ExternalLink size={13} />
+                  <span>点击获取</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* 「插件安装」说明按钮: 放在画布教程左侧, 汇总需要宿主软件单独加载的联动插件 */}
           <div ref={pluginInstallWrapRef} className="relative">
             <button

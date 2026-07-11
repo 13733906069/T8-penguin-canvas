@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Braces,
   CheckCircle2,
+  ExternalLink,
   FileText,
   FolderOpen,
   Hash,
@@ -67,6 +68,8 @@ interface BatchTagItem {
   outputFiles?: Array<{ format: string; name: string; url?: string; path?: string; directory?: string }>;
 }
 
+type BatchTagOutputFile = NonNullable<BatchTagItem['outputFiles']>[number];
+
 interface PickedLocalBatchTagFile {
   path: string;
   name?: string;
@@ -113,7 +116,21 @@ const KIND_LABEL: Record<BatchTagMediaKind, string> = {
 };
 
 const BATCH_TAGGER_CUSTOM_MODEL_VALUE = '__custom__';
+const BATCH_TAGGER_EXTERNAL_TOOL_URL = 'https://zhaotutu.xyz';
 const BATCH_TAGGER_ZHENZHEN_MODELS = LLM_MODELS.filter((model) => model.vision && !model.imageOutput);
+
+async function openBatchTaggerExternalTool() {
+  if (typeof window === 'undefined') return;
+  if (typeof window.t8pc?.openExternal === 'function') {
+    try {
+      const result = await window.t8pc.openExternal(BATCH_TAGGER_EXTERNAL_TOOL_URL);
+      if (result?.success === true) return;
+    } catch {
+      /* fallback to browser window below */
+    }
+  }
+  window.open(BATCH_TAGGER_EXTERNAL_TOOL_URL, '_blank', 'noopener,noreferrer');
+}
 
 function statusMeta(status: BatchTagStatus) {
   if (status === 'running') return { label: '打标中', color: '#f59e0b', glow: 'rgba(245,158,11,.24)' };
@@ -125,6 +142,18 @@ function statusMeta(status: BatchTagStatus) {
 
 function itemKey(item: BatchTagItem): string {
   return `${item.kind}:${item.url}`;
+}
+
+function formatBatchTagOutputPath(file: BatchTagOutputFile): string {
+  const pathValue = String(file.path || '').trim();
+  if (pathValue) return pathValue;
+  const directory = String(file.directory || '').trim();
+  const name = String(file.name || '').trim();
+  if (directory && name) {
+    const separator = directory.includes('\\') ? '\\' : '/';
+    return `${directory.replace(/[\\/]+$/, '')}${separator}${name.replace(/^[\\/]+/, '')}`;
+  }
+  return String(file.url || name || '').trim();
 }
 
 function dedupeItems(items: BatchTagItem[]): BatchTagItem[] {
@@ -295,6 +324,7 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
   const [busy, setBusy] = useState(false);
   const [folderBusy, setFolderBusy] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [showAllOutputPaths, setShowAllOutputPaths] = useState(false);
 
   const upstream = useUpstreamMaterials(id);
   const upstreamItems = useMemo<BatchTagItem[]>(() => [
@@ -719,17 +749,22 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
     relativePath: previewItem.relativePath,
     formats,
   }) : {};
-  const latestOutputDir = [...allItems]
-    .reverse()
-    .flatMap((item) => item.outputFiles || [])
-    .map((file) => String(file.directory || '').trim())
-    .find(Boolean) || '';
+  const allOutputFiles = useMemo(() => allItems.flatMap((item) => (item.outputFiles || []).map((file) => ({
+    itemName: item.relativePath || item.name,
+    file,
+    displayPath: formatBatchTagOutputPath(file),
+  }))).filter((entry) => entry.displayPath), [allItems]);
+  const latestOutputFile = [...allOutputFiles].reverse().find((entry) => (
+    String(entry.file.path || entry.file.directory || '').trim()
+  ));
+  const latestOutputPath = String(latestOutputFile?.file.path || '').trim();
+  const latestOutputDir = String(latestOutputFile?.file.directory || '').trim();
 
   const openBatchTagOutput = async () => {
     setFolderBusy(true);
     try {
-      if (latestOutputDir) {
-        if (latestOutputDir.includes('浏览器授权')) {
+      if (latestOutputPath || latestOutputDir) {
+        if (latestOutputPath.startsWith('browser-fs://') || latestOutputDir.includes('浏览器授权')) {
           update({ batchTagNotice: '结果已写回浏览器授权的原素材目录，请在系统文件夹中查看' });
           return;
         }
@@ -738,8 +773,8 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
           update({ batchTagNotice: '当前结果只在上传副本目录；需写回原目录请用“文件夹”导入素材目录' });
           return;
         }
-        await openLocalPath(latestOutputDir);
-        update({ batchTagNotice: '已打开最近打标目录' });
+        await openLocalPath(latestOutputPath || latestOutputDir, { selectFile: Boolean(latestOutputPath) });
+        update({ batchTagNotice: latestOutputPath ? '已定位最近打标文件' : '已打开最近打标目录' });
         return;
       }
       await openOutputFolder('batch-tags');
@@ -812,6 +847,25 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
           <div className="truncate text-[10px]" style={{ color: 'var(--t8-text-muted)' }}>
             {progress.total} 项 · {progress.done}/{progress.total} · 成功 {progress.ok} · 失败 {progress.fail}
           </div>
+          <button
+            type="button"
+            className="t8-batch-tagger-tool-link nodrag nowheel mt-0.5 inline-flex max-w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-semibold"
+            title="在新窗口打开图图打标器"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              void openBatchTaggerExternalTool();
+            }}
+            style={{
+              color: '#0f172a',
+              background: '#f8fafc',
+              border: '1px solid rgba(15, 23, 42, 0.45)',
+              boxShadow: '0 1px 0 rgba(255, 255, 255, 0.72), 0 1px 4px rgba(15, 23, 42, 0.18)',
+            }}
+          >
+            <ExternalLink size={11} className="shrink-0" />
+            <span className="truncate">最好的打标工具-图图打标器：点击获取</span>
+          </button>
         </div>
         <div className="flex shrink-0 items-center gap-1 text-[10px] font-bold" style={{ color: progress.fail ? '#ef4444' : running ? '#f59e0b' : '#16a34a' }}>
           {running ? <Loader2 size={13} className="animate-spin" /> : progress.fail ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
@@ -1090,7 +1144,18 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
           <div className="rounded-md border p-2" style={{ borderColor: 'var(--t8-border)' }}>
             <div className="mb-1 flex items-center justify-between">
               <FieldLabel>保存</FieldLabel>
-              <span className="text-[10px]" style={{ color: 'var(--t8-text-dim)' }}>原素材目录</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="t8-btn px-1.5 py-0.5 text-[10px]"
+                  onClick={() => setShowAllOutputPaths((value) => !value)}
+                  disabled={!allOutputFiles.length}
+                  title="查看全部打标文件的实际路径"
+                >
+                  查看全部路径
+                </button>
+                <span className="text-[10px]" style={{ color: 'var(--t8-text-dim)' }}>原素材目录</span>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px]" style={{ color: 'var(--t8-text-main)' }}>
               <label className="flex items-center gap-1 rounded border px-2 py-1" style={{ borderColor: 'var(--t8-border)' }}>
@@ -1105,6 +1170,21 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
             <div className="mt-1 truncate text-[10px]" style={{ color: 'var(--t8-text-dim)' }}>
               {sampleNames.txt || sampleNames.json || 'foo.png -> foo.txt'}
             </div>
+            {showAllOutputPaths && (
+              <div
+                data-batch-tag-output-paths
+                className="mt-2 max-h-24 space-y-1 overflow-auto rounded border px-2 py-1 text-[10px]"
+                style={{ borderColor: 'var(--t8-border)', background: 'var(--t8-bg-node)', color: 'var(--t8-text-main)' }}
+              >
+                {allOutputFiles.length ? allOutputFiles.map((entry, index) => (
+                  <div key={`${entry.file.format}-${entry.displayPath}-${index}`} className="min-w-0 break-all" title={`${entry.itemName}\n${entry.displayPath}`}>
+                    {index + 1}. {entry.displayPath}
+                  </div>
+                )) : (
+                  <div style={{ color: 'var(--t8-text-dim)' }}>暂无已生成路径</div>
+                )}
+              </div>
+            )}
           </div>
 
           <label className="block">

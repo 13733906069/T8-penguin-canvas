@@ -10,8 +10,9 @@ export type ProviderType = 'zhenzhen' | 'llm-direct' | 'runninghub';
 //  - 'gpt-size'    : OpenAI 兼容,size 字段为像素串(1024x1024 等),编辑端点 multipart
 //  - 'banana-ratio': nano-banana 协议,使用 aspect_ratio + image_size(1K/2K/4K) + image[]
 //  - 'grok-image'  : Grok Image 协议,JSON /generations,参考图默认 base64 dataURL
+//  - 'seedream-v5' : Seedream V5 Pro 协议,JSON /generations,size 为像素串,image[] 可选
 //  - 'mj'          : Midjourney 协议,走专属 /api/proxy/mj/* 路由(speed_map + sref/oref)
-export type ImageParamKind = 'gpt-size' | 'banana-ratio' | 'grok-image' | 'mj';
+export type ImageParamKind = 'gpt-size' | 'banana-ratio' | 'grok-image' | 'seedream-v5' | 'mj';
 
 export interface ImageModelDef {
   id: string;             // 节点内部 id(如 'gpt-image-2')
@@ -139,6 +140,25 @@ export const IMAGE_MODELS: ImageModelDef[] = [
     supportsReference: true,
     maxReferenceImages: 4,
     description: 'Grok Image · 参考图 Base64',
+  },
+  {
+    id: 'seedream-v5-pro',
+    apiModel: 'seedream-v5-pro',
+    label: 'Seedream V5 Pro',
+    tabLabel: 'Seedream',
+    provider: 'zhenzhen',
+    paramKind: 'seedream-v5',
+    capabilities: ['t2i', 'i2i', 'edit'],
+    apiModelOptions: [
+      { value: 'seedream-v5-pro', label: 'seedream-v5-pro' },
+    ],
+    aspectRatios: [],
+    defaultAspectRatio: '',
+    sizes: ['1024x1024', '1536x1024', '1024x1536', '2048x2048', '4096x4096', 'custom'],
+    defaultSize: '2048x2048',
+    supportsReference: true,
+    maxReferenceImages: 10,
+    description: 'Seedream V5 Pro · 文生图/多图编辑',
   },
   // ========================================================================
   // Midjourney — 完全对齐 gpt-image-2-web/index.html runMJ L4437~L4694

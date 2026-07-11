@@ -469,7 +469,7 @@ function saveBase64Image(b64) {
 }
 
 // ========== POST /api/proxy/image — 图像生成 ==========
-// body: { model, apiModel?, paramKind?, prompt, aspect_ratio?, image_size?, images?[], size?, image?, quality?, n? }
+// body: { model, apiModel?, paramKind?, prompt, aspect_ratio?, image_size?, images?[], size?, image?, quality?, n?, response_format?, output_format? }
 //
 // 主项目对齐的双协议路由:
 //  1. paramKind === 'gpt-size'
@@ -995,7 +995,7 @@ async function buildGeminiOfficialContents(prompt, refs) {
 //   - Gemini 3 官方图像模型: JSON /v1/models/{model}:generateContent + generationConfig.responseFormat.image
 //   - Grok Image: JSON /generations?async=true { model, prompt, aspect_ratio, image:[base64...]? }
 // ========================================================================
-async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt, n, aspect_ratio, image_size, refs, size, quality }) {
+async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt, n, aspect_ratio, image_size, refs, size, quality, response_format, output_format }) {
   const upstreamBase = `${config.ZHENZHEN_BASE_URL}/v1/images`;
   const auth = `Bearer ${apiKey}`;
   const ar = String(aspect_ratio || '').trim();
@@ -1027,6 +1027,43 @@ async function callImageUpstreamAsync({ apiKey, finalApiModel, paramKind, prompt
         Authorization: auth,
         'x-goog-api-key': apiKey,
       },
+      body: JSON.stringify(body),
+    });
+  }
+
+  // ===== Seedream V5 Pro (OpenAI Dall-e compatible JSON) =====
+  // Text-to-image omits image; image editing uses the same endpoint with image[].
+  if (paramKind === 'seedream-v5') {
+    const seedreamRefs = [];
+    if (hasRefs) {
+      for (const ref of refs.slice(0, 10)) {
+        const converted = await refToBananaImage(ref);
+        if (converted) seedreamRefs.push(converted);
+      }
+      if (seedreamRefs.length === 0) {
+        throw new Error('Seedream 参考图读取失败，已中止生成，避免按文生图生成');
+      }
+    }
+    const requestedSize = String(size || image_size || '2048x2048')
+      .trim()
+      .replace(/\s+/g, '')
+      .replace(/[X×]/g, 'x');
+    if (!/^\d+x\d+$/.test(requestedSize)) {
+      throw new Error(`Seedream 尺寸格式无效: ${requestedSize || '(空)'}，应为 WIDTHxHEIGHT`);
+    }
+    const body = {
+      model: finalApiModel,
+      prompt,
+      size: requestedSize,
+      response_format: response_format === 'b64_json' ? 'b64_json' : 'url',
+      output_format: output_format === 'jpeg' ? 'jpeg' : 'png',
+    };
+    if (seedreamRefs.length) body.image = seedreamRefs;
+    const url = `${upstreamBase}/generations`;
+    console.log('[upstream] Seedream JSON → /generations model:', finalApiModel, 'size:', body.size, 'output_format:', body.output_format, { requested: refs?.length || 0, converted: seedreamRefs.length });
+    return await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify(body),
     });
   }
@@ -1127,7 +1164,7 @@ router.post('/image', async (req, res) => {
     model, apiModel, paramKind: paramKindIn,
     prompt, n,
     aspect_ratio, image_size,
-    images, image, size, quality, providerParams,
+    images, image, size, quality, response_format, output_format, providerParams,
   } = req.body || {};
   // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
   if (!ensureKeyOrSelectedGroup(settings, res, apiModel || model || '', '图像', providerParams)) return;
@@ -1136,7 +1173,7 @@ router.post('/image', async (req, res) => {
   const gptImage2ForcedSize = gptImage2ZhenzhenVariantSize(originalApiModel);
   const finalApiModel = normalizeImageApiModel(originalApiModel);
   const ml = `${originalApiModel} ${finalApiModel}`.toLowerCase();
-  const paramKind = paramKindIn || (ml.includes('grok') && ml.includes('image') ? 'grok-image' : (isBananaImageModel(ml) ? 'banana-ratio' : 'gpt-size'));
+  const paramKind = paramKindIn || (ml.includes('seedream-v5') ? 'seedream-v5' : (ml.includes('grok') && ml.includes('image') ? 'grok-image' : (isBananaImageModel(ml) ? 'banana-ratio' : 'gpt-size')));
   if (!finalApiModel) return res.status(400).json({ success: false, error: 'model 必填' });
   const refs = Array.isArray(images) ? images.filter(Boolean) : [];
   if (typeof image === 'string' && image && !refs.includes(image)) refs.unshift(image);
@@ -1151,7 +1188,7 @@ router.post('/image', async (req, res) => {
     });
     const r = await callImageUpstreamAsync({
       apiKey: settings.zhenzhenApiKey, finalApiModel, paramKind,
-      prompt, n, aspect_ratio, image_size: gptImage2ForcedSize || image_size, refs, size: gptImage2ForcedSize ? undefined : size, quality,
+      prompt, n, aspect_ratio, image_size: gptImage2ForcedSize || image_size, refs, size: gptImage2ForcedSize ? undefined : size, quality, response_format, output_format,
     });
     const text = await r.text();
     let data; try { data = JSON.parse(text); } catch {
@@ -1195,7 +1232,7 @@ router.post('/image/submit', async (req, res) => {
   const settings = loadRawSettings();
   try {
     const { model, apiModel, paramKind: paramKindIn, prompt, n,
-            aspect_ratio, image_size, images, image, size, quality, providerParams } = req.body || {};
+            aspect_ratio, image_size, images, image, size, quality, response_format, output_format, providerParams } = req.body || {};
     // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
     if (!ensureKeyOrSelectedGroup(settings, res, apiModel || model || '', '图像', providerParams)) return;
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt 不得为空' });
@@ -1203,7 +1240,7 @@ router.post('/image/submit', async (req, res) => {
     const gptImage2ForcedSize = gptImage2ZhenzhenVariantSize(originalApiModel);
     const finalApiModel = normalizeImageApiModel(originalApiModel);
     const ml = `${originalApiModel} ${finalApiModel}`.toLowerCase();
-    const paramKind = paramKindIn || (ml.includes('grok') && ml.includes('image') ? 'grok-image' : (isBananaImageModel(ml) ? 'banana-ratio' : 'gpt-size'));
+    const paramKind = paramKindIn || (ml.includes('seedream-v5') ? 'seedream-v5' : (ml.includes('grok') && ml.includes('image') ? 'grok-image' : (isBananaImageModel(ml) ? 'banana-ratio' : 'gpt-size')));
     if (!finalApiModel) return res.status(400).json({ success: false, error: 'model 必填' });
     const refs = Array.isArray(images) ? images.filter(Boolean) : [];
     if (typeof image === 'string' && image && !refs.includes(image)) refs.unshift(image);
@@ -1218,7 +1255,7 @@ router.post('/image/submit', async (req, res) => {
     });
     const r = await callImageUpstreamAsync({
       apiKey: settings.zhenzhenApiKey, finalApiModel, paramKind,
-      prompt, n, aspect_ratio, image_size: gptImage2ForcedSize || image_size, refs, size: gptImage2ForcedSize ? undefined : size, quality,
+      prompt, n, aspect_ratio, image_size: gptImage2ForcedSize || image_size, refs, size: gptImage2ForcedSize ? undefined : size, quality, response_format, output_format,
     });
     const text = await r.text();
     let data; try { data = JSON.parse(text); } catch { data = { _raw: text }; }

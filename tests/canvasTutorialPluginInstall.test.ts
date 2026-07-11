@@ -38,3 +38,20 @@ test('topbar exposes plugin install as a separate button before canvas tutorial'
   assert.match(packageJson, /"from":\s*"tools\/figma-bridge"/);
   assert.match(packageJson, /"from":\s*"extension"/);
 });
+
+test('topbar exposes zhaotutu tagger tab before plugin install with its own panel link', () => {
+  const app = read('src/App.tsx');
+
+  assert.match(app, /ZHAOTUTU_TAGGER_TRAINER_URL\s*=\s*'https:\/\/zhaotutu\.xyz'/);
+  assert.match(app, /zhaotutuOpen/);
+  assert.match(app, /zhaotutuWrapRef/);
+  assert.match(app, /handleOpenZhaotutuTaggerTrainer/);
+  assert.match(app, /typeof window\.t8pc\?\.openExternal === 'function'/);
+  assert.match(app, /window\.t8pc\.openExternal\(ZHAOTUTU_TAGGER_TRAINER_URL\)/);
+  assert.match(app, /result\?\.success === true/);
+  assert.match(app, /window\.open\(ZHAOTUTU_TAGGER_TRAINER_URL,\s*'_blank',\s*'noopener,noreferrer'\)/);
+  assert.ok(app.indexOf('title="图图打标器') < app.indexOf('title="插件安装'));
+  assert.ok(app.indexOf('<span className="text-[11px]">图图打标器</span>') < app.indexOf('<span className="text-[11px]">插件安装</span>'));
+  assert.match(app, /最好的打标和模型训练工具-图图打标及训练器/);
+  assert.match(app, />点击获取</);
+});

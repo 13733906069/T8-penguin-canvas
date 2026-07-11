@@ -239,10 +239,16 @@ function resolveOutputSubdir(subdir) {
   return { safeSubdir, targetDir };
 }
 
-function spawnOpenFolder(targetDir) {
+function spawnOpenFolder(targetDir, options = {}) {
   return new Promise((resolve, reject) => {
     const platform = process.platform;
     const command = platform === 'win32' ? 'explorer.exe' : platform === 'darwin' ? 'open' : 'xdg-open';
+    const selectPath = String(options.selectPath || '').trim();
+    const args = selectPath && platform === 'win32'
+      ? [`/select,${selectPath}`]
+      : selectPath && platform === 'darwin'
+        ? ['-R', selectPath]
+        : [targetDir];
     let child;
     let settled = false;
     const done = (error) => {
@@ -252,7 +258,7 @@ function spawnOpenFolder(targetDir) {
       else resolve();
     };
     try {
-      child = spawn(command, [targetDir], {
+      child = spawn(command, args, {
         detached: true,
         stdio: 'ignore',
         shell: false,
@@ -497,26 +503,33 @@ router.post('/open-output-folder', express.json({ limit: '64kb' }), async (req, 
   }
 });
 
-function resolveOpenLocalDirectory(targetPath) {
+function resolveOpenLocalTarget(targetPath, selectFile = false) {
   const raw = String(targetPath || '').trim();
   if (!raw || !path.isAbsolute(raw)) {
     throw new Error('本地目录路径必须是绝对路径');
   }
   const resolved = path.resolve(raw);
   const stat = fs.statSync(resolved);
-  return stat.isDirectory() ? resolved : path.dirname(resolved);
+  const isFile = stat.isFile();
+  return {
+    path: isFile ? path.dirname(resolved) : resolved,
+    targetPath: resolved,
+    selectFile: Boolean(selectFile && isFile),
+  };
 }
 
 // POST /api/files/open-local-path — 打开最近一次真实保存目录（用于原素材目录 sidecar）
 router.post('/open-local-path', express.json({ limit: '64kb' }), async (req, res) => {
   try {
-    const targetDir = resolveOpenLocalDirectory(req.body?.path || req.body?.targetPath);
+    const target = resolveOpenLocalTarget(req.body?.path || req.body?.targetPath, req.body?.selectFile === true);
     const dryRun = Boolean(req.body?.dryRun) || process.env.T8PC_OPEN_FOLDER_DRY_RUN === '1';
-    if (!dryRun) await spawnOpenFolder(targetDir);
+    if (!dryRun) await spawnOpenFolder(target.path, target.selectFile ? { selectPath: target.targetPath } : {});
     return res.json({
       success: true,
       data: {
-        path: targetDir,
+        path: target.path,
+        targetPath: target.targetPath,
+        selectFile: target.selectFile,
         opened: !dryRun,
       },
     });
@@ -615,4 +628,5 @@ router.post('/save-to-disk', express.json({ limit: '2mb' }), async (req, res) =>
 
 module.exports = router;
 module.exports.importLocalFile = importLocalFile;
-module.exports.resolveOpenLocalDirectory = resolveOpenLocalDirectory;
+module.exports.resolveOpenLocalTarget = resolveOpenLocalTarget;
+module.exports.resolveOpenLocalDirectory = (targetPath) => resolveOpenLocalTarget(targetPath).path;

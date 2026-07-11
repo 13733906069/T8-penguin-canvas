@@ -156,7 +156,7 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     description: '适合已经在本机配置好即梦 CLI 的用户。它不走 API Key，而是调用本地命令并轮询任务结果。',
     nodeScopes: ['图像节点', '视频节点', 'SD2.0 节点'],
     connectionHint: '填写 dreamina 可执行文件路径；如果 CLI 装在 WSL 里，再打开 WSL 并填写发行版名称。',
-    modelHint: '模型名按 CLI 支持的命令参数填写；图像可填 seedream-4.7，视频可填 seedance2.0fast_vip、seedance2.0_vip、seedance2.0fast、seedance2.0。每行一个。',
+    modelHint: '模型名按 CLI 支持的命令参数填写；图像可填 seedream-4.7 / seedream-5.0，视频可填 seedance2.0fast_vip、seedance2.0_vip(支持 4K)、seedance2.0mini、seedance1.5pro、seedance1.0fast、seedance1.0 等。每行一个。',
   },
 };
 
